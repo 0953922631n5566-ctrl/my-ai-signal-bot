@@ -7,7 +7,7 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #0f172a; color: #f8fafc; padding: 16px; display: flex; flex-direction: column; gap: 14px; height: 100vh; justify-content: center; }
+    body { background-color: #0d1322; color: #f8fafc; padding: 16px; display: flex; flex-direction: column; gap: 14px; height: 100vh; justify-content: center; }
     
     .header { text-align: center; padding: 8px; font-weight: bold; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 6px; }
     
@@ -23,24 +23,24 @@
     }
 
     /* Controls Section */
-    .controls-card { background: #1e293b; border-radius: 14px; padding: 12px; display: flex; gap: 10px; border: 1px solid #334155; }
+    .controls-card { background: #162032; border-radius: 14px; padding: 12px; display: flex; gap: 10px; border: 1px solid #233248; }
     .select-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
     .select-group label { font-size: 11px; color: #94a3b8; }
-    select { background: #0f172a; color: #f8fafc; border: 1px solid #475569; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; font-weight: bold; }
+    select { background: #0b1120; color: #f8fafc; border: 1px solid #334155; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; font-weight: bold; }
 
     /* Signal Card */
-    .signal-card { background: #1e293b; border-radius: 14px; padding: 20px; text-align: center; border: 1px solid #334155; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
+    .signal-card { background: #162032; border-radius: 14px; padding: 20px; text-align: center; border: 1px solid #233248; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
     .pair-title { font-size: 14px; color: #94a3b8; font-weight: 500; }
-    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 12px; text-transform: uppercase; letter-spacing: 2px; transition: background-color 0.2s; }
+    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 12px; text-transform: uppercase; letter-spacing: 2px; transition: all 0.3s ease; }
     
-    /* ไฟสแตนบายสีส้ม (WAIT) */
-    .WAIT { background: #7c2d12; color: #fb923c; border: 2px solid #f97316; box-shadow: 0 0 12px rgba(249, 115, 22, 0.3); }
-    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.4); box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
-    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.4); box-shadow: 0 0 15px rgba(244, 63, 94, 0.4); }
+    /* สแตนบายสีส้มอำพัน (Amber Gold) */
+    .WAIT { background: #9a3412; color: #ffedd5; border: 2px solid #f97316; box-shadow: 0 0 15px rgba(249, 115, 22, 0.4); text-shadow: 0 0 8px rgba(255, 237, 213, 0.6); }
+    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); box-shadow: 0 0 20px rgba(16, 185, 129, 0.5); }
+    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.5); box-shadow: 0 0 20px rgba(244, 63, 94, 0.5); }
 
     /* Indicators Grid */
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .stat-box { background: #0f172a; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #334155; }
+    .stat-box { background: #0b1120; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #233248; }
     .stat-label { font-size: 11px; color: #94a3b8; }
     .stat-value { font-size: 16px; font-weight: bold; margin-top: 4px; }
   </style>
@@ -97,7 +97,6 @@
       Telegram.WebApp.expand();
     }
 
-    // สร้างระบบเสียงสังเคราะห์ (Web Audio API)
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     
     function playBeep(freq = 600, duration = 0.15) {
@@ -142,13 +141,12 @@
         if (data.type === 'market_update') {
           const timeLeft = data.timeLeft;
 
-          // ส่งเสียงเตือนตอน 3 วินาที และ 2 วินาทีสุดท้าย
           if (timeLeft === 3 && !playedSound3) {
-            playBeep(500, 0.1); // เสียงเตรียมตัว ครั้งที่ 1
+            playBeep(500, 0.1);
             playedSound3 = true;
           }
           if (timeLeft === 2 && !playedSound2) {
-            playBeep(800, 0.15); // เสียงเตรียมตัว ครั้งที่ 2
+            playBeep(800, 0.15);
             playedSound2 = true;
           }
           if (timeLeft > 3) {
@@ -181,7 +179,6 @@
       }
     }
 
-    // เช็คสถานะอินเทอร์เน็ตของเครื่องมือถือ
     window.addEventListener('online', () => setNetStatus(true));
     window.addEventListener('offline', () => setNetStatus(false));
 
