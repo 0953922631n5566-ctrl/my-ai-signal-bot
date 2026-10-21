@@ -9,53 +9,63 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-let weights = {
-  rsi: 0.35,
-  emaCross: 0.40,
-  bollinger: 0.25
-};
+// จำลองการสร้างข้อมูลราคา Real-time & Indicator
+let currentPrice = 1.0850;
+let candles = [];
 
-function analyzeMarketData(candles) {
-  const lastPrice = candles[candles.length - 1].close;
-  const rsiValue = Math.floor(Math.random() * (75 - 25 + 1)) + 25;
-  const emaFast = lastPrice;
-  const emaSlow = lastPrice;
+function generateMarketData() {
+  const now = new Date();
+  const seconds = now.getSeconds();
+  const timeLeft = 60 - seconds; // เวลาที่เหลือของแท่ง 1 นาที
 
-  let callScore = 0;
-  let putScore = 0;
+  // สุ่มการแกว่งของราคา
+  const change = (Math.random() - 0.49) * 0.0002;
+  currentPrice = parseFloat((currentPrice + change).toFixed(5));
 
-  if (rsiValue < 30) callScore += weights.rsi;
-  if (rsiValue > 70) putScore += weights.rsi;
+  // สร้าง RSI จำลอง
+  const rsi = parseFloat((40 + Math.random() * 20 + (change > 0 ? 10 : -10)).toFixed(1));
 
+  // คำนวณสัญญาณ (สรุปสัญญาณเน้นๆ ในช่วง 3 วินาทีสุดท้ายก่อนปิดแท่ง)
   let signal = 'WAIT';
-  let totalScore = Math.max(callScore, putScore);
-  let confidence = (totalScore * 100).toFixed(1);
+  let confidence = '0.0';
 
-  if (callScore > 0.30) signal = 'CALL 🟢';
-  else if (putScore > 0.30) signal = 'PUT 🔴';
+  if (timeLeft <= 3) { 
+    if (rsi < 35) {
+      signal = 'CALL';
+      confidence = (85 + Math.random() * 10).toFixed(1);
+    } else if (rsi > 65) {
+      signal = 'PUT';
+      confidence = (85 + Math.random() * 10).toFixed(1);
+    }
+  }
+
+  const candle = {
+    time: Math.floor(now.getTime() / 1000),
+    open: currentPrice - change,
+    high: currentPrice + 0.0001,
+    low: currentPrice - 0.0001,
+    close: currentPrice
+  };
 
   return {
+    type: 'market_update',
+    candle,
     signal,
     confidence,
-    rsi: rsiValue.toFixed(1),
-    price: lastPrice
+    rsi,
+    timeLeft
   };
 }
 
-wss.on('connection', (ws) => {
-  console.log('⚡ Mini App Client Connected');
-
-  const interval = setInterval(() => {
-    const mockCandles = [{ close: (1.12200 + Math.random() * 0.0005) }];
-    const result = analyzeMarketData(mockCandles);
-
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'MARKET_SIGNAL', data: result }));
+// ส่งข้อมูลหาผู้ใช้งานทุกๆ 1 วินาที
+setInterval(() => {
+  const data = generateMarketData();
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(data));
     }
-  }, 3000);
-
-  ws.on('close', () => clearInterval(interval));
-});
+  });
+}, 1000);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
