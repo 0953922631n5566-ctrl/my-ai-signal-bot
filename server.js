@@ -10,13 +10,14 @@ const wss = new WebSocket.Server({ server });
 app.use(express.static(path.join(__dirname, 'public')));
 
 let currentPrice = 1.0850;
+let lockedSignal = 'WAIT';
+let lockedConfidence = '0.0';
 
 function generateMarketData() {
   const now = new Date();
   const seconds = now.getSeconds();
   const millis = now.getMilliseconds();
   
-  // คำนวณเวลาที่เหลือเป็นทศนิยม (เช่น 1.5 วินาที)
   const exactTimeLeft = parseFloat((60 - (seconds + millis / 1000)).toFixed(1));
   const displayTimeLeft = Math.ceil(exactTimeLeft);
 
@@ -25,24 +26,30 @@ function generateMarketData() {
 
   const rsi = parseFloat((40 + Math.random() * 20 + (change > 0 ? 10 : -10)).toFixed(1));
 
-  let signal = 'WAIT';
-  let confidence = '0.0';
-
-  // ล็อกส่งสัญญาณสรุปเด็ดขาดในช่วง <= 1.5 วินาทีสุดท้าย
-  if (exactTimeLeft <= 1.5 && exactTimeLeft > 0) { 
+  // ล็อกสัญญาณตอน 1.5 วินาทีท้ายแท่ง
+  if (exactTimeLeft <= 1.5 && exactTimeLeft > 0.5) { 
     if (rsi < 42) {
-      signal = 'CALL';
-      confidence = (84 + Math.random() * 10).toFixed(1);
+      lockedSignal = 'CALL';
+      lockedConfidence = (84 + Math.random() * 10).toFixed(1);
     } else if (rsi > 58) {
-      signal = 'PUT';
-      confidence = (84 + Math.random() * 10).toFixed(1);
+      lockedSignal = 'PUT';
+      lockedConfidence = (84 + Math.random() * 10).toFixed(1);
+    } else {
+      lockedSignal = 'WAIT';
+      lockedConfidence = '0.0';
     }
+  }
+
+  // เคลียร์กลับเป็น WAIT หลังจากเข้าแท่งใหม่ไปแล้ว 8.5 วินาที (รวมค้างไว้ 10 วินาทีพอดี)
+  if (exactTimeLeft <= 51.5 && exactTimeLeft > 50.0) {
+    lockedSignal = 'WAIT';
+    lockedConfidence = '0.0';
   }
 
   return {
     type: 'market_update',
-    signal,
-    confidence,
+    signal: lockedSignal,
+    confidence: lockedConfidence,
     rsi,
     timeLeft: displayTimeLeft
   };
@@ -55,7 +62,7 @@ setInterval(() => {
       client.send(JSON.stringify(data));
     }
   });
-}, 500); // อัปเดตข้อมูลถี่ขึ้นทุกๆ 0.5 วินาทีเพื่อความแม่นยำ
+}, 500);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
