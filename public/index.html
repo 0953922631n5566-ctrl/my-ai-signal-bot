@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Trading Assistant</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #17212b;
+      color: #ffffff;
+      padding: 16px;
+      text-align: center;
+    }
+    .header { font-size: 18px; font-weight: bold; margin-bottom: 12px; color: #64b5f6; }
+    .card {
+      background: #242f3d;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .asset-title { font-size: 14px; color: #8e99a2; margin-bottom: 8px; }
+    .signal-box {
+      font-size: 32px;
+      font-weight: 800;
+      padding: 12px;
+      border-radius: 12px;
+      margin: 10px 0;
+      background: #1d2733;
+    }
+    .call { color: #4caf50; border: 2px solid #4caf50; }
+    .put { color: #f44336; border: 2px solid #f44336; }
+    .wait { color: #ffca28; border: 2px solid #ffca28; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .stat-item {
+      background: #1d2733;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .stat-value { font-size: 16px; font-weight: bold; color: #fff; margin-top: 4px; }
+    .status-bar {
+      font-size: 12px;
+      color: #4caf50;
+      display: inline-block;
+      padding: 4px 12px;
+      background: rgba(76, 175, 80, 0.1);
+      border-radius: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">🤖 AI Trading Signal</div>
+  <div class="status-bar" id="status">● Connecting...</div>
+
+  <div class="card" style="margin-top: 12px;">
+    <div class="asset-title">EUR/USD (1 Minute)</div>
+    <div id="signal" class="signal-box wait">WAITING</div>
+
+    <div class="stat-grid">
+      <div class="stat-item">
+        <div>Confidence</div>
+        <div class="stat-value" id="confidence">0%</div>
+      </div>
+      <div class="stat-item">
+        <div>RSI Indicator</div>
+        <div class="stat-value" id="rsi">0</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    Telegram.WebApp.ready();
+    Telegram.WebApp.expand();
+
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${location.host}`);
+
+    ws.onopen = () => {
+      document.getElementById('status').innerText = '● Live System Active';
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'MARKET_SIGNAL') {
+        const { signal, confidence, rsi } = msg.data;
+        const signalEl = document.getElementById('signal');
+
+        signalEl.innerText = signal;
+        signalEl.className = 'signal-box ';
+        
+        if (signal.includes('CALL')) signalEl.classList.add('call');
+        else if (signal.includes('PUT')) signalEl.classList.add('put');
+        else signalEl.classList.add('wait');
+
+        document.getElementById('confidence').innerText = confidence + '%';
+        document.getElementById('rsi').innerText = rsi;
+      }
+    };
+  </script>
+</body>
+</html>
