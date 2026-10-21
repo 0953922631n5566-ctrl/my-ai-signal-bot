@@ -14,7 +14,11 @@ let currentPrice = 1.0850;
 function generateMarketData() {
   const now = new Date();
   const seconds = now.getSeconds();
-  const timeLeft = 60 - seconds; 
+  const millis = now.getMilliseconds();
+  
+  // คำนวณเวลาที่เหลือเป็นทศนิยม (เช่น 1.5 วินาที)
+  const exactTimeLeft = parseFloat((60 - (seconds + millis / 1000)).toFixed(1));
+  const displayTimeLeft = Math.ceil(exactTimeLeft);
 
   const change = (Math.random() - 0.49) * 0.0002;
   currentPrice = parseFloat((currentPrice + change).toFixed(5));
@@ -24,33 +28,23 @@ function generateMarketData() {
   let signal = 'WAIT';
   let confidence = '0.0';
 
-  // สรุปสัญญาณก่อนหมดแท่ง 3 วินาที
-  if (timeLeft <= 3) { 
-    if (rsi < 38) {
+  // ล็อกส่งสัญญาณสรุปเด็ดขาดในช่วง <= 1.5 วินาทีสุดท้าย
+  if (exactTimeLeft <= 1.5 && exactTimeLeft > 0) { 
+    if (rsi < 42) {
       signal = 'CALL';
-      confidence = (82 + Math.random() * 12).toFixed(1);
-    } else if (rsi > 62) {
+      confidence = (84 + Math.random() * 10).toFixed(1);
+    } else if (rsi > 58) {
       signal = 'PUT';
-      confidence = (82 + Math.random() * 12).toFixed(1);
+      confidence = (84 + Math.random() * 10).toFixed(1);
     }
   }
 
-  const timestamp = Math.floor(now.getTime() / 1000);
-  const candle = {
-    time: timestamp - (timestamp % 60), // ล็อกเวลาตามนาที
-    open: parseFloat((currentPrice - change).toFixed(5)),
-    high: parseFloat((currentPrice + 0.0001).toFixed(5)),
-    low: parseFloat((currentPrice - 0.0001).toFixed(5)),
-    close: currentPrice
-  };
-
   return {
     type: 'market_update',
-    candle,
     signal,
     confidence,
     rsi,
-    timeLeft
+    timeLeft: displayTimeLeft
   };
 }
 
@@ -61,7 +55,7 @@ setInterval(() => {
       client.send(JSON.stringify(data));
     }
   });
-}, 1000);
+}, 500); // อัปเดตข้อมูลถี่ขึ้นทุกๆ 0.5 วินาทีเพื่อความแม่นยำ
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
