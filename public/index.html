@@ -5,37 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>AI Trading Assistant</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #0f172a; color: #f8fafc; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    body { background-color: #0f172a; color: #f8fafc; padding: 16px; display: flex; flex-direction: column; gap: 14px; height: 100vh; justify-content: center; }
     
-    .header { text-align: center; padding: 6px; font-weight: bold; font-size: 16px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 6px; }
-    .status-badge { font-size: 11px; background: #064e3b; color: #34d399; padding: 2px 8px; border-radius: 12px; border: 1px solid #059669; }
+    .header { text-align: center; padding: 8px; font-weight: bold; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .status-badge { font-size: 11px; background: #064e3b; color: #34d399; padding: 3px 10px; border-radius: 12px; border: 1px solid #059669; }
 
     /* Controls Section */
-    .controls-card { background: #1e293b; border-radius: 12px; padding: 10px; display: flex; gap: 8px; border: 1px solid #334155; }
+    .controls-card { background: #1e293b; border-radius: 14px; padding: 12px; display: flex; gap: 10px; border: 1px solid #334155; }
     .select-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
     .select-group label { font-size: 11px; color: #94a3b8; }
-    select { background: #0f172a; color: #f8fafc; border: 1px solid #475569; padding: 8px; border-radius: 8px; font-size: 13px; outline: none; }
-
-    /* Chart Container */
-    #chart-container { height: 210px; background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }
+    select { background: #0f172a; color: #f8fafc; border: 1px solid #475569; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; font-weight: bold; }
 
     /* Signal Card */
-    .signal-card { background: #1e293b; border-radius: 12px; padding: 12px; text-align: center; border: 1px solid #334155; display: flex; flex-direction: column; gap: 8px; }
-    .pair-title { font-size: 12px; color: #94a3b8; }
-    .signal-box { font-size: 26px; font-weight: 800; padding: 8px; border-radius: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .signal-card { background: #1e293b; border-radius: 14px; padding: 20px; text-align: center; border: 1px solid #334155; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
+    .pair-title { font-size: 14px; color: #94a3b8; font-weight: 500; }
+    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 12px; text-transform: uppercase; letter-spacing: 2px; }
     
     .WAIT { background: #334155; color: #f1f5f9; border: 2px solid #64748b; }
-    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; }
-    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; }
+    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.4); }
 
     /* Indicators Grid */
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-    .stat-box { background: #0f172a; border-radius: 8px; padding: 6px; text-align: center; border: 1px solid #334155; }
-    .stat-label { font-size: 10px; color: #94a3b8; }
-    .stat-value { font-size: 13px; font-weight: bold; margin-top: 2px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat-box { background: #0f172a; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #334155; }
+    .stat-label { font-size: 11px; color: #94a3b8; }
+    .stat-value { font-size: 16px; font-weight: bold; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -64,8 +60,6 @@
     </div>
   </div>
 
-  <div id="chart-container"></div>
-
   <div class="signal-card">
     <div class="pair-title" id="marketLabel">EUR/USD (1M)</div>
     <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
@@ -80,7 +74,7 @@
         <div class="stat-value" id="rsiValue">50.0</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">เวลาแท่งถัดไป</div>
+        <div class="stat-label">แท่งถัดไปใน</div>
         <div class="stat-value" id="timerValue" style="color: #38bdf8;">00s</div>
       </div>
     </div>
@@ -92,29 +86,6 @@
       Telegram.WebApp.expand();
     }
 
-    const chartContainer = document.getElementById('chart-container');
-    const chart = LightweightCharts.createChart(chartContainer, {
-      width: chartContainer.clientWidth,
-      height: chartContainer.clientHeight,
-      layout: {
-        background: { color: '#1e293b' },
-        textColor: '#94a3b8',
-      },
-      grid: {
-        vertLines: { color: '#334155' },
-        horzLines: { color: '#334155' },
-      },
-      timeScale: { 
-        timeVisible: true, 
-        secondsVisible: true 
-      }
-    });
-    
-    const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
-      wickUpColor: '#22c55e', wickDownColor: '#ef4444'
-    });
-
     let ws;
     function connectWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -123,7 +94,6 @@
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'market_update') {
-          candleSeries.update(data.candle);
           document.getElementById('signalDisplay').innerText = data.signal;
           document.getElementById('signalDisplay').className = `signal-box ${data.signal}`;
           document.getElementById('confValue').innerText = `${data.confidence}%`;
