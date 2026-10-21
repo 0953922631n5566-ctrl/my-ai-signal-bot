@@ -10,7 +10,17 @@
     body { background-color: #0f172a; color: #f8fafc; padding: 16px; display: flex; flex-direction: column; gap: 14px; height: 100vh; justify-content: center; }
     
     .header { text-align: center; padding: 8px; font-weight: bold; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 6px; }
-    .status-badge { font-size: 11px; background: #064e3b; color: #34d399; padding: 3px 10px; border-radius: 12px; border: 1px solid #059669; }
+    
+    /* สไตล์ป้าย LIVE และการกระพริบ */
+    .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: bold; transition: all 0.3s ease; }
+    .status-online { background: #064e3b; color: #34d399; border: 1px solid #059669; animation: pulse 1.5s infinite; }
+    .status-offline { background: #7f1d1d; color: #fca5a5; border: 1px solid #dc2626; }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
 
     /* Controls Section */
     .controls-card { background: #1e293b; border-radius: 14px; padding: 12px; display: flex; gap: 10px; border: 1px solid #334155; }
@@ -21,11 +31,12 @@
     /* Signal Card */
     .signal-card { background: #1e293b; border-radius: 14px; padding: 20px; text-align: center; border: 1px solid #334155; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); }
     .pair-title { font-size: 14px; color: #94a3b8; font-weight: 500; }
-    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 12px; text-transform: uppercase; letter-spacing: 2px; }
+    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 12px; text-transform: uppercase; letter-spacing: 2px; transition: background-color 0.2s; }
     
-    .WAIT { background: #334155; color: #f1f5f9; border: 2px solid #64748b; }
-    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
-    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.4); }
+    /* ไฟสแตนบายสีส้ม (WAIT) */
+    .WAIT { background: #7c2d12; color: #fb923c; border: 2px solid #f97316; box-shadow: 0 0 12px rgba(249, 115, 22, 0.3); }
+    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.4); box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.4); box-shadow: 0 0 15px rgba(244, 63, 94, 0.4); }
 
     /* Indicators Grid */
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -37,7 +48,7 @@
 <body>
 
   <div class="header">
-    🤖 AI Signal Assistant <span class="status-badge">● LIVE</span>
+    🤖 AI Signal Assistant <span id="netStatus" class="status-badge status-offline">● OFFLINE</span>
   </div>
 
   <div class="controls-card">
@@ -86,23 +97,79 @@
       Telegram.WebApp.expand();
     }
 
+    // สร้างระบบเสียงสังเคราะห์ (Web Audio API)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playBeep(freq = 600, duration = 0.15) {
+      try {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) { console.log(e); }
+    }
+
     let ws;
+    let playedSound3 = false;
+    let playedSound2 = false;
+
+    function setNetStatus(isOnline) {
+      const badge = document.getElementById('netStatus');
+      if (isOnline) {
+        badge.innerText = '● LIVE';
+        badge.className = 'status-badge status-online';
+      } else {
+        badge.innerText = '● DISCONNECTED';
+        badge.className = 'status-badge status-offline';
+      }
+    }
+
     function connectWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${protocol}//${window.location.host}`);
 
+      ws.onopen = () => setNetStatus(true);
+
       ws.onmessage = (event) => {
+        setNetStatus(true);
         const data = JSON.parse(event.data);
         if (data.type === 'market_update') {
+          const timeLeft = data.timeLeft;
+
+          // ส่งเสียงเตือนตอน 3 วินาที และ 2 วินาทีสุดท้าย
+          if (timeLeft === 3 && !playedSound3) {
+            playBeep(500, 0.1); // เสียงเตรียมตัว ครั้งที่ 1
+            playedSound3 = true;
+          }
+          if (timeLeft === 2 && !playedSound2) {
+            playBeep(800, 0.15); // เสียงเตรียมตัว ครั้งที่ 2
+            playedSound2 = true;
+          }
+          if (timeLeft > 3) {
+            playedSound3 = false;
+            playedSound2 = false;
+          }
+
           document.getElementById('signalDisplay').innerText = data.signal;
           document.getElementById('signalDisplay').className = `signal-box ${data.signal}`;
           document.getElementById('confValue').innerText = `${data.confidence}%`;
           document.getElementById('rsiValue').innerText = data.rsi;
-          document.getElementById('timerValue').innerText = `${data.timeLeft}s`;
+          document.getElementById('timerValue').innerText = `${timeLeft}s`;
         }
       };
 
-      ws.onclose = () => setTimeout(connectWS, 2000);
+      ws.onclose = () => {
+        setNetStatus(false);
+        setTimeout(connectWS, 2000);
+      };
+
+      ws.onerror = () => setNetStatus(false);
     }
 
     function changeMarket() {
@@ -113,6 +180,10 @@
         ws.send(JSON.stringify({ type: 'subscribe', symbol, tf }));
       }
     }
+
+    // เช็คสถานะอินเทอร์เน็ตของเครื่องมือถือ
+    window.addEventListener('online', () => setNetStatus(true));
+    window.addEventListener('offline', () => setNetStatus(false));
 
     connectWS();
   </script>
