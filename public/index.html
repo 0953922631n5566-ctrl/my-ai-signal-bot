@@ -94,7 +94,7 @@
 
     const chartContainer = document.getElementById('chart-container');
     const chart = LightweightCharts.createChart(chartContainer, {
-      layout: { backgroundColor: '#1e293b', textColor: '#94a3b8' },
+      layout: { background: { type: 'solid', color: '#1e293b' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
       timeScale: { timeVisible: true, secondsVisible: true }
     });
