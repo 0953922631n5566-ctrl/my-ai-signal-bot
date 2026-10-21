@@ -9,41 +9,38 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// จำลองการสร้างข้อมูลราคา Real-time & Indicator
 let currentPrice = 1.0850;
-let candles = [];
 
 function generateMarketData() {
   const now = new Date();
   const seconds = now.getSeconds();
-  const timeLeft = 60 - seconds; // เวลาที่เหลือของแท่ง 1 นาที
+  const timeLeft = 60 - seconds; 
 
-  // สุ่มการแกว่งของราคา
   const change = (Math.random() - 0.49) * 0.0002;
   currentPrice = parseFloat((currentPrice + change).toFixed(5));
 
-  // สร้าง RSI จำลอง
   const rsi = parseFloat((40 + Math.random() * 20 + (change > 0 ? 10 : -10)).toFixed(1));
 
-  // คำนวณสัญญาณ (สรุปสัญญาณเน้นๆ ในช่วง 3 วินาทีสุดท้ายก่อนปิดแท่ง)
   let signal = 'WAIT';
   let confidence = '0.0';
 
+  // สรุปสัญญาณก่อนหมดแท่ง 3 วินาที
   if (timeLeft <= 3) { 
-    if (rsi < 35) {
+    if (rsi < 38) {
       signal = 'CALL';
-      confidence = (85 + Math.random() * 10).toFixed(1);
-    } else if (rsi > 65) {
+      confidence = (82 + Math.random() * 12).toFixed(1);
+    } else if (rsi > 62) {
       signal = 'PUT';
-      confidence = (85 + Math.random() * 10).toFixed(1);
+      confidence = (82 + Math.random() * 12).toFixed(1);
     }
   }
 
+  const timestamp = Math.floor(now.getTime() / 1000);
   const candle = {
-    time: Math.floor(now.getTime() / 1000),
-    open: currentPrice - change,
-    high: currentPrice + 0.0001,
-    low: currentPrice - 0.0001,
+    time: timestamp - (timestamp % 60), // ล็อกเวลาตามนาที
+    open: parseFloat((currentPrice - change).toFixed(5)),
+    high: parseFloat((currentPrice + 0.0001).toFixed(5)),
+    low: parseFloat((currentPrice - 0.0001).toFixed(5)),
     close: currentPrice
   };
 
@@ -57,7 +54,6 @@ function generateMarketData() {
   };
 }
 
-// ส่งข้อมูลหาผู้ใช้งานทุกๆ 1 วินาที
 setInterval(() => {
   const data = generateMarketData();
   wss.clients.forEach(client => {
