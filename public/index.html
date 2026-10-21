@@ -2,78 +2,91 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>AI Trading Assistant</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Lightweight Charts สำหรับกราฟแท่งเทียนที่ลื่นไหล -->
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #17212b;
-      color: #ffffff;
-      padding: 16px;
-      text-align: center;
-    }
-    .header { font-size: 18px; font-weight: bold; margin-bottom: 12px; color: #64b5f6; }
-    .card {
-      background: #242f3d;
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 16px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    }
-    .asset-title { font-size: 14px; color: #8e99a2; margin-bottom: 8px; }
-    .signal-box {
-      font-size: 32px;
-      font-weight: 800;
-      padding: 12px;
-      border-radius: 12px;
-      margin: 10px 0;
-      background: #1d2733;
-    }
-    .call { color: #4caf50; border: 2px solid #4caf50; }
-    .put { color: #f44336; border: 2px solid #f44336; }
-    .wait { color: #ffca28; border: 2px solid #ffca28; }
-    .stat-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 12px;
-    }
-    .stat-item {
-      background: #1d2733;
-      padding: 10px;
-      border-radius: 8px;
-      font-size: 13px;
-    }
-    .stat-value { font-size: 16px; font-weight: bold; color: #fff; margin-top: 4px; }
-    .status-bar {
-      font-size: 12px;
-      color: #4caf50;
-      display: inline-block;
-      padding: 4px 12px;
-      background: rgba(76, 175, 80, 0.1);
-      border-radius: 20px;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: #0f172a; color: #f8fafc; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    
+    .header { text-align: center; padding: 8px; font-weight: bold; font-size: 16px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .status-badge { font-size: 11px; background: #064e3b; color: #34d399; padding: 2px 8px; border-radius: 12px; border: 1px solid #059669; }
+
+    /* Controls Section */
+    .controls-card { background: #1e293b; border-radius: 12px; padding: 10px; display: flex; gap: 8px; border: 1px solid #334155; }
+    .select-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .select-group label { font-size: 11px; color: #94a3b8; }
+    select { background: #0f172a; color: #f8fafc; border: 1px solid #475569; padding: 8px; border-radius: 8px; font-size: 13px; outline: none; }
+
+    /* Chart Container */
+    #chart-container { height: 220px; background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }
+
+    /* Signal Card */
+    .signal-card { background: #1e293b; border-radius: 12px; padding: 14px; text-align: center; border: 1px solid #334155; display: flex; flex-direction: column; gap: 8px; }
+    .pair-title { font-size: 12px; color: #94a3b8; }
+    .signal-box { font-size: 28px; font-weight: 800; padding: 10px; border-radius: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    
+    .WAIT { background: #334155; color: #f1f5f9; border: 2px solid #64748b; }
+    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; }
+    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; }
+
+    /* Indicators Grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat-box { background: #0f172a; border-radius: 8px; padding: 8px; text-align: center; border: 1px solid #334155; }
+    .stat-label { font-size: 10px; color: #94a3b8; }
+    .stat-value { font-size: 14px; font-weight: bold; margin-top: 2px; }
   </style>
 </head>
 <body>
 
-  <div class="header">🤖 AI Trading Signal</div>
-  <div class="status-bar" id="status">● Connecting...</div>
+  <div class="header">
+    🤖 AI Signal Assistant <span class="status-badge">● LIVE</span>
+  </div>
 
-  <div class="card" style="margin-top: 12px;">
-    <div class="asset-title">EUR/USD (1 Minute)</div>
-    <div id="signal" class="signal-box wait">WAITING</div>
+  <!-- Selector Menu -->
+  <div class="controls-card">
+    <div class="select-group">
+      <label>คู่เงิน (IQ Option)</label>
+      <select id="assetSelect" onchange="changeMarket()">
+        <option value="EURUSD">EUR/USD</option>
+        <option value="GBPUSD">GBP/USD</option>
+        <option value="USDJPY">USD/JPY</option>
+        <option value="AUDUSD">AUD/USD</option>
+        <option value="EURJPY">EUR/JPY</option>
+        <option value="BTCUSD">BTC/USD (Crypto)</option>
+      </select>
+    </div>
+    <div class="select-group">
+      <label>กรอบเวลา (Timeframe)</label>
+      <select id="tfSelect" onchange="changeMarket()">
+        <option value="1m">1 นาที (1M)</option>
+        <option value="5m">5 นาที (5M)</option>
+      </select>
+    </div>
+  </div>
 
-    <div class="stat-grid">
-      <div class="stat-item">
-        <div>Confidence</div>
-        <div class="stat-value" id="confidence">0%</div>
+  <!-- Real-time Candlestick Chart -->
+  <div id="chart-container"></div>
+
+  <!-- Signal Output -->
+  <div class="signal-card">
+    <div class="pair-title" id="marketLabel">EUR/USD (1M)</div>
+    <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
+    
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">Confidence</div>
+        <div class="stat-value" id="confValue">0.0%</div>
       </div>
-      <div class="stat-item">
-        <div>RSI Indicator</div>
-        <div class="stat-value" id="rsi">0</div>
+      <div class="stat-box">
+        <div class="stat-label">RSI (14)</div>
+        <div class="stat-value" id="rsiValue">50.0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">เวลาแท่งถัดไป</div>
+        <div class="stat-value" id="timerValue" style="color: #38bdf8;">00s</div>
       </div>
     </div>
   </div>
@@ -82,30 +95,51 @@
     Telegram.WebApp.ready();
     Telegram.WebApp.expand();
 
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${location.host}`);
+    // Init Lightweight Chart
+    const chartContainer = document.getElementById('chart-container');
+    const chart = LightweightCharts.createChart(chartContainer, {
+      layout: { backgroundColor: '#1e293b', textColor: '#94a3b8' },
+      grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+      timeScale: { timeVisible: true, secondsVisible: true }
+    });
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+      wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+    });
 
-    ws.onopen = () => {
-      document.getElementById('status').innerText = '● Live System Active';
-    };
+    let ws;
+    function connectWS() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${window.location.host}`);
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'MARKET_SIGNAL') {
-        const { signal, confidence, rsi } = msg.data;
-        const signalEl = document.getElementById('signal');
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'market_update') {
+          // Update Chart
+          candleSeries.update(data.candle);
 
-        signalEl.innerText = signal;
-        signalEl.className = 'signal-box ';
-        
-        if (signal.includes('CALL')) signalEl.classList.add('call');
-        else if (signal.includes('PUT')) signalEl.classList.add('put');
-        else signalEl.classList.add('wait');
+          // Update Signal Details
+          document.getElementById('signalDisplay').innerText = data.signal;
+          document.getElementById('signalDisplay').className = `signal-box ${data.signal}`;
+          document.getElementById('confValue').innerText = `${data.confidence}%`;
+          document.getElementById('rsiValue').innerText = data.rsi;
+          document.getElementById('timerValue').innerText = `${data.timeLeft}s`;
+        }
+      };
 
-        document.getElementById('confidence').innerText = confidence + '%';
-        document.getElementById('rsi').innerText = rsi;
+      ws.onclose = () => setTimeout(connectWS, 2000);
+    }
+
+    function changeMarket() {
+      const symbol = document.getElementById('assetSelect').value;
+      const tf = document.getElementById('tfSelect').value;
+      document.getElementById('marketLabel').innerText = `${symbol} (${tf.toUpperCase()})`;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'subscribe', symbol, tf }));
       }
-    };
+    }
+
+    connectWS();
   </script>
 </body>
 </html>
