@@ -102,7 +102,6 @@ function processTradingEngine() {
   const isUpTrend = currentPrice > ema50;
   const isDownTrend = currentPrice < ema50;
 
-  // 🎯 ประมวลผลและล็อกสัญญาณในช่วง 5 วินาทีสุดท้ายก่อนหมดแท่ง
   if (exactTimeLeft <= 5.0 && exactTimeLeft > 0.5) {
     let scoreCALL = 0;
     let scorePUT = 0;
@@ -132,7 +131,7 @@ function processTradingEngine() {
     }
   }
 
-  // ⏳ ให้สัญญาณ CALL / PUT ค้างไว้ 30 วินาทีในแท่งใหม่ แล้วค่อยรีเซ็ตกลับเป็น WAIT
+  // ค้างสัญญาณไว้ 30 วินาทีในแท่งใหม่ แล้วรีเซ็ตกลับเป็น WAIT
   if (exactTimeLeft <= 30.0 && exactTimeLeft > 28.5 && lockedSignal !== 'WAIT') {
     lockedSignal = 'WAIT';
     lockedConfidence = '0.0';
