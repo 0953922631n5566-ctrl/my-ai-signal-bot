@@ -9,52 +9,48 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// สถิติราคาจำลอง
-let priceHistory = [];
-let currentPrice = 1.0850;
+// จำลองฐานข้อมูลราคา (Price History) สำหรับคำนวณ Indicator
+let priceHistory = Array.from({ length: 50 }, () => 1.0850 + (Math.random() - 0.5) * 0.0050);
 let lockedSignal = 'WAIT';
 let lockedConfidence = '0.0';
 
+// ฟังก์ชันคำนวณ EMA (Moving Average)
+function calculateEMA(prices, period) {
+  const k = 2 / (period + 1);
+  let ema = prices[0];
+  for (let i = 1; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
+// ฟังก์ชันคำนวณ Bollinger Bands
+function calculateBollingerBands(prices, period = 20, multiplier = 2) {
+  const slice = prices.slice(-period);
+  const sma = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;
+  const stdDev = Math.sqrt(variance);
+  return {
+    upper: sma + multiplier * stdDev,
+    middle: sma,
+    lower: sma - multiplier * stdDev
+  };
+}
+
 // ฟังก์ชันคำนวณ RSI
 function calculateRSI(prices, period = 14) {
-  if (prices.length < period + 1) return 50.0;
   let gains = 0, losses = 0;
-  for (let i = prices.length - period; i < prices.length; i++) {
-    let diff = prices[i] - prices[i - 1];
+  for (let i = prices.length - period; i < prices.length - 1; i++) {
+    const diff = prices[i + 1] - prices[i];
     if (diff >= 0) gains += diff;
     else losses -= diff;
   }
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-  if (avgLoss === 0) return 100;
-  let rs = avgGain / avgLoss;
-  return parseFloat((100 - (100 / (1 + rs))).toFixed(1));
+  if (losses === 0) return 100;
+  const rs = (gains / period) / (losses / period);
+  return 100 - (100 / (1 + rs));
 }
 
-// ฟังก์ชันคำนวณ Bollinger Bands และ EMA
-function calculateTechnicalAnalysis(prices) {
-  const period = 14;
-  if (prices.length < period) {
-    return { rsi: 50.0, ema: currentPrice, upperBand: currentPrice + 0.0010, lowerBand: currentPrice - 0.0010 };
-  }
-
-  const slice = prices.slice(-period);
-  const sum = slice.reduce((a, b) => a + b, 0);
-  const mean = sum / period;
-
-  // Standard Deviation
-  const variance = slice.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / period;
-  const stdDev = Math.sqrt(variance);
-
-  const rsi = calculateRSI(prices, period);
-  const upperBand = mean + (stdDev * 2);
-  const lowerBand = mean - (stdDev * 2);
-  const ema = mean; // สมมติฐานค่าเฉลี่ยเคลื่อนที่
-
-  return { rsi, ema, upperBand, lowerBand };
-}
-
-function generateMarketData() {
+function processTradingEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
   const millis = now.getMilliseconds();
@@ -62,36 +58,52 @@ function generateMarketData() {
   const exactTimeLeft = parseFloat((60 - (seconds + millis / 1000)).toFixed(1));
   const displayTimeLeft = Math.ceil(exactTimeLeft);
 
-  // จำลองความผันผวนของราคา
-  const change = (Math.random() - 0.495) * 0.0003;
-  currentPrice = parseFloat((currentPrice + change).toFixed(5));
-  priceHistory.push(currentPrice);
-  if (priceHistory.length > 50) priceHistory.shift();
+  // จำลองความเคลื่อนไหวราคา Real-time
+  const lastPrice = priceHistory[priceHistory.length - 1];
+  const change = (Math.random() - 0.49) * 0.0003;
+  const newPrice = parseFloat((lastPrice + change).toFixed(5));
+  
+  priceHistory.push(newPrice);
+  if (priceHistory.length > 100) priceHistory.shift();
 
-  const tech = calculateTechnicalAnalysis(priceHistory);
+  // คำนวณค่า Technical Indicators
+  const rsi = parseFloat(calculateRSI(priceHistory).toFixed(1));
+  const ema50 = calculateEMA(priceHistory, 50);
+  const bb = calculateBollingerBands(priceHistory);
+  
+  const isUpTrend = newPrice > ema50;
+  const isDownTrend = newPrice < ema50;
 
-  // ล็อกประมวลผลสัญญาณช่วง 1.5 วินาทีท้ายแท่ง
-  if (exactTimeLeft <= 1.5 && exactTimeLeft > 0.5) { 
-    // เงื่อนไข CALL (ซื้อขึ้น): RSI ต่ำ + ราคาทะลุ Lower Band + อยู่ในเทรนด์ขาขึ้น
-    const isCallCondition = tech.rsi < 38 && currentPrice <= tech.lowerBand;
-    
-    // เงื่อนไข PUT (ซื้อลง): RSI สูง + ราคาทะลุ Upper Band + อยู่ในเทรนด์ขาลง
-    const isPutCondition = tech.rsi > 62 && currentPrice >= tech.upperBand;
+  // 🎯 ล็อกสัญญาณประมวลผลช่วง 1.5 วินาทีท้ายแท่ง
+  if (exactTimeLeft <= 1.5 && exactTimeLeft > 0.5) {
+    let scoreCALL = 0;
+    let scorePUT = 0;
 
-    if (isCallCondition) {
+    // เงื่อนไข CALL (ซื้อขึ้น)
+    if (rsi < 38) scoreCALL += 35; // RSI oversold
+    if (newPrice <= bb.lower) scoreCALL += 35; // ราคาชนกรอบล่าง Bollinger
+    if (isUpTrend) scoreCALL += 30; // แนวโน้มใหญ่เป็นเทรนด์ขึ้น
+
+    // เงื่อนไข PUT (ซื้อลง)
+    if (rsi > 62) scorePUT += 35; // RSI overbought
+    if (newPrice >= bb.upper) scorePUT += 35; // ราคาชนกรอบบน Bollinger
+    if (isDownTrend) scorePUT += 30; // แนวโน้มใหญ่เป็นเทรนด์ลง
+
+    // กรองสัญญาณที่ความมั่นใจ 70% ขึ้นไปเท่านั้น
+    if (scoreCALL >= 70 && scoreCALL > scorePUT) {
       lockedSignal = 'CALL';
-      lockedConfidence = (86.5 + Math.random() * 8).toFixed(1);
-    } else if (isPutCondition) {
+      lockedConfidence = (scoreCALL + Math.random() * 5).toFixed(1);
+    } else if (scorePUT >= 70 && scorePUT > scoreCALL) {
       lockedSignal = 'PUT';
-      lockedConfidence = (86.5 + Math.random() * 8).toFixed(1);
+      lockedConfidence = (scorePUT + Math.random() * 5).toFixed(1);
     } else {
       lockedSignal = 'WAIT';
       lockedConfidence = '0.0';
     }
   }
 
-  // ปลดล็อกกลับเป็น WAIT เมื่อผ่านไป 8.5 วินาทีของแท่งใหม่ (แสดงสัญญาณค้างไว้ 10 วินาทีเต็ม)
-  if (exactTimeLeft <= 51.5 && exactTimeLeft > 50.0) {
+  // ⏳ ล็อกแสดงสัญญาณค้างไว้ 10 วินาที แล้วรีเซ็ตกลับเป็น WAIT
+  if (exactTimeLeft <= 50.0 && exactTimeLeft > 48.5) {
     lockedSignal = 'WAIT';
     lockedConfidence = '0.0';
   }
@@ -100,13 +112,15 @@ function generateMarketData() {
     type: 'market_update',
     signal: lockedSignal,
     confidence: lockedConfidence,
-    rsi: tech.rsi,
+    rsi: rsi,
+    trend: isUpTrend ? 'BULLISH 🟢' : 'BEARISH 🔴',
+    price: newPrice.toFixed(5),
     timeLeft: displayTimeLeft
   };
 }
 
 setInterval(() => {
-  const data = generateMarketData();
+  const data = processTradingEngine();
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(data));
@@ -115,4 +129,4 @@ setInterval(() => {
 }, 500);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Multi-Indicator Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`PRO Trading Server running on port ${PORT}`));
