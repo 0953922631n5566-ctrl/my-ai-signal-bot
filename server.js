@@ -9,38 +9,50 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-let priceHistory = [];
-let currentSymbol = 'EURUSDT';
-let lockedSignal = 'WAIT';
-let lockedConfidence = '0.0';
-let binanceWS = null;
+// รายการคู่เงินที่ระบบจะสแกนอัตโนมัติพร้อมกันหลังบ้าน
+const symbols = [
+  { key: 'eurusdt', name: 'EUR/USD' },
+  { key: 'gbpusdt', name: 'GBP/USD' },
+  { key: 'usdtjpy', name: 'USD/JPY' },
+  { key: 'audusdt', name: 'AUD/USD' },
+  { key: 'nzdusdt', name: 'NZD/USD' },
+  { key: 'usdcad', name: 'USD/CAD' },
+  { key: 'eurjpy', name: 'EUR/JPY' },
+  { key: 'gbpjpy', name: 'GBP/JPY' }
+];
 
-function connectBinanceStream(symbol = 'eurusdt') {
-  if (binanceWS) {
-    try { binanceWS.close(); } catch(e){}
-  }
+let marketHistories = {};
+let activeWebSockets = {};
 
-  const streamName = `${symbol.toLowerCase()}@ticker`;
-  binanceWS = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
+symbols.forEach(s => {
+  marketHistories[s.key] = [];
+});
 
-  binanceWS.on('message', (data) => {
-    try {
-      const parsed = JSON.parse(data);
-      const price = parseFloat(parsed.c);
-      if (!isNaN(price)) {
-        priceHistory.push(price);
-        if (priceHistory.length > 120) priceHistory.shift();
-      }
-    } catch (e) {
-      console.error("Binance Stream Error:", e);
-    }
+function connectAllStreams() {
+  symbols.forEach(s => {
+    const streamName = `${s.key}@ticker`;
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
+
+    ws.on('message', (data) => {
+      try {
+        const parsed = JSON.parse(data);
+        const price = parseFloat(parsed.c);
+        if (!isNaN(price)) {
+          marketHistories[s.key].push(price);
+          if (marketHistories[s.key].length > 120) {
+            marketHistories[s.key].shift();
+          }
+        }
+      } catch (e) {}
+    });
+
+    ws.on('error', () => setTimeout(connectAllStreams, 3000));
+    ws.on('close', () => setTimeout(connectAllStreams, 3000));
+    activeWebSockets[s.key] = ws;
   });
-
-  binanceWS.on('error', () => setTimeout(() => connectBinanceStream(symbol), 3000));
-  binanceWS.on('close', () => setTimeout(() => connectBinanceStream(symbol), 3000));
 }
 
-connectBinanceStream('eurusdt');
+connectAllStreams();
 
 function calculateEMA(prices, period) {
   if (prices.length < period) return prices[prices.length - 1] || 0;
@@ -55,7 +67,7 @@ function calculateEMA(prices, period) {
 function calculateBB(prices, period = 20, mult = 2) {
   if (prices.length < period) {
     const p = prices[prices.length - 1] || 0;
-    return { upper: p, middle: p, lower: p, bandwidth: 0 };
+    return { bandwidth: 1 };
   }
   const slice = prices.slice(-period);
   const sma = slice.reduce((a, b) => a + b, 0) / period;
@@ -63,9 +75,8 @@ function calculateBB(prices, period = 20, mult = 2) {
   const stdDev = Math.sqrt(variance);
   const upper = sma + (mult * stdDev);
   const lower = sma - (mult * stdDev);
-  const bandwidth = ((upper - lower) / sma) * 100; // คำนวณความกว้างกรอบราคา
-  
-  return { upper, middle: sma, lower, bandwidth };
+  const bandwidth = ((upper - lower) / sma) * 100;
+  return { bandwidth };
 }
 
 function calculateRSI(prices, period = 14) {
@@ -81,105 +92,111 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-function processTradingEngine() {
+let lockedBestSignal = {
+  symbol: 'EUR/USD',
+  signal: 'WAIT',
+  confidence: '0.0',
+  rsi: 50.0,
+  trend: 'SCANNING... ⚡',
+  timeLeft: 60
+};
+
+function processAutoScanner() {
   const now = new Date();
   const seconds = now.getSeconds();
   const millis = now.getMilliseconds();
-  
   const exactTimeLeft = parseFloat((60 - (seconds + millis / 1000)).toFixed(1));
   const displayTimeLeft = Math.ceil(exactTimeLeft);
 
-  if (priceHistory.length < 20) {
-    const base = 1.0850;
-    priceHistory.push(base + (Math.random() - 0.5) * 0.002);
-  }
+  let bestCandidate = {
+    symbol: 'AI AUTO SCANNER',
+    signal: 'WAIT',
+    confidence: '0.0',
+    rsi: 50.0,
+    trend: 'SEARCHING TREND 🔍',
+    score: 0
+  };
 
-  const currentPrice = priceHistory[priceHistory.length - 1];
-  const prevPrice = priceHistory[priceHistory.length - 2] || currentPrice;
-  const rsi = parseFloat(calculateRSI(priceHistory).toFixed(1));
-  const ema50 = calculateEMA(priceHistory, 50);
-  const bb = calculateBB(priceHistory);
-  
-  const isUpTrend = currentPrice > ema50;
-  const isDownTrend = currentPrice < ema50;
-
-  // 🚨 ตรวจจับภาวะ Sideway (กรอบ Bollinger บีบแคบมาก)
-  const isSideway = bb.bandwidth < 0.08 || (rsi >= 45 && rsi <= 55 && Math.abs(currentPrice - ema50) < 0.0001);
-
-  // 🎯 ประมวลผลช่วง 0.5 วินาทีสุดท้ายเป๊ะๆ
+  // วิ่งสแกนหาคู่ที่ได้คะแนนสูงสุด (>80%) ในช่วง 0.5 วินาทีสุดท้าย
   if (exactTimeLeft <= 0.6 && exactTimeLeft > 0.1) {
-    if (isSideway) {
-      lockedSignal = 'SIDEWAY';
-      lockedConfidence = '0.0';
-    } else {
-      let scoreCALL = 0;
-      let scorePUT = 0;
+    symbols.forEach(s => {
+      const prices = marketHistories[s.key];
+      if (prices && prices.length > 30) {
+        const currentPrice = prices[prices.length - 1];
+        const prevPrice = prices[prices.length - 2] || currentPrice;
+        const rsi = parseFloat(calculateRSI(prices).toFixed(1));
+        const ema50 = calculateEMA(prices, 50);
+        const bb = calculateBB(prices);
 
-      if (isUpTrend) {
-        scoreCALL += 40;
-        if (rsi > 45 && rsi < 75) scoreCALL += 30;
-        if (currentPrice > prevPrice) scoreCALL += 30;
-      }
+        const isUpTrend = currentPrice > ema50;
+        const isDownTrend = currentPrice < ema50;
+        const isSideway = bb.bandwidth < 0.08 || (rsi >= 45 && rsi <= 55);
 
-      if (isDownTrend) {
-        scorePUT += 40;
-        if (rsi < 55 && rsi > 25) scorePUT += 30;
-        if (currentPrice < prevPrice) scorePUT += 30;
-      }
+        if (!isSideway) {
+          let scoreCALL = 0;
+          let scorePUT = 0;
 
-      if (scoreCALL >= 70 && scoreCALL > scorePUT) {
-        lockedSignal = 'CALL';
-        lockedConfidence = Math.min(scoreCALL, 95.0).toFixed(1);
-      } else if (scorePUT >= 70 && scorePUT > scoreCALL) {
-        lockedSignal = 'PUT';
-        lockedConfidence = Math.min(scorePUT, 95.0).toFixed(1);
-      } else {
-        lockedSignal = 'WAIT';
-        lockedConfidence = '0.0';
+          if (isUpTrend) {
+            scoreCALL += 45;
+            if (rsi > 45 && rsi < 75) scoreCALL += 35;
+            if (currentPrice > prevPrice) scoreCALL += 20;
+          }
+
+          if (isDownTrend) {
+            scorePUT += 45;
+            if (rsi < 55 && rsi > 25) scorePUT += 35;
+            if (currentPrice < prevPrice) scorePUT += 20;
+          }
+
+          // คัดเลือกเฉพาะความมั่นใจ >= 80% ขึ้นไปเท่านั้น
+          if (scoreCALL >= 80 && scoreCALL > scorePUT && scoreCALL > bestCandidate.score) {
+            bestCandidate = {
+              symbol: s.name,
+              signal: 'CALL',
+              confidence: Math.min(scoreCALL, 98.0).toFixed(1),
+              rsi: rsi,
+              trend: 'BULLISH 🟢',
+              score: scoreCALL
+            };
+          } else if (scorePUT >= 80 && scorePUT > scoreCALL && scorePUT > bestCandidate.score) {
+            bestCandidate = {
+              symbol: s.name,
+              signal: 'PUT',
+              confidence: Math.min(scorePUT, 98.0).toFixed(1),
+              rsi: rsi,
+              trend: 'BEARISH 🔴',
+              score: scorePUT
+            };
+          }
+        }
       }
+    });
+
+    if (bestCandidate.signal !== 'WAIT') {
+      lockedBestSignal = {
+        symbol: bestCandidate.symbol,
+        signal: bestCandidate.signal,
+        confidence: bestCandidate.confidence,
+        rsi: bestCandidate.rsi,
+        trend: bestCandidate.trend,
+        timeLeft: displayTimeLeft
+      };
     }
   }
 
-  // ค้างสัญญาณไว้ 30 วินาที แล้วรีเซ็ต
-  if (exactTimeLeft <= 30.0 && exactTimeLeft > 28.5 && lockedSignal !== 'WAIT') {
-    lockedSignal = 'WAIT';
-    lockedConfidence = '0.0';
+  // รีเซ็ตสถานะกลับเป็น WAIT เมื่อเข้าสู่ช่วงต้นแท่งใหม่ (30 วินาทีผ่านไป)
+  if (exactTimeLeft <= 30.0 && exactTimeLeft > 28.5) {
+    lockedBestSignal.signal = 'WAIT';
+    lockedBestSignal.confidence = '0.0';
+    lockedBestSignal.trend = 'AI AUTO SCANNER ACTIVE 🟢';
   }
 
-  return {
-    type: 'market_update',
-    signal: lockedSignal,
-    confidence: lockedConfidence,
-    rsi: rsi,
-    trend: isSideway ? 'SIDEWAY ⚠️' : (isUpTrend ? 'BULLISH 🟢' : 'BEARISH 🔴'),
-    price: currentPrice.toFixed(5),
-    timeLeft: displayTimeLeft
-  };
+  lockedBestSignal.timeLeft = displayTimeLeft;
+  return { type: 'market_update', ...lockedBestSignal };
 }
 
-wss.on('connection', (ws) => {
-  ws.on('message', (msg) => {
-    try {
-      const data = JSON.parse(msg);
-      if (data.type === 'subscribe') {
-        let sym = 'eurusdt';
-        if (data.symbol === 'GBPUSD') sym = 'gbpusdt';
-        if (data.symbol === 'USDJPY') sym = 'usdtjpy';
-        if (data.symbol === 'BTCUSD') sym = 'btcusdt';
-        if (data.symbol === 'AUDUSD') sym = 'audusdt';
-        
-        if (sym !== currentSymbol) {
-          currentSymbol = sym;
-          priceHistory = [];
-          connectBinanceStream(sym);
-        }
-      }
-    } catch(e){}
-  });
-});
-
 setInterval(() => {
-  const data = processTradingEngine();
+  const data = processAutoScanner();
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(data));
@@ -188,4 +205,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Sideway Aware Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Auto Scanner Engine running on port ${PORT}`));
