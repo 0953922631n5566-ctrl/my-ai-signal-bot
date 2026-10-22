@@ -9,13 +9,45 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// จำลองฐานข้อมูลราคา (Price History) สำหรับคำนวณ Indicator
-let priceHistory = Array.from({ length: 50 }, () => 1.0850 + (Math.random() - 0.5) * 0.0050);
+// สต็อกเก็บราคา Real-time
+let priceHistory = [];
+let currentSymbol = 'EURUSDT';
 let lockedSignal = 'WAIT';
 let lockedConfidence = '0.0';
+let binanceWS = null;
 
-// ฟังก์ชันคำนวณ EMA (Moving Average)
+// เชื่อมต่อ Binance WebSocket เพื่อดึงกราฟสดจริงจากตลาดโลก
+function connectBinanceStream(symbol = 'eurusdt') {
+  if (binanceWS) {
+    try { binanceWS.close(); } catch(e){}
+  }
+
+  const streamName = `${symbol.toLowerCase()}@ticker`;
+  binanceWS = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
+
+  binanceWS.on('message', (data) => {
+    try {
+      const parsed = JSON.parse(data);
+      const price = parseFloat(parsed.c); // ราคาปัจจุบัน
+      if (!isNaN(price)) {
+        priceHistory.push(price);
+        if (priceHistory.length > 120) priceHistory.shift();
+      }
+    } catch (e) {
+      console.error("Binance Stream Error:", e);
+    }
+  });
+
+  binanceWS.on('error', () => setTimeout(() => connectBinanceStream(symbol), 3000));
+  binanceWS.on('close', () => setTimeout(() => connectBinanceStream(symbol), 3000));
+}
+
+// เริ่มต้นดึงข้อมูล EURUSDT
+connectBinanceStream('eurusdt');
+
+// คำนวณ EMA
 function calculateEMA(prices, period) {
+  if (prices.length < period) return prices[prices.length - 1] || 0;
   const k = 2 / (period + 1);
   let ema = prices[0];
   for (let i = 1; i < prices.length; i++) {
@@ -24,21 +56,26 @@ function calculateEMA(prices, period) {
   return ema;
 }
 
-// ฟังก์ชันคำนวณ Bollinger Bands
-function calculateBollingerBands(prices, period = 20, multiplier = 2) {
+// คำนวณ Bollinger Bands
+function calculateBB(prices, period = 20, mult = 2) {
+  if (prices.length < period) {
+    const p = prices[prices.length - 1] || 0;
+    return { upper: p, middle: p, lower: p };
+  }
   const slice = prices.slice(-period);
   const sma = slice.reduce((a, b) => a + b, 0) / period;
   const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;
   const stdDev = Math.sqrt(variance);
   return {
-    upper: sma + multiplier * stdDev,
+    upper: sma + (mult * stdDev),
     middle: sma,
-    lower: sma - multiplier * stdDev
+    lower: sma - (mult * stdDev)
   };
 }
 
-// ฟังก์ชันคำนวณ RSI
+// คำนวณ RSI
 function calculateRSI(prices, period = 14) {
+  if (prices.length < period + 1) return 50.0;
   let gains = 0, losses = 0;
   for (let i = prices.length - period; i < prices.length - 1; i++) {
     const diff = prices[i + 1] - prices[i];
@@ -58,51 +95,56 @@ function processTradingEngine() {
   const exactTimeLeft = parseFloat((60 - (seconds + millis / 1000)).toFixed(1));
   const displayTimeLeft = Math.ceil(exactTimeLeft);
 
-  // จำลองความเคลื่อนไหวราคา Real-time
-  const lastPrice = priceHistory[priceHistory.length - 1];
-  const change = (Math.random() - 0.49) * 0.0003;
-  const newPrice = parseFloat((lastPrice + change).toFixed(5));
-  
-  priceHistory.push(newPrice);
-  if (priceHistory.length > 100) priceHistory.shift();
+  // กรณีข้อมูลตลาดยังไม่พร้อม ให้จำลองฐานราคาชั่วคราว
+  if (priceHistory.length < 20) {
+    const base = 1.0850;
+    priceHistory.push(base + (Math.random() - 0.5) * 0.002);
+  }
 
-  // คำนวณค่า Technical Indicators
+  const currentPrice = priceHistory[priceHistory.length - 1];
   const rsi = parseFloat(calculateRSI(priceHistory).toFixed(1));
   const ema50 = calculateEMA(priceHistory, 50);
-  const bb = calculateBollingerBands(priceHistory);
+  const bb = calculateBB(priceHistory);
   
-  const isUpTrend = newPrice > ema50;
-  const isDownTrend = newPrice < ema50;
+  const isUpTrend = currentPrice > ema50;
+  const isDownTrend = currentPrice < ema50;
 
-  // 🎯 ล็อกสัญญาณประมวลผลช่วง 1.5 วินาทีท้ายแท่ง
+  // 🎯 ประมวลผลและล็อกสัญญาณช่วง 1.5 วินาทีสุดท้ายก่อนปิดแท่ง
   if (exactTimeLeft <= 1.5 && exactTimeLeft > 0.5) {
     let scoreCALL = 0;
     let scorePUT = 0;
 
-    // เงื่อนไข CALL (ซื้อขึ้น)
-    if (rsi < 38) scoreCALL += 35; // RSI oversold
-    if (newPrice <= bb.lower) scoreCALL += 35; // ราคาชนกรอบล่าง Bollinger
-    if (isUpTrend) scoreCALL += 30; // แนวโน้มใหญ่เป็นเทรนด์ขึ้น
+    // เงื่อนไข 1: RSI Overbought / Oversold
+    if (rsi <= 35) scoreCALL += 35;
+    else if (rsi >= 65) scorePUT += 35;
 
-    // เงื่อนไข PUT (ซื้อลง)
-    if (rsi > 62) scorePUT += 35; // RSI overbought
-    if (newPrice >= bb.upper) scorePUT += 35; // ราคาชนกรอบบน Bollinger
-    if (isDownTrend) scorePUT += 30; // แนวโน้มใหญ่เป็นเทรนด์ลง
+    // เงื่อนไข 2: Bollinger Bands Breakout/Touch
+    if (currentPrice <= bb.lower) scoreCALL += 35;
+    else if (currentPrice >= bb.upper) scorePUT += 35;
 
-    // กรองสัญญาณที่ความมั่นใจ 70% ขึ้นไปเท่านั้น
-    if (scoreCALL >= 70 && scoreCALL > scorePUT) {
+    // เงื่อนไข 3: Trend Confirmation (EMA 50)
+    if (isUpTrend) scoreCALL += 25;
+    if (isDownTrend) scorePUT += 25;
+
+    // เงื่อนไข 4: Candle Momentum (แรงซื้อแรงขายสั้น)
+    const prevPrice = priceHistory[priceHistory.length - 5] || currentPrice;
+    if (currentPrice > prevPrice) scoreCALL += 10;
+    else if (currentPrice < prevPrice) scorePUT += 10;
+
+    // 🛡️ กรองเฉพาะสัญญาณที่มีความมั่นใจสูงกว่า 75% เท่านั้น
+    if (scoreCALL >= 75 && scoreCALL > scorePUT) {
       lockedSignal = 'CALL';
-      lockedConfidence = (scoreCALL + Math.random() * 5).toFixed(1);
-    } else if (scorePUT >= 70 && scorePUT > scoreCALL) {
+      lockedConfidence = Math.min(scoreCALL, 96.5).toFixed(1);
+    } else if (scorePUT >= 75 && scorePUT > scoreCALL) {
       lockedSignal = 'PUT';
-      lockedConfidence = (scorePUT + Math.random() * 5).toFixed(1);
+      lockedConfidence = Math.min(scorePUT, 96.5).toFixed(1);
     } else {
       lockedSignal = 'WAIT';
       lockedConfidence = '0.0';
     }
   }
 
-  // ⏳ ล็อกแสดงสัญญาณค้างไว้ 10 วินาที แล้วรีเซ็ตกลับเป็น WAIT
+  // ⏳ ล็อกแสดงสัญญาณค้างไว้ 10 วินาที
   if (exactTimeLeft <= 50.0 && exactTimeLeft > 48.5) {
     lockedSignal = 'WAIT';
     lockedConfidence = '0.0';
@@ -114,10 +156,32 @@ function processTradingEngine() {
     confidence: lockedConfidence,
     rsi: rsi,
     trend: isUpTrend ? 'BULLISH 🟢' : 'BEARISH 🔴',
-    price: newPrice.toFixed(5),
+    price: currentPrice.toFixed(5),
     timeLeft: displayTimeLeft
   };
 }
+
+// ตรวจสอบการเปลี่ยนคู่เงินจาก Telegram Mini App
+wss.on('connection', (ws) => {
+  ws.on('message', (msg) => {
+    try {
+      const data = JSON.parse(msg);
+      if (data.type === 'subscribe') {
+        let sym = 'eurusdt';
+        if (data.symbol === 'GBPUSD') sym = 'gbpusdt';
+        if (data.symbol === 'USDJPY') sym = 'usdtjpy';
+        if (data.symbol === 'BTCUSD') sym = 'btcusdt';
+        if (data.symbol === 'AUDUSD') sym = 'audusdt';
+        
+        if (sym !== currentSymbol) {
+          currentSymbol = sym;
+          priceHistory = [];
+          connectBinanceStream(sym);
+        }
+      }
+    } catch(e){}
+  });
+});
 
 setInterval(() => {
   const data = processTradingEngine();
@@ -129,4 +193,4 @@ setInterval(() => {
 }, 500);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`PRO Trading Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`PRO AI Engine running on port ${PORT}`));
