@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AI PRO SIGNAL - Smart Assistant</title>
+  <title>AI AUTO SCANNER PRO</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #060a12; color: #ffffff; padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100vh; justify-content: center; }
+    body { background-color: #060a12; color: #ffffff; padding: 16px; display: flex; flex-direction: column; gap: 14px; height: 100vh; justify-content: center; }
     
     .header { text-align: center; padding: 6px; font-weight: 900; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
     
@@ -17,42 +17,24 @@
 
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
-    .controls-card { background: #0f172a; border-radius: 12px; padding: 12px; display: flex; gap: 10px; border: 1px solid #1e293b; }
-    .select-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-    .select-group label { font-size: 11px; color: #38bdf8; font-weight: bold; }
-    select { background: #060a12; color: #ffffff; border: 1.5px solid #0284c7; padding: 8px; border-radius: 8px; font-size: 13px; outline: none; font-weight: bold; }
+    .scanner-banner { background: #0f172a; border-radius: 12px; padding: 10px; text-align: center; border: 1px solid #0284c7; color: #38bdf8; font-weight: bold; font-size: 12px; box-shadow: 0 0 12px rgba(2, 132, 199, 0.3); }
 
     .signal-card { background: #0f172a; border-radius: 16px; padding: 20px; text-align: center; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); }
-    .pair-title { font-size: 14px; color: #94a3b8; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+    .pair-title { font-size: 15px; color: #facc15; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
     
     .signal-box { 
-      font-size: 38px; 
+      font-size: 40px; 
       font-weight: 900; 
-      padding: 18px; 
+      padding: 20px; 
       border-radius: 14px; 
       text-transform: uppercase; 
       letter-spacing: 2px; 
       transition: all 0.2s ease-in-out; 
     }
     
-    /* 🔘 สแตนด์บาย */
     .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
-    /* 🟢 เขียวนีออน */
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 32px rgba(16, 185, 129, 0.9); }
-    /* 🔴 แดงนีออน */
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 32px rgba(244, 63, 94, 0.9); }
-    /* ⚠️ ไฟอารามสีแดงกระพริบเตือน Sideway */
-    .SIDEWAY { 
-      background: #7f1d1d; 
-      color: #fef08a; 
-      border: 3px solid #ef4444; 
-      animation: alertBlink 0.6s infinite alternate;
-    }
-
-    @keyframes alertBlink {
-      from { background: #7f1d1d; box-shadow: 0 0 10px #ef4444; }
-      to { background: #b91c1c; box-shadow: 0 0 35px #f87171; }
-    }
+    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 35px rgba(16, 185, 129, 0.9); }
+    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 35px rgba(244, 63, 94, 0.9); }
 
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
@@ -63,33 +45,17 @@
 <body>
 
   <div class="header">
-    ⚡ AI PRO SIGNAL <span id="netStatus" class="status-badge status-offline">● OFFLINE</span>
+    ⚡ AI AUTO SCANNER <span id="netStatus" class="status-badge status-offline">● OFFLINE</span>
   </div>
 
-  <div class="controls-card">
-    <div class="select-group">
-      <label>คู่เงิน (IQ Option)</label>
-      <select id="assetSelect" onchange="changeMarket()">
-        <option value="EURUSD">EUR/USD</option>
-        <option value="GBPUSD">GBP/USD</option>
-        <option value="USDJPY">USD/JPY</option>
-        <option value="AUDUSD">AUD/USD</option>
-        <option value="BTCUSD">BTC/USD (Crypto)</option>
-      </select>
-    </div>
-    <div class="select-group">
-      <label>กรอบเวลา (Timeframe)</label>
-      <select id="tfSelect" onchange="changeMarket()">
-        <option value="1m">1 นาที (1M)</option>
-        <option value="5m">5 นาที (5M)</option>
-      </select>
-    </div>
+  <div class="scanner-banner">
+    🔍 ระบบกำลังสแกนหาคู่เงินที่มีความแม่นยำสูงสุด (≥ 80%) อัตโนมัติ...
   </div>
 
   <div class="signal-card">
     <div class="pair-title">
-      <span id="marketLabel">EUR/USD (1M)</span>
-      <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">BULLISH 🟢</span>
+      <span>AI Selected: <strong id="marketLabel" style="color: #ffffff;">SCANNING...</strong></span>
+      <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">READY ⚡</span>
     </div>
 
     <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
@@ -133,13 +99,6 @@
       } catch (e) { console.log(e); }
     }
 
-    // เสียงอารามเตือนไซด์เวย์ (ดังแบบรวดถี่ๆ)
-    function playAlarm() {
-      playBeep(400, 0.15);
-      setTimeout(() => playBeep(350, 0.15), 180);
-      setTimeout(() => playBeep(400, 0.15), 360);
-    }
-
     let ws;
     let lastSignalState = 'WAIT';
     let warned10s = false;
@@ -167,23 +126,18 @@
         if (data.type === 'market_update') {
           const timeLeft = data.timeLeft;
 
-          // เตือนเมื่อเข้าสู่ 10 วินาทีสุดท้าย
           if (timeLeft === 10 && !warned10s) {
             playBeep(550, 0.15);
             warned10s = true;
           }
           if (timeLeft > 10) warned10s = false;
 
-          // เสียงเตือนไซด์เวย์ หรือ เข้าออเดอร์
-          if (data.signal !== lastSignalState) {
-            if (data.signal === 'SIDEWAY') {
-              playAlarm(); // เสียงอารามเตือนอันตราย
-            } else if (data.signal === 'CALL' || data.signal === 'PUT') {
-              playBeep(850, 0.3); // เสียงเตือนเข้าออเดอร์ปกติ
-            }
+          if (data.signal !== 'WAIT' && lastSignalState === 'WAIT') {
+            playBeep(850, 0.3); // เสียงเตือนเมื่อ AI เจอคู่เงินที่ใช่และส่งสัญญาณ CALL/PUT
           }
           lastSignalState = data.signal;
 
+          document.getElementById('marketLabel').innerText = data.symbol;
           document.getElementById('signalDisplay').innerText = data.signal;
           document.getElementById('signalDisplay').className = `signal-box ${data.signal}`;
           document.getElementById('confValue').innerText = `${data.confidence}%`;
@@ -199,15 +153,6 @@
       };
 
       ws.onerror = () => setNetStatus(false);
-    }
-
-    function changeMarket() {
-      const symbol = document.getElementById('assetSelect').value;
-      const tf = document.getElementById('tfSelect').value;
-      document.getElementById('marketLabel').innerText = `${symbol} (${tf.toUpperCase()})`;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'subscribe', symbol, tf }));
-      }
     }
 
     window.addEventListener('online', () => setNetStatus(true));
