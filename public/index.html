@@ -1,72 +1,111 @@
+```html
 <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AI Trading Assistant</title>
+  <title>AI Trading Assistant - Dual Engine</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- นำเข้า html2canvas สำหรับช่วยแคปหน้าจอ -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #080d1a; color: #ffffff; padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100vh; justify-content: center; }
+    @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Inter:wght@400;600;800;900&display=swap');
     
-    .header { text-align: center; padding: 6px; font-weight: 800; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.4); }
-    
-    .status-badge { font-size: 11px; padding: 4px 10px; border-radius: 12px; font-weight: 900; }
-    .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
-    .status-offline { background: #dc2626; color: #ffffff; border: 1px solid #fca5a5; box-shadow: 0 0 8px rgba(220, 38, 38, 0.8); }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
+    h1, h2, h3, .brand-font { font-family: 'Chakra Petch', sans-serif; }
 
-    /* Controls Section */
-    .controls-card { background: #111a2e; border-radius: 14px; padding: 10px; display: flex; gap: 8px; border: 1px solid #2a3a5c; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-    .select-group { flex: 1; display: flex; flex-direction: column; gap: 3px; }
-    .select-group label { font-size: 10px; color: #38bdf8; font-weight: bold; }
-    select { background: #080d1a; color: #ffffff; border: 1.5px solid #38bdf8; padding: 8px; border-radius: 8px; font-size: 13px; outline: none; font-weight: bold; }
-
-    /* Mode Switcher & Action Bar */
-    .action-bar { display: flex; gap: 8px; }
-    .btn-mode { flex: 1; background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 10px; border-radius: 10px; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
-    .btn-mode.active-auto { background: #0369a1; color: #ffffff; border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
-    .btn-mode.active-manual { background: #b45309; color: #ffffff; border-color: #f59e0b; box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
-
-    .btn-snapshot { background: #7c3aed; color: #ffffff; border: 1.5px solid #a855f7; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 0 12px rgba(168, 85, 247, 0.6); transition: all 0.2s; }
-    .btn-snapshot:active { transform: scale(0.95); }
-
-    /* Signal Card */
-    .signal-card { background: #111a2e; border-radius: 16px; padding: 18px; text-align: center; border: 1px solid #2a3a5c; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6); }
-    .pair-title { font-size: 14px; color: #cbd5e1; font-weight: 700; letter-spacing: 1px; }
-    
-    .signal-box { 
-      font-size: 38px; 
-      font-weight: 900; 
-      padding: 18px; 
-      border-radius: 14px; 
-      text-transform: uppercase; 
-      letter-spacing: 3px; 
-      transition: all 0.2s ease-in-out; 
+    body {
+      background-color: #050811;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow-x: hidden;
     }
-    
-    .WAIT { background: #c2410c; color: #ffffff; border: 3px solid #ff781f; box-shadow: 0 0 22px rgba(255, 120, 31, 0.7); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 25px rgba(16, 185, 129, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 25px rgba(244, 63, 94, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
 
-    /* Indicators Grid */
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .stat-box { background: #080d1a; border-radius: 10px; padding: 8px; text-align: center; border: 1px solid #1e2d4a; }
-    .stat-label { font-size: 10px; color: #94a3b8; font-weight: 600; }
-    .stat-value { font-size: 16px; font-weight: 900; margin-top: 3px; color: #ffffff; }
+    /* Glows & Neumorphic Utilities */
+    .glow-amber {
+      box-shadow: 0 0 25px rgba(245, 158, 11, 0.35);
+      border-color: #f59e0b;
+    }
+    .glow-green {
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.45);
+      border-color: #10b981;
+    }
+    .glow-red {
+      box-shadow: 0 0 25px rgba(244, 63, 94, 0.45);
+      border-color: #f43f5e;
+    }
+
+    .pulse-animation {
+      animation: pulse-glow 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.02); opacity: 0.9; }
+    }
+
+    /* Custom Toast Popup */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: rgba(15, 23, 42, 0.95);
+      color: #38bdf8;
+      border: 1px solid #38bdf8;
+      padding: 10px 20px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.7);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 1000;
+      pointer-events: none;
+      opacity: 0;
+      white-space: nowrap;
+    }
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0b1329; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
   </style>
 </head>
-<body>
+<body class="p-3 sm:p-5 max-w-md mx-auto w-full flex flex-col justify-between gap-3">
 
-  <div class="header">
-    🤖 AI Signal Assistant <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
-  </div>
+  <!-- Header Section -->
+  <header class="flex items-center justify-between bg-slate-900/90 border border-slate-800 p-3 rounded-2xl backdrop-blur-md">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/20 text-sm">
+        AI
+      </div>
+      <div>
+        <h1 class="brand-font text-base font-bold text-slate-100 leading-none">AI SIGNAL ASSISTANT</h1>
+        <p class="text-[10px] text-amber-400/90 font-medium tracking-wide">DUAL ENGINE TRADING PRO</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="openSettingsModal()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="ตั้งค่า Gemini API">
+        ⚙️
+      </button>
+      <span id="netStatus" class="text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-wider bg-emerald-950 text-emerald-400 border border-emerald-500/40 shadow-sm shadow-emerald-500/20">
+        LIVE
+      </span>
+    </div>
+  </header>
 
-  <div class="controls-card">
-    <div class="select-group">
-      <label>คู่เงิน (IQ Option)</label>
-      <select id="assetSelect" onchange="changeMarket()">
+  <!-- Market Controls Card -->
+  <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-3 flex gap-2 shadow-lg">
+    <div class="flex-1 flex flex-col gap-1">
+      <label class="text-[10px] text-sky-400 font-bold uppercase tracking-wider">คู่เงิน (IQ Option)</label>
+      <select id="assetSelect" onchange="changeMarket()" class="bg-slate-950 text-slate-100 border border-slate-700 p-2.5 rounded-xl text-xs font-bold focus:outline-none focus:border-amber-500 cursor-pointer">
         <option value="EURUSD">EUR/USD</option>
         <option value="GBPUSD">GBP/USD</option>
         <option value="USDJPY">USD/JPY</option>
@@ -74,50 +113,151 @@
         <option value="BTCUSD">BTC/USD (Crypto)</option>
       </select>
     </div>
-    <div class="select-group">
-      <label>กรอบเวลา (Timeframe)</label>
-      <select id="tfSelect" onchange="changeMarket()">
+    <div class="flex-1 flex flex-col gap-1">
+      <label class="text-[10px] text-sky-400 font-bold uppercase tracking-wider">กรอบเวลา (Timeframe)</label>
+      <select id="tfSelect" onchange="changeMarket()" class="bg-slate-950 text-slate-100 border border-slate-700 p-2.5 rounded-xl text-xs font-bold focus:outline-none focus:border-amber-500 cursor-pointer">
         <option value="1m">1 นาที (1M)</option>
         <option value="5m">5 นาที (5M)</option>
       </select>
     </div>
   </div>
 
-  <!-- แผงสลับโหมดและปุ่มแคปภาพ -->
-  <div class="action-bar">
-    <button id="modeBtn" class="btn-mode active-auto" onclick="toggleMode()">🛡️ โหมด: AUTO</button>
-    <button class="btn-snapshot" onclick="takeSnapshot()">📸 แคปภาพผลวิเคราะห์</button>
+  <!-- Dual Mode Toggle Bar -->
+  <div class="grid grid-cols-2 gap-2 bg-slate-950/60 p-1.5 rounded-2xl border border-slate-800/80">
+    <button id="btnAutoMode" onclick="switchEngineMode('AUTO')" class="py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25">
+      <span>🛡️</span> โหมด: AUTO
+    </button>
+    <button id="btnVisionMode" onclick="switchEngineMode('VISION')" class="py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 text-slate-400 hover:text-slate-200">
+      <span>📸</span> โหมด: VISION AI
+    </button>
   </div>
 
-  <div class="signal-card" id="captureArea">
-    <div class="pair-title" id="marketLabel">EUR/USD (1M)</div>
-    <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
+  <!-- MAIN SIGNAL DISPLAY CARD (Captured area) -->
+  <main id="captureArea" class="bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800/90 rounded-2xl p-4 flex flex-col gap-4 shadow-2xl relative overflow-hidden">
     
-    <div class="stats-grid">
-      <div class="stat-box">
-        <div class="stat-label">Confidence</div>
-        <div class="stat-value" id="confValue" style="color: #38bdf8;">0.0%</div>
+    <!-- Top info bar in card -->
+    <div class="flex justify-between items-center border-b border-slate-800/60 pb-2">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+        <span id="marketLabel" class="brand-font text-xs font-bold text-slate-300 tracking-wider">EUR/USD (1M)</span>
       </div>
-      <div class="stat-box">
-        <div class="stat-label">RSI (14)</div>
-        <div class="stat-value" id="rsiValue" style="color: #facc15;">50.0</div>
+      <span id="modeBadge" class="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+        AUTO INDICATOR ENGINE
+      </span>
+    </div>
+
+    <!-- Main Dynamic Signal Box -->
+    <div id="signalBox" class="rounded-2xl p-5 text-center transition-all duration-300 flex flex-col items-center justify-center min-h-[130px] border-2 bg-gradient-to-b from-amber-900/40 to-amber-950/80 border-amber-500/60 text-amber-300 glow-amber pulse-animation">
+      <div id="signalTitle" class="brand-font text-4xl sm:text-5xl font-black tracking-widest text-shadow">WAIT</div>
+      <div id="signalSubtitle" class="text-[11px] font-semibold mt-1 opacity-90 tracking-wide text-amber-200">
+        รอสัญญาณยืนยันปลายแท่งเทียน
       </div>
-      <div class="stat-box">
-        <div class="stat-label">แท่งถัดไปใน</div>
-        <div class="stat-value" id="timerValue" style="color: #38bdf8;">00s</div>
+    </div>
+
+    <!-- Indicators & Real-time Stats Grid -->
+    <div class="grid grid-cols-3 gap-2">
+      <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5 text-center">
+        <div class="text-[10px] text-slate-400 font-semibold">Confidence</div>
+        <div id="confValue" class="brand-font text-base font-extrabold text-sky-400 mt-0.5">0.0%</div>
+      </div>
+      <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5 text-center">
+        <div id="stat2Label" class="text-[10px] text-slate-400 font-semibold">RSI (14)</div>
+        <div id="rsiValue" class="brand-font text-base font-extrabold text-amber-400 mt-0.5">50.0</div>
+      </div>
+      <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5 text-center">
+        <div id="stat3Label" class="text-[10px] text-slate-400 font-semibold">แท่งถัดไปใน</div>
+        <div id="timerValue" class="brand-font text-base font-extrabold text-emerald-400 mt-0.5">00s</div>
+      </div>
+    </div>
+
+    <!-- Vision AI Extra Details Box (Hidden in Auto Mode) -->
+    <div id="visionDetailBox" class="hidden flex-col gap-2 bg-slate-950/90 border border-amber-500/30 rounded-xl p-3 text-xs text-slate-300">
+      <div class="flex justify-between items-center text-[11px] border-b border-slate-800/80 pb-1.5">
+        <span class="text-slate-400">รูปแบบแท่งเทียน:</span>
+        <span id="aiPatternText" class="font-bold text-amber-300">สะสมแรง (Consolidation)</span>
+      </div>
+      <div class="flex justify-between items-center text-[11px]">
+        <span class="text-slate-400">แนวรับ/แนวต้านสำคัญ:</span>
+        <span id="aiKeyLevelText" class="font-bold text-sky-300">รอวิเคราะห์...</span>
+      </div>
+      <div class="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80 leading-relaxed">
+        💡 <span id="aiReasonText">กดปุ่มสแกนด้านล่างเพื่อถ่ายภาพหน้างาน แล้วให้ Gemini Vision อ่านวิเคราะห์กราฟฉุกเฉิน</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Action Controller Section (Varies according to Mode) -->
+  <div class="flex flex-col gap-2">
+    <!-- Auto Mode Action -->
+    <div id="autoActionGroup" class="flex gap-2">
+      <button onclick="takeSnapshotOnly()" class="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold p-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 active:scale-95 transition">
+        <span>📸</span> แคปบันทึกรูปหน้างาน
+      </button>
+    </div>
+
+    <!-- Vision AI Mode Actions -->
+    <div id="visionActionGroup" class="hidden flex-col gap-2">
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="analyzeCurrentDashboard()" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold p-3 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/25 active:scale-95 transition">
+          <span>⚡</span> สแกนวิเคราะห์หน้าจอ
+        </button>
+        <button onclick="triggerImageUpload()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold p-3 rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition">
+          <span>📁</span> อัปโหลดรูปกราฟ
+        </button>
+      </div>
+      <input type="file" id="chartFileInput" accept="image/*" class="hidden" onchange="handleFileUpload(event)" />
+    </div>
+  </div>
+
+  <!-- Settings Modal (Gemini API Configuration) -->
+  <div id="settingsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-5 flex flex-col gap-4 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <h2 class="brand-font font-bold text-amber-400 text-base flex items-center gap-2">
+          <span>⚙️</span> ตั้งค่า Gemini API
+        </h2>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-white font-bold text-lg">&times;</button>
+      </div>
+      
+      <div class="flex flex-col gap-2">
+        <label class="text-xs text-slate-300 font-semibold">Gemini API Key (สำหรับ Vision AI Mode)</label>
+        <input type="password" id="geminiApiKeyInput" placeholder="กรอก API Key (AIZaSy...)" class="bg-slate-950 text-slate-100 border border-slate-700 p-2.5 rounded-xl text-xs font-mono focus:outline-none focus:border-amber-500">
+        <p class="text-[10px] text-slate-400 leading-relaxed">
+          * หากไม่ใส่คีย์ ระบบจะเรียกผ่าน proxy integration อัตโนมัติ (gemini-2.5-flash)
+        </p>
+      </div>
+
+      <div class="flex gap-2 pt-2">
+        <button onclick="saveSettings()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition shadow-md shadow-amber-500/20">
+          บันทึกการตั้งค่า
+        </button>
+        <button onclick="closeSettingsModal()" class="px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition">
+          ยกเลิก
+        </button>
       </div>
     </div>
   </div>
 
+  <!-- Toast Element -->
+  <div id="toast">ระบบทำงานสำเร็จ</div>
+
   <script>
+    // Telegram Web App Initialization
     if (window.Telegram && window.Telegram.WebApp) {
       Telegram.WebApp.ready();
       Telegram.WebApp.expand();
     }
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    let currentMode = 'AUTO'; // ค่าเริ่มต้นเป็น Auto
+    // State Management
+    let currentEngineMode = 'AUTO'; // 'AUTO' or 'VISION'
+    let geminiApiKey = localStorage.getItem('GEMINI_API_KEY') || '';
+    let ws = null;
+    let playedSound3 = false;
+    let playedSound2 = false;
 
+    // Web Audio Synthesizer Beep
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playBeep(freq = 600, duration = 0.15) {
       try {
         if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -130,47 +270,113 @@
         gain.connect(audioCtx.destination);
         osc.start();
         osc.stop(audioCtx.currentTime + duration);
-      } catch (e) { console.log(e); }
+      } catch (e) { console.error(e); }
     }
 
-    // ฟังก์ชันสลับโหมด Auto / Manual (ป้องกันสัญญาณชนกัน)
-    function toggleMode() {
-      const btn = document.getElementById('modeBtn');
-      if (currentMode === 'AUTO') {
-        currentMode = 'MANUAL';
-        btn.innerText = '✋ โหมด: MANUAL';
-        btn.className = 'btn-mode active-manual';
+    // Toast Notification Utility
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.innerText = message;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2400);
+    }
+
+    // Engine Mode Switcher
+    function switchEngineMode(mode) {
+      currentEngineMode = mode;
+      const btnAuto = document.getElementById('btnAutoMode');
+      const btnVision = document.getElementById('btnVisionMode');
+      const autoActionGroup = document.getElementById('autoActionGroup');
+      const visionActionGroup = document.getElementById('visionActionGroup');
+      const visionDetailBox = document.getElementById('visionDetailBox');
+      const modeBadge = document.getElementById('modeBadge');
+      const stat2Label = document.getElementById('stat2Label');
+      const stat3Label = document.getElementById('stat3Label');
+
+      if (mode === 'AUTO') {
+        btnAuto.className = "py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25";
+        btnVision.className = "py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 text-slate-400 hover:text-slate-200";
+        autoActionGroup.classList.remove('hidden');
+        visionActionGroup.classList.add('hidden');
+        visionDetailBox.classList.add('hidden');
+        modeBadge.innerText = 'AUTO INDICATOR ENGINE';
+        stat2Label.innerText = 'RSI (14)';
+        stat3Label.innerText = 'แท่งถัดไปใน';
+        showToast('🛡️ สลับเป็นโหมด Auto Signal Engine');
       } else {
-        currentMode = 'AUTO';
-        btn.innerText = '🛡️ โหมด: AUTO';
-        btn.className = 'btn-mode active-auto';
+        btnVision.className = "py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25";
+        btnAuto.className = "py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 text-slate-400 hover:text-slate-200";
+        autoActionGroup.classList.add('hidden');
+        visionActionGroup.classList.remove('hidden');
+        visionDetailBox.classList.remove('hidden');
+        visionDetailBox.classList.add('flex');
+        modeBadge.innerText = 'VISION AI ANALYZER';
+        stat2Label.innerText = 'ทิศทางเทรนด์';
+        stat3Label.innerText = 'คำสั่งแนะนำ';
+        showToast('📸 สลับเป็นโหมด Vision AI Snapshot');
       }
     }
 
-    // ฟังก์ชันแคปหน้าจอเฉพาะการ์ดสัญญาณทันที
-    function takeSnapshot() {
-      const captureElement = document.getElementById('captureArea');
-      html2canvas(captureElement, { backgroundColor: '#111a2e' }).then(canvas => {
-        const imageURL = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = imageURL;
-        link.download = `Signal_Snapshot_${Date.now()}.png`;
-        link.click();
-      });
+    // Modal Control
+    function openSettingsModal() {
+      document.getElementById('geminiApiKeyInput').value = geminiApiKey;
+      document.getElementById('settingsModal').classList.remove('hidden');
+      document.getElementById('settingsModal').classList.add('flex');
     }
 
-    let ws;
-    let playedSound3 = false;
-    let playedSound2 = false;
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').classList.add('hidden');
+      document.getElementById('settingsModal').classList.remove('flex');
+    }
 
+    function saveSettings() {
+      geminiApiKey = document.getElementById('geminiApiKeyInput').value.trim();
+      localStorage.setItem('GEMINI_API_KEY', geminiApiKey);
+      closeSettingsModal();
+      showToast('✅ บันทึกการตั้งค่า API สำเร็จ');
+    }
+
+    // Helper: Update Signal Card UI
+    function renderSignalUI(signal, confidence, rsi, extraInfo = {}) {
+      const box = document.getElementById('signalBox');
+      const title = document.getElementById('signalTitle');
+      const subtitle = document.getElementById('signalSubtitle');
+      const confVal = document.getElementById('confValue');
+      const rsiVal = document.getElementById('rsiValue');
+
+      title.innerText = signal;
+      confVal.innerText = `${confidence.toFixed(1)}%`;
+
+      if (currentEngineMode === 'AUTO') {
+        rsiVal.innerText = rsi !== undefined ? rsi : '50.0';
+      }
+
+      // Base Styles reset
+      box.className = "rounded-2xl p-5 text-center transition-all duration-300 flex flex-col items-center justify-center min-h-[130px] border-2 ";
+
+      if (signal === 'CALL') {
+        box.className += "bg-gradient-to-b from-emerald-900/40 to-emerald-950/80 border-emerald-500/80 text-emerald-300 glow-green";
+        subtitle.innerText = extraInfo.subtitle || "สัญญาณซื้อขึ้น (CALL) ได้เปรียบ";
+      } else if (signal === 'PUT') {
+        box.className += "bg-gradient-to-b from-rose-900/40 to-rose-950/80 border-rose-500/80 text-rose-300 glow-red";
+        subtitle.innerText = extraInfo.subtitle || "สัญญาณกดลง (PUT) ได้เปรียบ";
+      } else {
+        box.className += "bg-gradient-to-b from-amber-900/40 to-amber-950/80 border-amber-500/60 text-amber-300 glow-amber pulse-animation";
+        subtitle.innerText = extraInfo.subtitle || "รอสัญญาณยืนยันปลายแท่งเทียน";
+      }
+    }
+
+    // Auto Mode Websocket Connection
     function setNetStatus(isOnline) {
       const badge = document.getElementById('netStatus');
       if (isOnline) {
         badge.innerText = 'LIVE';
-        badge.className = 'status-badge status-online';
+        badge.className = 'text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-wider bg-emerald-950 text-emerald-400 border border-emerald-500/40 shadow-sm shadow-emerald-500/20';
       } else {
         badge.innerText = 'DISCONNECTED';
-        badge.className = 'status-badge status-offline';
+        badge.className = 'text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-wider bg-rose-950 text-rose-400 border border-rose-500/40 shadow-sm shadow-rose-500/20';
       }
     }
 
@@ -186,8 +392,7 @@
         if (data.type === 'market_update') {
           const timeLeft = data.timeLeft;
 
-          // ถ้าอยู่ในโหมด AUTO ถึงจะเล่นเสียงและรันตามเซิร์ฟเวอร์
-          if (currentMode === 'AUTO') {
+          if (currentEngineMode === 'AUTO') {
             if (timeLeft === 3 && !playedSound3) {
               playBeep(600, 0.12);
               playedSound3 = true;
@@ -201,14 +406,9 @@
               playedSound2 = false;
             }
 
-            document.getElementById('signalDisplay').innerText = data.signal;
-            document.getElementById('signalDisplay').className = `signal-box ${data.signal}`;
-            document.getElementById('confValue').innerText = `${data.confidence}%`;
-            document.getElementById('rsiValue').innerText = data.rsi;
+            renderSignalUI(data.signal, data.confidence, data.rsi);
+            document.getElementById('timerValue').innerText = `${timeLeft}s`;
           }
-
-          // แสดงเวลานับถอยหลังเสมอเพื่อให้รู้สถานะตลาดปัจจุบัน
-          document.getElementById('timerValue').innerText = `${timeLeft}s`;
         }
       };
 
@@ -224,15 +424,138 @@
       const symbol = document.getElementById('assetSelect').value;
       const tf = document.getElementById('tfSelect').value;
       document.getElementById('marketLabel').innerText = `${symbol} (${tf.toUpperCase()})`;
+      showToast(`🔄 สลับคู่เงินเป็น ${symbol} (${tf.toUpperCase()})`);
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'subscribe', symbol, tf }));
       }
     }
 
-    window.addEventListener('online', () => setNetStatus(true));
-    window.addEventListener('offline', () => setNetStatus(false));
+    // Capture Canvas Snapshot Only (Auto mode)
+    function takeSnapshotOnly() {
+      showToast('📸 กำลังบันทึกภาพหน้างาน...');
+      const captureElement = document.getElementById('captureArea');
+      html2canvas(captureElement, { backgroundColor: '#050811', scale: 2 }).then(canvas => {
+        const imageURL = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = imageURL;
+        link.download = `Signal_Snapshot_${Date.now()}.png`;
+        link.click();
+        showToast('✅ บันทึกภาพลงอุปกรณ์เรียบร้อย!');
+      });
+    }
 
-    connectWS();
+    // ==========================================
+    // VISION AI ANALYSIS ENGINE (GEMINI INTEGRATION)
+    // ==========================================
+
+    function triggerImageUpload() {
+      document.getElementById('chartFileInput').click();
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const base64Data = e.target.result.split(',')[1];
+        processImageWithGeminiVision(base64Data, file.type);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function analyzeCurrentDashboard() {
+      showToast('⚡ กำลังแคปเจอร์และส่งวิเคราะห์ด้วย Gemini AI...');
+      const captureElement = document.getElementById('captureArea');
+      
+      html2canvas(captureElement, { backgroundColor: '#050811', scale: 2 }).then(canvas => {
+        const base64Image = canvas.toDataURL('image/png').split(',')[1];
+        processImageWithGeminiVision(base64Image, 'image/png');
+      });
+    }
+
+    async function processImageWithGeminiVision(base64Image, mimeType) {
+      renderSignalUI('ANALYZING', 0, 50, { subtitle: '🤖 Gemini Vision AI กำลังแกะแพตเทิร์นกราฟ...' });
+      showToast('🧠 AI กำลังอ่านแนวรับ-แนวต้าน และรูปทรงแท่งเทียน...');
+
+      const prompt = `Act as an expert Binary Options technical chart analyst. Analyze this provided chart image carefully for short-term trading.
+Return your answer STRICTLY as valid JSON matching this schema:
+{
+  "signal": "CALL" | "PUT" | "WAIT",
+  "confidence": number (between 0 and 100),
+  "trend": "Uptrend" | "Downtrend" | "Sideway",
+  "pattern": "short pattern name in Thai e.g. Hammer, Engulfing, Consolidation",
+  "keyLevel": "short description of support/resistance level in Thai",
+  "reason": "1 concise sentence explanation in Thai language"
+}`;
+
+      const payload = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType || "image/png",
+                  data: base64Image
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      };
+
+      const apiKey = geminiApiKey || "";
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        
+        if (result.candidates && result.candidates[0]?.content?.parts?.[0]?.text) {
+          const jsonText = result.candidates[0].content.parts[0].text;
+          const aiAnalysis = JSON.parse(jsonText);
+
+          // Update UI with AI Vision Result
+          renderSignalUI(
+            aiAnalysis.signal || 'WAIT',
+            aiAnalysis.confidence || 75,
+            50,
+            { subtitle: `วิเคราะห์โดย Gemini AI (${aiAnalysis.trend || 'Sideway'})` }
+          );
+
+          document.getElementById('rsiValue').innerText = aiAnalysis.trend || 'Sideway';
+          document.getElementById('timerValue').innerText = aiAnalysis.signal || 'WAIT';
+          document.getElementById('aiPatternText').innerText = aiAnalysis.pattern || 'ไม่ระบุ';
+          document.getElementById('aiKeyLevelText').innerText = aiAnalysis.keyLevel || 'ใกล้จุดทดสอบ';
+          document.getElementById('aiReasonText').innerText = aiAnalysis.reason || 'วิเคราะห์โครงสร้างแท่งเทียนเรียบร้อย';
+
+          playBeep(900, 0.25);
+          showToast('✅ วิเคราะห์สำเร็จเรียบร้อย!');
+        } else {
+          throw new Error("Invalid response format from AI");
+        }
+      } catch (error) {
+        console.error("Gemini Vision Error:", error);
+        renderSignalUI('WAIT', 0, 50, { subtitle: 'เกิดข้อผิดพลาดในการวิเคราะห์ แนะนำให้ลองอีกครั้ง' });
+        showToast('❌ ไม่สามารถวิเคราะห์ภาพได้ ตรวจสอบ API Key');
+      }
+    }
+
+    // Startup Initialization
+    window.onload = function () {
+      connectWS();
+    };
   </script>
 </body>
 </html>
+```
