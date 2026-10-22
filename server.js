@@ -55,17 +55,17 @@ function calculateEMA(prices, period) {
 function calculateBB(prices, period = 20, mult = 2) {
   if (prices.length < period) {
     const p = prices[prices.length - 1] || 0;
-    return { upper: p, middle: p, lower: p };
+    return { upper: p, middle: p, lower: p, bandwidth: 0 };
   }
   const slice = prices.slice(-period);
   const sma = slice.reduce((a, b) => a + b, 0) / period;
   const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;
   const stdDev = Math.sqrt(variance);
-  return {
-    upper: sma + (mult * stdDev),
-    middle: sma,
-    lower: sma - (mult * stdDev)
-  };
+  const upper = sma + (mult * stdDev);
+  const lower = sma - (mult * stdDev);
+  const bandwidth = ((upper - lower) / sma) * 100; // คำนวณความกว้างกรอบราคา
+  
+  return { upper, middle: sma, lower, bandwidth };
 }
 
 function calculateRSI(prices, period = 14) {
@@ -95,6 +95,7 @@ function processTradingEngine() {
   }
 
   const currentPrice = priceHistory[priceHistory.length - 1];
+  const prevPrice = priceHistory[priceHistory.length - 2] || currentPrice;
   const rsi = parseFloat(calculateRSI(priceHistory).toFixed(1));
   const ema50 = calculateEMA(priceHistory, 50);
   const bb = calculateBB(priceHistory);
@@ -102,36 +103,44 @@ function processTradingEngine() {
   const isUpTrend = currentPrice > ema50;
   const isDownTrend = currentPrice < ema50;
 
-  // 🎯 ล็อกจังหวะคำนวณในช่วง 0.5 วินาทีสุดท้ายเป๊ะๆ ตามที่คุณต้องการ
+  // 🚨 ตรวจจับภาวะ Sideway (กรอบ Bollinger บีบแคบมาก)
+  const isSideway = bb.bandwidth < 0.08 || (rsi >= 45 && rsi <= 55 && Math.abs(currentPrice - ema50) < 0.0001);
+
+  // 🎯 ประมวลผลช่วง 0.5 วินาทีสุดท้ายเป๊ะๆ
   if (exactTimeLeft <= 0.6 && exactTimeLeft > 0.1) {
-    let scoreCALL = 0;
-    let scorePUT = 0;
-
-    // กรอง RSI ให้ปลอดภัยยิ่งขึ้น
-    if (rsi <= 35) scoreCALL += 40;
-    else if (rsi >= 65) scorePUT += 40;
-
-    // เช็ก Bollinger Bands
-    if (currentPrice <= bb.lower) scoreCALL += 35;
-    else if (currentPrice >= bb.upper) scorePUT += 35;
-
-    // เช็กเทรนด์ EMA 50 เพื่อไม่ให้สวนเทรนด์รุนแรง
-    if (isUpTrend && rsi < 70) scoreCALL += 25;
-    if (isDownTrend && rsi > 30) scorePUT += 25;
-
-    if (scoreCALL >= 65 && scoreCALL > scorePUT) {
-      lockedSignal = 'CALL';
-      lockedConfidence = Math.min(scoreCALL, 95.0).toFixed(1);
-    } else if (scorePUT >= 65 && scorePUT > scoreCALL) {
-      lockedSignal = 'PUT';
-      lockedConfidence = Math.min(scorePUT, 95.0).toFixed(1);
-    } else {
-      lockedSignal = 'WAIT';
+    if (isSideway) {
+      lockedSignal = 'SIDEWAY';
       lockedConfidence = '0.0';
+    } else {
+      let scoreCALL = 0;
+      let scorePUT = 0;
+
+      if (isUpTrend) {
+        scoreCALL += 40;
+        if (rsi > 45 && rsi < 75) scoreCALL += 30;
+        if (currentPrice > prevPrice) scoreCALL += 30;
+      }
+
+      if (isDownTrend) {
+        scorePUT += 40;
+        if (rsi < 55 && rsi > 25) scorePUT += 30;
+        if (currentPrice < prevPrice) scorePUT += 30;
+      }
+
+      if (scoreCALL >= 70 && scoreCALL > scorePUT) {
+        lockedSignal = 'CALL';
+        lockedConfidence = Math.min(scoreCALL, 95.0).toFixed(1);
+      } else if (scorePUT >= 70 && scorePUT > scoreCALL) {
+        lockedSignal = 'PUT';
+        lockedConfidence = Math.min(scorePUT, 95.0).toFixed(1);
+      } else {
+        lockedSignal = 'WAIT';
+        lockedConfidence = '0.0';
+      }
     }
   }
 
-  // ค้างสัญญาณไว้ 30 วินาทีในแท่งใหม่ แล้วรีเซ็ตกลับเป็น WAIT
+  // ค้างสัญญาณไว้ 30 วินาที แล้วรีเซ็ต
   if (exactTimeLeft <= 30.0 && exactTimeLeft > 28.5 && lockedSignal !== 'WAIT') {
     lockedSignal = 'WAIT';
     lockedConfidence = '0.0';
@@ -142,7 +151,7 @@ function processTradingEngine() {
     signal: lockedSignal,
     confidence: lockedConfidence,
     rsi: rsi,
-    trend: isUpTrend ? 'BULLISH 🟢' : 'BEARISH 🔴',
+    trend: isSideway ? 'SIDEWAY ⚠️' : (isUpTrend ? 'BULLISH 🟢' : 'BEARISH 🔴'),
     price: currentPrice.toFixed(5),
     timeLeft: displayTimeLeft
   };
@@ -176,7 +185,7 @@ setInterval(() => {
       client.send(JSON.stringify(data));
     }
   });
-}, 200); // เพิ่มความถี่ในการเช็กเสี้ยววินาทีให้แม่นยำขึ้น
+}, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Sideway Aware Engine running on port ${PORT}`));
