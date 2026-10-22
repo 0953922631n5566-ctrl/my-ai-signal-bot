@@ -123,6 +123,7 @@
 
     let ws;
     let lastSignalState = 'WAIT';
+    let warned10s = false;
 
     function setNetStatus(isOnline) {
       const badge = document.getElementById('netStatus');
@@ -145,7 +146,18 @@
         setNetStatus(true);
         const data = JSON.parse(event.data);
         if (data.type === 'market_update') {
-          // ส่งเสียงเตือนเฉพาะตอนที่เปลี่ยนจาก WAIT เป็น CALL หรือ PUT (สัญญาณเข้าออเดอร์มาใหม่)
+          const timeLeft = data.timeLeft;
+
+          // เสียงเตือนตอนเริ่มเข้าสู่ 10 วินาทีสุดท้าย (เพื่อให้เตรียมตัวมองจอ)
+          if (timeLeft === 10 && !warned10s) {
+            playBeep(550, 0.15);
+            warned10s = true;
+          }
+          if (timeLeft > 10) {
+            warned10s = false;
+          }
+
+          // เสียงเตือนหลักเมื่อสัญญาณ CALL หรือ PUT ปรากฏขึ้นใหม่
           if (data.signal !== 'WAIT' && lastSignalState === 'WAIT') {
             playBeep(850, 0.3);
           }
@@ -156,7 +168,7 @@
           document.getElementById('confValue').innerText = `${data.confidence}%`;
           document.getElementById('rsiValue').innerText = data.rsi;
           document.getElementById('trendLabel').innerText = data.trend;
-          document.getElementById('timerValue').innerText = `${data.timeLeft}s`;
+          document.getElementById('timerValue').innerText = `${timeLeft}s`;
         }
       };
 
