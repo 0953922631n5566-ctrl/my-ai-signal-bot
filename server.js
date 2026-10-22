@@ -8,10 +8,8 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// สับเปลี่ยนใช้ GEMINI_API_KEY จาก Environment Variable
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY');
 
-// API Endpoint สำหรับรับรูปภาพไปวิเคราะห์ด้วย Gemini Vision
 app.post('/api/analyze-vision', async (req, res) => {
   try {
     const { image } = req.body;
@@ -33,7 +31,6 @@ app.post('/api/analyze-vision', async (req, res) => {
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
     
-    // ดึง JSON ออกจากคำตอบ
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsedData = JSON.parse(jsonMatch[0]);
@@ -50,12 +47,10 @@ app.post('/api/analyze-vision', async (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// ระบบรัน WebSocket คำนวณสัญญาณ Auto ตามปกติ...
 let currentSymbol = 'EURUSD';
 let currentTF = '1m';
 
 wss.on('connection', (ws) => {
-  console.log('Client connected');
   ws.on('message', (msg) => {
     try {
       const data = JSON.parse(msg);
