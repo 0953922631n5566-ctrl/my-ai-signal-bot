@@ -5,50 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>AI Signal Assistant</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #080d1a; color: #ffffff; padding: 14px; display: flex; flex-direction: column; gap: 12px; height: 100vh; justify-content: center; position: relative; }
     
-    .header { text-align: center; padding: 6px; font-weight: 800; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    /* ขยายเต็มจอและจัดหน้าจอให้ชิดขอบพอดีมือถือ */
+    body { 
+      background-color: #080d1a; 
+      color: #ffffff; 
+      padding: 10px; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 10px; 
+      min-height: 100vh; 
+      justify-content: space-between; 
+    }
     
-    .status-badge { font-size: 11px; padding: 4px 10px; border-radius: 12px; font-weight: 900; }
+    .header { text-align: center; padding: 4px; font-weight: 800; font-size: 17px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    
+    .status-badge { font-size: 11px; padding: 3px 8px; border-radius: 12px; font-weight: 900; }
     .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
     .status-offline { background: #dc2626; color: #ffffff; border: 1px solid #fca5a5; box-shadow: 0 0 8px rgba(220, 38, 38, 0.8); }
 
-    .controls-card { background: #111a2e; border-radius: 14px; padding: 10px; display: flex; gap: 8px; border: 1px solid #2a3a5c; }
-    .select-group { flex: 1; display: flex; flex-direction: column; gap: 3px; }
-    .select-group label { font-size: 10px; color: #38bdf8; font-weight: bold; }
-    select { background: #080d1a; color: #ffffff; border: 1.5px solid #38bdf8; padding: 8px; border-radius: 8px; font-size: 13px; outline: none; font-weight: bold; }
+    .controls-card { background: #111a2e; border-radius: 12px; padding: 8px; display: flex; gap: 8px; border: 1px solid #2a3a5c; }
+    .select-group { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .select-group label { font-size: 9px; color: #38bdf8; font-weight: bold; }
+    select { background: #080d1a; color: #ffffff; border: 1.5px solid #38bdf8; padding: 6px; border-radius: 6px; font-size: 12px; outline: none; font-weight: bold; }
 
-    .signal-card { background: #111a2e; border-radius: 16px; padding: 18px; text-align: center; border: 1px solid #2a3a5c; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6); }
-    .pair-title { font-size: 14px; color: #cbd5e1; font-weight: 700; }
+    .signal-card { 
+      background: #111a2e; 
+      border-radius: 14px; 
+      padding: 14px; 
+      text-align: center; 
+      border: 1px solid #2a3a5c; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 12px; 
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6); 
+      flex: 1;
+      justify-content: center;
+    }
+    .pair-title { font-size: 13px; color: #cbd5e1; font-weight: 700; }
     
     .signal-box { 
-      font-size: 38px; 
+      font-size: 36px; 
       font-weight: 900; 
-      padding: 18px; 
-      border-radius: 14px; 
+      padding: 16px; 
+      border-radius: 12px; 
       text-transform: uppercase; 
-      letter-spacing: 3px; 
+      letter-spacing: 2px; 
       transition: all 0.2s ease-in-out; 
     }
     
-    .WAIT { background: #c2410c; color: #ffffff; border: 3px solid #ff781f; box-shadow: 0 0 22px rgba(255, 120, 31, 0.7); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 25px rgba(16, 185, 129, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 25px rgba(244, 63, 94, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
+    .WAIT { background: #c2410c; color: #ffffff; border: 3px solid #ff781f; box-shadow: 0 0 20px rgba(255, 120, 31, 0.7); text-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
+    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 22px rgba(16, 185, 129, 0.9); text-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
+    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 22px rgba(244, 63, 94, 0.9); text-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
 
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .stat-box { background: #080d1a; border-radius: 10px; padding: 8px; text-align: center; border: 1px solid #1e2d4a; }
-    .stat-label { font-size: 10px; color: #94a3b8; font-weight: 600; }
-    .stat-value { font-size: 16px; font-weight: 900; margin-top: 3px; color: #ffffff; }
-
-    .btn-action { width: 100%; background: #7c3aed; color: #ffffff; border: 1.5px solid #a855f7; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: bold; cursor: pointer; box-shadow: 0 0 12px rgba(168, 85, 247, 0.6); }
+    .stat-box { background: #080d1a; border-radius: 8px; padding: 8px; text-align: center; border: 1px solid #1e2d4a; }
+    .stat-label { font-size: 9px; color: #94a3b8; font-weight: 600; }
+    .stat-value { font-size: 15px; font-weight: 900; margin-top: 2px; color: #ffffff; }
 
     #toast {
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px);
       background: rgba(15, 23, 42, 0.95); color: #38bdf8; border: 1px solid #38bdf8;
-      padding: 10px 20px; border-radius: 20px; font-size: 13px; font-weight: bold;
+      padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold;
       transition: transform 0.3s ease; z-index: 1000; pointer-events: none;
     }
     #toast.show { transform: translateX(-50%) translateY(0); }
@@ -100,8 +120,6 @@
     </div>
   </div>
 
-  <button class="btn-action" onclick="handleAction()">📸 แคปบันทึกรูปหน้างาน</button>
-
   <div id="toast">ระบบทำงานสำเร็จ</div>
 
   <script>
@@ -132,19 +150,6 @@
         osc.start();
         osc.stop(audioCtx.currentTime + duration);
       } catch (e) { console.log(e); }
-    }
-
-    function handleAction() {
-      showToast('📸 กำลังบันทึกภาพหน้าจอ...');
-      const captureElement = document.getElementById('captureArea');
-      html2canvas(captureElement, { backgroundColor: '#111a2e' }).then(canvas => {
-        const imageURL = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = imageURL;
-        link.download = `Trading_Snapshot_${Date.now()}.png`;
-        link.click();
-        showToast('✅ บันทึกภาพลงมือถือสำเร็จ!');
-      });
     }
 
     let ws;
