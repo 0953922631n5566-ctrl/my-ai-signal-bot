@@ -35,8 +35,8 @@
       transition: all 0.2s ease-in-out; 
     }
     
-    /* 💥 ส้มอำพัน Amber Gold Neon */
-    .WAIT { background: #c2410c; color: #ffffff; border: 3px solid #ff781f; box-shadow: 0 0 25px rgba(255, 120, 31, 0.75); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
+    /* 🔘 สแตนด์บาย: สีพื้นหลังปกติ เรียบหรู ไม่แสบตา */
+    .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; box-shadow: none; text-shadow: none; }
     /* 🟢 เขียวนีออนสด */
     .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 32px rgba(16, 185, 129, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
     /* 🔴 แดงนีออนสด */
@@ -106,14 +106,14 @@
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     
-    function playBeep(freq = 600, duration = 0.15) {
+    function playBeep(freq = 800, duration = 0.25) {
       try {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = 'sine';
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start();
@@ -122,8 +122,7 @@
     }
 
     let ws;
-    let playedSound3 = false;
-    let playedSound2 = false;
+    let lastSignalState = 'WAIT';
 
     function setNetStatus(isOnline) {
       const badge = document.getElementById('netStatus');
@@ -146,27 +145,18 @@
         setNetStatus(true);
         const data = JSON.parse(event.data);
         if (data.type === 'market_update') {
-          const timeLeft = data.timeLeft;
-
-          if (timeLeft === 3 && !playedSound3) {
-            playBeep(600, 0.12);
-            playedSound3 = true;
+          // ส่งเสียงเตือนเฉพาะตอนที่เปลี่ยนจาก WAIT เป็น CALL หรือ PUT (สัญญาณเข้าออเดอร์มาใหม่)
+          if (data.signal !== 'WAIT' && lastSignalState === 'WAIT') {
+            playBeep(850, 0.3);
           }
-          if (timeLeft === 2 && !playedSound2) {
-            playBeep(900, 0.18);
-            playedSound2 = true;
-          }
-          if (timeLeft > 3) {
-            playedSound3 = false;
-            playedSound2 = false;
-          }
+          lastSignalState = data.signal;
 
           document.getElementById('signalDisplay').innerText = data.signal;
           document.getElementById('signalDisplay').className = `signal-box ${data.signal}`;
           document.getElementById('confValue').innerText = `${data.confidence}%`;
           document.getElementById('rsiValue').innerText = data.rsi;
           document.getElementById('trendLabel').innerText = data.trend;
-          document.getElementById('timerValue').innerText = `${timeLeft}s`;
+          document.getElementById('timerValue').innerText = `${data.timeLeft}s`;
         }
       };
 
