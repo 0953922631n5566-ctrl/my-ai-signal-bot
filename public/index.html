@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AI Signal Assistant - Dual Engine Pro</title>
+  <title>AI Signal Assistant - Vision Engine Pro</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
@@ -21,7 +21,6 @@
     .select-group label { font-size: 10px; color: #38bdf8; font-weight: bold; }
     select { background: #080d1a; color: #ffffff; border: 1.5px solid #38bdf8; padding: 8px; border-radius: 8px; font-size: 13px; outline: none; font-weight: bold; }
 
-    /* Action Bar Mode Selector */
     .action-bar { display: flex; gap: 8px; }
     .btn-mode { flex: 1; background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 10px; border-radius: 10px; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
     .btn-mode.active-auto { background: #0369a1; color: #ffffff; border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
@@ -48,6 +47,19 @@
     .stat-box { background: #080d1a; border-radius: 10px; padding: 8px; text-align: center; border: 1px solid #1e2d4a; }
     .stat-label { font-size: 10px; color: #94a3b8; font-weight: 600; }
     .stat-value { font-size: 16px; font-weight: 900; margin-top: 3px; color: #ffffff; }
+
+    /* กล่องแสดงผลวิเคราะห์จาก AI Vision */
+    .analysis-box {
+      background: #080d1a;
+      border: 1px solid #38bdf8;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 12px;
+      color: #e2e8f0;
+      text-align: left;
+      line-height: 1.4;
+      display: none;
+    }
 
     .btn-action { width: 100%; background: #7c3aed; color: #ffffff; border: 1.5px solid #a855f7; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: bold; cursor: pointer; box-shadow: 0 0 12px rgba(168, 85, 247, 0.6); }
 
@@ -109,9 +121,13 @@
         <div class="stat-value" id="timerValue" style="color: #38bdf8;">00s</div>
       </div>
     </div>
+
+    <div class="analysis-box" id="analysisResult">
+      💡 <strong>AI Analysis:</strong> กดปุ่มวิเคราะห์ภาพด้านล่างเพื่อประมวลผลกราฟหน้างาน...
+    </div>
   </div>
 
-  <button class="btn-action" onclick="handleAction()">📸 แคปบันทึกรูปหน้างาน</button>
+  <button class="btn-action" id="mainActionButton" onclick="handleAction()">📸 แคปและวิเคราะห์ด้วย AI Vision</button>
 
   <div id="toast">ระบบทำงานสำเร็จ</div>
 
@@ -150,29 +166,58 @@
       currentMode = mode;
       const autoBtn = document.getElementById('btnAutoMode');
       const visionBtn = document.getElementById('btnVisionMode');
+      const analysisBox = document.getElementById('analysisResult');
 
       if (mode === 'AUTO') {
         autoBtn.className = 'btn-mode active-auto';
         visionBtn.className = 'btn-mode';
+        analysisBox.style.display = 'none';
         showToast('🛡️ สลับเป็นโหมด AUTO อัตโนมัติ');
       } else {
         autoBtn.className = 'btn-mode';
         visionBtn.className = 'btn-mode active-vision';
+        analysisBox.style.display = 'block';
         showToast('📸 สลับเป็นโหมด VISION AI สแกนภาพ');
       }
     }
 
-    function handleAction() {
-      showToast('📸 กำลังบันทึกภาพหน้าจอ...');
-      const captureElement = document.getElementById('captureArea');
-      html2canvas(captureElement, { backgroundColor: '#111a2e' }).then(canvas => {
-        const imageURL = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = imageURL;
-        link.download = `Trading_Snapshot_${Date.now()}.png`;
-        link.click();
-        showToast('✅ บันทึกภาพลงมือถือสำเร็จ!');
-      });
+    // ฟังก์ชันแคปภาพและส่งวิเคราะห์ด้วย AI
+    async function handleAction() {
+      showToast('🔍 กำลังแคปภาพและส่งให้ AI Vision วิเคราะห์...');
+      
+      const captureElement = document.body; // แคปภาพทั้งหน้าจอรวมถึงกราฟด้านหลัง
+      const canvas = await html2canvas(captureElement, { backgroundColor: '#080d1a' });
+      const imageBase64 = canvas.toDataURL('image/png').split(',')[1];
+
+      // แสดงสถานะกำลังประมวลผล
+      document.getElementById('analysisResult').innerHTML = '⏳ <strong>AI Vision:</strong> กำลังแกะเทรนด์และแท่งเทียน... โปรดรอสักครู่';
+
+      try {
+        const response = await fetch('/api/analyze-vision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: imageBase64 })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          // อัปเดตสัญญาณบนหน้าจอ
+          document.getElementById('signalDisplay').innerText = result.signal;
+          document.getElementById('signalDisplay').className = `signal-box ${result.signal}`;
+          document.getElementById('confValue').innerText = `${result.confidence}%`;
+          document.getElementById('analysisResult').innerHTML = `💡 <strong>ผลวิเคราะห์:</strong> ${result.reason}`;
+          
+          if (result.signal === 'CALL') playBeep(900, 0.3);
+          if (result.signal === 'PUT') playBeep(400, 0.3);
+
+          showToast('✅ AI วิเคราะห์ภาพเสร็จสิ้น!');
+        } else {
+          showToast('⚠️ AI ไม่สามารถวิเคราะห์ภาพได้ ลองใหม่อีกครั้ง');
+        }
+      } catch (err) {
+        showToast('❌ เกิดข้อผิดพลาดในการเชื่อมต่อ AI');
+      }
     }
 
     let ws;
