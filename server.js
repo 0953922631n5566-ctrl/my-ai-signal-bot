@@ -102,29 +102,29 @@ function processTradingEngine() {
   const isUpTrend = currentPrice > ema50;
   const isDownTrend = currentPrice < ema50;
 
-  if (exactTimeLeft <= 5.0 && exactTimeLeft > 0.5) {
+  // 🎯 ล็อกจังหวะคำนวณในช่วง 0.5 วินาทีสุดท้ายเป๊ะๆ ตามที่คุณต้องการ
+  if (exactTimeLeft <= 0.6 && exactTimeLeft > 0.1) {
     let scoreCALL = 0;
     let scorePUT = 0;
 
-    if (rsi <= 40) scoreCALL += 35;
-    else if (rsi >= 60) scorePUT += 35;
+    // กรอง RSI ให้ปลอดภัยยิ่งขึ้น
+    if (rsi <= 35) scoreCALL += 40;
+    else if (rsi >= 65) scorePUT += 40;
 
+    // เช็ก Bollinger Bands
     if (currentPrice <= bb.lower) scoreCALL += 35;
     else if (currentPrice >= bb.upper) scorePUT += 35;
 
-    if (isUpTrend) scoreCALL += 25;
-    if (isDownTrend) scorePUT += 25;
+    // เช็กเทรนด์ EMA 50 เพื่อไม่ให้สวนเทรนด์รุนแรง
+    if (isUpTrend && rsi < 70) scoreCALL += 25;
+    if (isDownTrend && rsi > 30) scorePUT += 25;
 
-    const prevPrice = priceHistory[priceHistory.length - 3] || currentPrice;
-    if (currentPrice > prevPrice) scoreCALL += 15;
-    else if (currentPrice < prevPrice) scorePUT += 15;
-
-    if (scoreCALL >= 55 && scoreCALL > scorePUT) {
+    if (scoreCALL >= 65 && scoreCALL > scorePUT) {
       lockedSignal = 'CALL';
-      lockedConfidence = Math.min(scoreCALL, 94.0).toFixed(1);
-    } else if (scorePUT >= 55 && scorePUT > scoreCALL) {
+      lockedConfidence = Math.min(scoreCALL, 95.0).toFixed(1);
+    } else if (scorePUT >= 65 && scorePUT > scoreCALL) {
       lockedSignal = 'PUT';
-      lockedConfidence = Math.min(scorePUT, 94.0).toFixed(1);
+      lockedConfidence = Math.min(scorePUT, 95.0).toFixed(1);
     } else {
       lockedSignal = 'WAIT';
       lockedConfidence = '0.0';
@@ -176,7 +176,7 @@ setInterval(() => {
       client.send(JSON.stringify(data));
     }
   });
-}, 500);
+}, 200); // เพิ่มความถี่ในการเช็กเสี้ยววินาทีให้แม่นยำขึ้น
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
