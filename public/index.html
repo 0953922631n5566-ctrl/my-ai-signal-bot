@@ -3,52 +3,55 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AI Trading Assistant</title>
+  <title>AI Pro Trading Assistant</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #0d1322; color: #f8fafc; padding: 16px; display: flex; flex-direction: column; gap: 14px; height: 100vh; justify-content: center; }
+    body { background-color: #060a12; color: #ffffff; padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100vh; justify-content: center; }
     
-    .header { text-align: center; padding: 8px; font-weight: bold; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .header { text-align: center; padding: 6px; font-weight: 900; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
     
-    /* สไตล์ป้าย LIVE และการกระพริบ */
-    .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: bold; transition: all 0.3s ease; }
-    .status-online { background: #064e3b; color: #34d399; border: 1px solid #059669; animation: pulse 1.5s infinite; }
-    .status-offline { background: #7f1d1d; color: #fca5a5; border: 1px solid #dc2626; }
+    .status-badge { font-size: 10px; padding: 3px 10px; border-radius: 12px; font-weight: 900; }
+    .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); animation: pulse 1.2s infinite; }
+    .status-offline { background: #dc2626; color: #ffffff; border: 1px solid #fca5a5; }
 
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.4; }
-      100% { opacity: 1; }
-    }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
-    /* Controls Section */
-    .controls-card { background: #162032; border-radius: 14px; padding: 12px; display: flex; gap: 10px; border: 1px solid #233248; }
+    .controls-card { background: #0f172a; border-radius: 12px; padding: 12px; display: flex; gap: 10px; border: 1px solid #1e293b; }
     .select-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-    .select-group label { font-size: 11px; color: #94a3b8; }
-    select { background: #0b1120; color: #f8fafc; border: 1px solid #334155; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; font-weight: bold; }
+    .select-group label { font-size: 11px; color: #38bdf8; font-weight: bold; }
+    select { background: #060a12; color: #ffffff; border: 1.5px solid #0284c7; padding: 8px; border-radius: 8px; font-size: 13px; outline: none; font-weight: bold; }
 
-    /* Signal Card */
-    .signal-card { background: #162032; border-radius: 14px; padding: 20px; text-align: center; border: 1px solid #233248; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
-    .pair-title { font-size: 14px; color: #94a3b8; font-weight: 500; }
-    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 12px; text-transform: uppercase; letter-spacing: 2px; transition: all 0.3s ease; }
+    .signal-card { background: #0f172a; border-radius: 16px; padding: 20px; text-align: center; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); }
+    .pair-title { font-size: 14px; color: #94a3b8; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
     
-    /* สแตนบายสีส้มอำพัน (Amber Gold) */
-    .WAIT { background: #9a3412; color: #ffedd5; border: 2px solid #f97316; box-shadow: 0 0 15px rgba(249, 115, 22, 0.4); text-shadow: 0 0 8px rgba(255, 237, 213, 0.6); }
-    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); box-shadow: 0 0 20px rgba(16, 185, 129, 0.5); }
-    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.5); box-shadow: 0 0 20px rgba(244, 63, 94, 0.5); }
+    .signal-box { 
+      font-size: 42px; 
+      font-weight: 900; 
+      padding: 18px; 
+      border-radius: 14px; 
+      text-transform: uppercase; 
+      letter-spacing: 3px; 
+      transition: all 0.2s ease-in-out; 
+    }
+    
+    /* 💥 ส้มอำพัน Amber Gold Neon */
+    .WAIT { background: #c2410c; color: #ffffff; border: 3px solid #ff781f; box-shadow: 0 0 25px rgba(255, 120, 31, 0.75); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
+    /* 🟢 เขียวนีออนสด */
+    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 32px rgba(16, 185, 129, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
+    /* 🔴 แดงนีออนสด */
+    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 32px rgba(244, 63, 94, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
 
-    /* Indicators Grid */
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .stat-box { background: #0b1120; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #233248; }
-    .stat-label { font-size: 11px; color: #94a3b8; }
-    .stat-value { font-size: 16px; font-weight: bold; margin-top: 4px; }
+    .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
+    .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
+    .stat-value { font-size: 16px; font-weight: 900; margin-top: 4px; color: #ffffff; }
   </style>
 </head>
 <body>
 
   <div class="header">
-    🤖 AI Signal Assistant <span id="netStatus" class="status-badge status-offline">● OFFLINE</span>
+    ⚡ AI PRO SIGNAL <span id="netStatus" class="status-badge status-offline">● OFFLINE</span>
   </div>
 
   <div class="controls-card">
@@ -72,17 +75,21 @@
   </div>
 
   <div class="signal-card">
-    <div class="pair-title" id="marketLabel">EUR/USD (1M)</div>
+    <div class="pair-title">
+      <span id="marketLabel">EUR/USD (1M)</span>
+      <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">BULLISH 🟢</span>
+    </div>
+
     <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
     
     <div class="stats-grid">
       <div class="stat-box">
         <div class="stat-label">Confidence</div>
-        <div class="stat-value" id="confValue">0.0%</div>
+        <div class="stat-value" id="confValue" style="color: #38bdf8;">0.0%</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">RSI (14)</div>
-        <div class="stat-value" id="rsiValue">50.0</div>
+        <div class="stat-value" id="rsiValue" style="color: #facc15;">50.0</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">แท่งถัดไปใน</div>
@@ -106,7 +113,7 @@
         const gain = audioCtx.createGain();
         osc.type = 'sine';
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start();
@@ -142,11 +149,11 @@
           const timeLeft = data.timeLeft;
 
           if (timeLeft === 3 && !playedSound3) {
-            playBeep(500, 0.1);
+            playBeep(600, 0.12);
             playedSound3 = true;
           }
           if (timeLeft === 2 && !playedSound2) {
-            playBeep(800, 0.15);
+            playBeep(900, 0.18);
             playedSound2 = true;
           }
           if (timeLeft > 3) {
@@ -158,6 +165,7 @@
           document.getElementById('signalDisplay').className = `signal-box ${data.signal}`;
           document.getElementById('confValue').innerText = `${data.confidence}%`;
           document.getElementById('rsiValue').innerText = data.rsi;
+          document.getElementById('trendLabel').innerText = data.trend;
           document.getElementById('timerValue').innerText = `${timeLeft}s`;
         }
       };
