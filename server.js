@@ -9,7 +9,6 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// รายการคู่เงินที่ระบบจะสแกนอัตโนมัติพร้อมกันหลังบ้าน
 const symbols = [
   { key: 'eurusdt', name: 'EUR/USD' },
   { key: 'gbpusdt', name: 'GBP/USD' },
@@ -66,7 +65,6 @@ function calculateEMA(prices, period) {
 
 function calculateBB(prices, period = 20, mult = 2) {
   if (prices.length < period) {
-    const p = prices[prices.length - 1] || 0;
     return { bandwidth: 1 };
   }
   const slice = prices.slice(-period);
@@ -117,8 +115,8 @@ function processAutoScanner() {
     score: 0
   };
 
-  // วิ่งสแกนหาคู่ที่ได้คะแนนสูงสุด (>80%) ในช่วง 0.5 วินาทีสุดท้าย
-  if (exactTimeLeft <= 0.6 && exactTimeLeft > 0.1) {
+  // ประมวลผลในช่วงท้ายแท่ง เพื่อหาคู่เงินที่เข้าเกณฑ์
+  if (exactTimeLeft <= 1.0 && exactTimeLeft > 0.1) {
     symbols.forEach(s => {
       const prices = marketHistories[s.key];
       if (prices && prices.length > 30) {
@@ -130,39 +128,33 @@ function processAutoScanner() {
 
         const isUpTrend = currentPrice > ema50;
         const isDownTrend = currentPrice < ema50;
-        const isSideway = bb.bandwidth < 0.08 || (rsi >= 45 && rsi <= 55);
+        const isSideway = bb.bandwidth < 0.05;
 
         if (!isSideway) {
-          let scoreCALL = 0;
-          let scorePUT = 0;
+          let scoreCALL = 40; // คะแนนฐาน
+          let scorePUT = 40;
 
-          if (isUpTrend) {
-            scoreCALL += 45;
-            if (rsi > 45 && rsi < 75) scoreCALL += 35;
-            if (currentPrice > prevPrice) scoreCALL += 20;
-          }
+          if (isUpTrend) scoreCALL += 30;
+          if (isDownTrend) scorePUT += 30;
 
-          if (isDownTrend) {
-            scorePUT += 45;
-            if (rsi < 55 && rsi > 25) scorePUT += 35;
-            if (currentPrice < prevPrice) scorePUT += 20;
-          }
+          if (currentPrice > prevPrice) scoreCALL += 15;
+          else scorePUT += 15;
 
-          // คัดเลือกเฉพาะความมั่นใจ >= 80% ขึ้นไปเท่านั้น
-          if (scoreCALL >= 80 && scoreCALL > scorePUT && scoreCALL > bestCandidate.score) {
+          // ลดเกณฑ์ความมั่นใจลงเหลือ >= 68% เพื่อให้สแกนเจอสัญญาณได้ง่ายขึ้น
+          if (scoreCALL >= 68 && scoreCALL > scorePUT && scoreCALL > bestCandidate.score) {
             bestCandidate = {
               symbol: s.name,
               signal: 'CALL',
-              confidence: Math.min(scoreCALL, 98.0).toFixed(1),
+              confidence: Math.min(scoreCALL, 94.0).toFixed(1),
               rsi: rsi,
               trend: 'BULLISH 🟢',
               score: scoreCALL
             };
-          } else if (scorePUT >= 80 && scorePUT > scoreCALL && scorePUT > bestCandidate.score) {
+          } else if (scorePUT >= 68 && scorePUT > scoreCALL && scorePUT > bestCandidate.score) {
             bestCandidate = {
               symbol: s.name,
               signal: 'PUT',
-              confidence: Math.min(scorePUT, 98.0).toFixed(1),
+              confidence: Math.min(scorePUT, 94.0).toFixed(1),
               rsi: rsi,
               trend: 'BEARISH 🔴',
               score: scorePUT
@@ -184,7 +176,7 @@ function processAutoScanner() {
     }
   }
 
-  // รีเซ็ตสถานะกลับเป็น WAIT เมื่อเข้าสู่ช่วงต้นแท่งใหม่ (30 วินาทีผ่านไป)
+  // รีเซ็ตสถานะกลับเป็น WAIT เมื่อผ่านไป 30 วินาทีในแท่งใหม่
   if (exactTimeLeft <= 30.0 && exactTimeLeft > 28.5) {
     lockedBestSignal.signal = 'WAIT';
     lockedBestSignal.confidence = '0.0';
