@@ -2,47 +2,9 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY');
-
-app.post('/api/analyze-vision', async (req, res) => {
-  try {
-    const { image } = req.body;
-    if (!image) return res.status(400).json({ success: false, error: 'No image provided' });
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    
-    const prompt = `
-      คุณคือระบบ AI เทรดเดอร์มืออาชีพ จงวิเคราะห์รูปภาพกราฟแท่งเทียนนี้
-      แล้วส่งคำตอบกลับมาในรูปแบบ JSON สั้นๆ เท่านั้น:
-      {
-        "signal": "CALL" หรือ "PUT" หรือ "WAIT",
-        "confidence": ตัวเลขความมั่นใจ 0-100,
-        "reason": "เหตุผลสั้นๆ ไม่เกิน 15 คำ เกี่ยวกับแนวรับแนวต้านหรือรูปแบบแท่งเทียน"
-      }
-    `;
-
-    const imageParts = [{ inlineData: { data: image, mimeType: 'image/png' } }];
-    const result = await model.generateContent([prompt, ...imageParts]);
-    const responseText = result.response.text();
-    
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsedData = JSON.parse(jsonMatch[0]);
-      return res.json({ success: true, ...parsedData });
-    }
-
-    return res.json({ success: true, signal: 'WAIT', confidence: 50, reason: 'กราฟไม่ชัดเจน รอรูปแบบชัดกว่านี้' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: 'Vision processing failed' });
-  }
-});
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
