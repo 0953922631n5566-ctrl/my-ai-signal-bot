@@ -48,7 +48,6 @@
     .stat-label { font-size: 10px; color: #94a3b8; font-weight: 600; }
     .stat-value { font-size: 16px; font-weight: 900; margin-top: 3px; color: #ffffff; }
 
-    /* กล่องแสดงผลวิเคราะห์จาก AI Vision */
     .analysis-box {
       background: #080d1a;
       border: 1px solid #38bdf8;
@@ -181,15 +180,13 @@
       }
     }
 
-    // ฟังก์ชันแคปภาพและส่งวิเคราะห์ด้วย AI
     async function handleAction() {
       showToast('🔍 กำลังแคปภาพและส่งให้ AI Vision วิเคราะห์...');
       
-      const captureElement = document.body; // แคปภาพทั้งหน้าจอรวมถึงกราฟด้านหลัง
+      const captureElement = document.body;
       const canvas = await html2canvas(captureElement, { backgroundColor: '#080d1a' });
       const imageBase64 = canvas.toDataURL('image/png').split(',')[1];
 
-      // แสดงสถานะกำลังประมวลผล
       document.getElementById('analysisResult').innerHTML = '⏳ <strong>AI Vision:</strong> กำลังแกะเทรนด์และแท่งเทียน... โปรดรอสักครู่';
 
       try {
@@ -202,7 +199,6 @@
         const result = await response.json();
 
         if (result.success) {
-          // อัปเดตสัญญาณบนหน้าจอ
           document.getElementById('signalDisplay').innerText = result.signal;
           document.getElementById('signalDisplay').className = `signal-box ${result.signal}`;
           document.getElementById('confValue').innerText = `${result.confidence}%`;
@@ -230,7 +226,7 @@
         badge.innerText = 'LIVE';
         badge.className = 'status-badge status-online';
       } else {
-        badge.innerText = 'OFFLINE';
+        badge.innerText = 'DISCONNECTED';
         badge.className = 'status-badge status-offline';
       }
     }
