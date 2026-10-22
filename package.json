@@ -1,12 +1,14 @@
 {
   "name": "my-ai-signal-bot",
   "version": "1.0.0",
+  "description": "AI Trading Assistant Telegram Mini App",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "express": "^4.18.2",
-    "ws": "^8.13.0"
+    "ws": "^8.16.0"
   }
 }
