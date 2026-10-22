@@ -3,81 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AI Signal Assistant</title>
+  <title>AI Trading Assistant</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: #0d1322; color: #f8fafc; padding: 16px; display: flex; flex-direction: column; gap: 14px; height: 100vh; justify-content: center; }
     
-    /* ขยายเต็มจอและจัดหน้าจอให้ชิดขอบพอดีมือถือ */
-    body { 
-      background-color: #080d1a; 
-      color: #ffffff; 
-      padding: 10px; 
-      display: flex; 
-      flex-direction: column; 
-      gap: 10px; 
-      min-height: 100vh; 
-      justify-content: space-between; 
-    }
+    .header { text-align: center; padding: 8px; font-weight: bold; font-size: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 6px; }
     
-    .header { text-align: center; padding: 4px; font-weight: 800; font-size: 17px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; }
-    
-    .status-badge { font-size: 11px; padding: 3px 8px; border-radius: 12px; font-weight: 900; }
-    .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
-    .status-offline { background: #dc2626; color: #ffffff; border: 1px solid #fca5a5; box-shadow: 0 0 8px rgba(220, 38, 38, 0.8); }
+    /* สไตล์ป้าย LIVE และการกระพริบ */
+    .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: bold; transition: all 0.3s ease; }
+    .status-online { background: #064e3b; color: #34d399; border: 1px solid #059669; animation: pulse 1.5s infinite; }
+    .status-offline { background: #7f1d1d; color: #fca5a5; border: 1px solid #dc2626; }
 
-    .controls-card { background: #111a2e; border-radius: 12px; padding: 8px; display: flex; gap: 8px; border: 1px solid #2a3a5c; }
-    .select-group { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-    .select-group label { font-size: 9px; color: #38bdf8; font-weight: bold; }
-    select { background: #080d1a; color: #ffffff; border: 1.5px solid #38bdf8; padding: 6px; border-radius: 6px; font-size: 12px; outline: none; font-weight: bold; }
-
-    .signal-card { 
-      background: #111a2e; 
-      border-radius: 14px; 
-      padding: 14px; 
-      text-align: center; 
-      border: 1px solid #2a3a5c; 
-      display: flex; 
-      flex-direction: column; 
-      gap: 12px; 
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6); 
-      flex: 1;
-      justify-content: center;
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.4; }
+      100% { opacity: 1; }
     }
-    .pair-title { font-size: 13px; color: #cbd5e1; font-weight: 700; }
-    
-    .signal-box { 
-      font-size: 36px; 
-      font-weight: 900; 
-      padding: 16px; 
-      border-radius: 12px; 
-      text-transform: uppercase; 
-      letter-spacing: 2px; 
-      transition: all 0.2s ease-in-out; 
-    }
-    
-    .WAIT { background: #c2410c; color: #ffffff; border: 3px solid #ff781f; box-shadow: 0 0 20px rgba(255, 120, 31, 0.7); text-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 22px rgba(16, 185, 129, 0.9); text-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 22px rgba(244, 63, 94, 0.9); text-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
 
+    /* Controls Section */
+    .controls-card { background: #162032; border-radius: 14px; padding: 12px; display: flex; gap: 10px; border: 1px solid #233248; }
+    .select-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .select-group label { font-size: 11px; color: #94a3b8; }
+    select { background: #0b1120; color: #f8fafc; border: 1px solid #334155; padding: 10px; border-radius: 8px; font-size: 14px; outline: none; font-weight: bold; }
+
+    /* Signal Card */
+    .signal-card { background: #162032; border-radius: 14px; padding: 20px; text-align: center; border: 1px solid #233248; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
+    .pair-title { font-size: 14px; color: #94a3b8; font-weight: 500; }
+    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 12px; text-transform: uppercase; letter-spacing: 2px; transition: all 0.3s ease; }
+    
+    /* สแตนบายสีส้มอำพัน (Amber Gold) */
+    .WAIT { background: #9a3412; color: #ffedd5; border: 2px solid #f97316; box-shadow: 0 0 15px rgba(249, 115, 22, 0.4); text-shadow: 0 0 8px rgba(255, 237, 213, 0.6); }
+    .CALL { background: #065f46; color: #34d399; border: 2px solid #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); box-shadow: 0 0 20px rgba(16, 185, 129, 0.5); }
+    .PUT { background: #831843; color: #f43f5e; border: 2px solid #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.5); box-shadow: 0 0 20px rgba(244, 63, 94, 0.5); }
+
+    /* Indicators Grid */
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .stat-box { background: #080d1a; border-radius: 8px; padding: 8px; text-align: center; border: 1px solid #1e2d4a; }
-    .stat-label { font-size: 9px; color: #94a3b8; font-weight: 600; }
-    .stat-value { font-size: 15px; font-weight: 900; margin-top: 2px; color: #ffffff; }
-
-    #toast {
-      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px);
-      background: rgba(15, 23, 42, 0.95); color: #38bdf8; border: 1px solid #38bdf8;
-      padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold;
-      transition: transform 0.3s ease; z-index: 1000; pointer-events: none;
-    }
-    #toast.show { transform: translateX(-50%) translateY(0); }
+    .stat-box { background: #0b1120; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #233248; }
+    .stat-label { font-size: 11px; color: #94a3b8; }
+    .stat-value { font-size: 16px; font-weight: bold; margin-top: 4px; }
   </style>
 </head>
 <body>
 
   <div class="header">
-    🤖 AI Signal Assistant <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
+    🤖 AI Signal Assistant <span id="netStatus" class="status-badge status-offline">● OFFLINE</span>
   </div>
 
   <div class="controls-card">
@@ -100,18 +71,18 @@
     </div>
   </div>
 
-  <div class="signal-card" id="captureArea">
+  <div class="signal-card">
     <div class="pair-title" id="marketLabel">EUR/USD (1M)</div>
     <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
     
     <div class="stats-grid">
       <div class="stat-box">
         <div class="stat-label">Confidence</div>
-        <div class="stat-value" id="confValue" style="color: #38bdf8;">0.0%</div>
+        <div class="stat-value" id="confValue">0.0%</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">RSI (14)</div>
-        <div class="stat-value" id="rsiValue" style="color: #facc15;">50.0</div>
+        <div class="stat-value" id="rsiValue">50.0</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">แท่งถัดไปใน</div>
@@ -120,8 +91,6 @@
     </div>
   </div>
 
-  <div id="toast">ระบบทำงานสำเร็จ</div>
-
   <script>
     if (window.Telegram && window.Telegram.WebApp) {
       Telegram.WebApp.ready();
@@ -129,14 +98,7 @@
     }
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    function showToast(msg) {
-      const toast = document.getElementById('toast');
-      toast.innerText = msg;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2000);
-    }
-
+    
     function playBeep(freq = 600, duration = 0.15) {
       try {
         if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -144,7 +106,7 @@
         const gain = audioCtx.createGain();
         osc.type = 'sine';
         osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start();
@@ -159,10 +121,10 @@
     function setNetStatus(isOnline) {
       const badge = document.getElementById('netStatus');
       if (isOnline) {
-        badge.innerText = 'LIVE';
+        badge.innerText = '● LIVE';
         badge.className = 'status-badge status-online';
       } else {
-        badge.innerText = 'OFFLINE';
+        badge.innerText = '● DISCONNECTED';
         badge.className = 'status-badge status-offline';
       }
     }
@@ -180,11 +142,11 @@
           const timeLeft = data.timeLeft;
 
           if (timeLeft === 3 && !playedSound3) {
-            playBeep(600, 0.12);
+            playBeep(500, 0.1);
             playedSound3 = true;
           }
           if (timeLeft === 2 && !playedSound2) {
-            playBeep(900, 0.18);
+            playBeep(800, 0.15);
             playedSound2 = true;
           }
           if (timeLeft > 3) {
@@ -212,7 +174,6 @@
       const symbol = document.getElementById('assetSelect').value;
       const tf = document.getElementById('tfSelect').value;
       document.getElementById('marketLabel').innerText = `${symbol} (${tf.toUpperCase()})`;
-      showToast(`🔄 เปลี่ยนเป็น ${symbol} (${tf.toUpperCase()})`);
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'subscribe', symbol, tf }));
       }
