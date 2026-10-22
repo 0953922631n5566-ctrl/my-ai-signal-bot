@@ -26,21 +26,33 @@
     .pair-title { font-size: 14px; color: #94a3b8; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
     
     .signal-box { 
-      font-size: 42px; 
+      font-size: 38px; 
       font-weight: 900; 
       padding: 18px; 
       border-radius: 14px; 
       text-transform: uppercase; 
-      letter-spacing: 3px; 
+      letter-spacing: 2px; 
       transition: all 0.2s ease-in-out; 
     }
     
-    /* 🔘 สแตนด์บาย: สีพื้นหลังปกติ เรียบหรู ไม่แสบตา */
-    .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; box-shadow: none; text-shadow: none; }
-    /* 🟢 เขียวนีออนสด */
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 32px rgba(16, 185, 129, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
-    /* 🔴 แดงนีออนสด */
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 32px rgba(244, 63, 94, 0.9); text-shadow: 0 0 12px rgba(255, 255, 255, 0.9); }
+    /* 🔘 สแตนด์บาย */
+    .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
+    /* 🟢 เขียวนีออน */
+    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 32px rgba(16, 185, 129, 0.9); }
+    /* 🔴 แดงนีออน */
+    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 32px rgba(244, 63, 94, 0.9); }
+    /* ⚠️ ไฟอารามสีแดงกระพริบเตือน Sideway */
+    .SIDEWAY { 
+      background: #7f1d1d; 
+      color: #fef08a; 
+      border: 3px solid #ef4444; 
+      animation: alertBlink 0.6s infinite alternate;
+    }
+
+    @keyframes alertBlink {
+      from { background: #7f1d1d; box-shadow: 0 0 10px #ef4444; }
+      to { background: #b91c1c; box-shadow: 0 0 35px #f87171; }
+    }
 
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
@@ -121,6 +133,13 @@
       } catch (e) { console.log(e); }
     }
 
+    // เสียงอารามเตือนไซด์เวย์ (ดังแบบรวดถี่ๆ)
+    function playAlarm() {
+      playBeep(400, 0.15);
+      setTimeout(() => playBeep(350, 0.15), 180);
+      setTimeout(() => playBeep(400, 0.15), 360);
+    }
+
     let ws;
     let lastSignalState = 'WAIT';
     let warned10s = false;
@@ -148,18 +167,20 @@
         if (data.type === 'market_update') {
           const timeLeft = data.timeLeft;
 
-          // เสียงเตือนตอนเริ่มเข้าสู่ 10 วินาทีสุดท้าย (เพื่อให้เตรียมตัวมองจอ)
+          // เตือนเมื่อเข้าสู่ 10 วินาทีสุดท้าย
           if (timeLeft === 10 && !warned10s) {
             playBeep(550, 0.15);
             warned10s = true;
           }
-          if (timeLeft > 10) {
-            warned10s = false;
-          }
+          if (timeLeft > 10) warned10s = false;
 
-          // เสียงเตือนหลักเมื่อสัญญาณ CALL หรือ PUT ปรากฏขึ้นใหม่
-          if (data.signal !== 'WAIT' && lastSignalState === 'WAIT') {
-            playBeep(850, 0.3);
+          // เสียงเตือนไซด์เวย์ หรือ เข้าออเดอร์
+          if (data.signal !== lastSignalState) {
+            if (data.signal === 'SIDEWAY') {
+              playAlarm(); // เสียงอารามเตือนอันตราย
+            } else if (data.signal === 'CALL' || data.signal === 'PUT') {
+              playBeep(850, 0.3); // เสียงเตือนเข้าออเดอร์ปกติ
+            }
           }
           lastSignalState = data.signal;
 
