@@ -102,29 +102,24 @@ function processTradingEngine() {
   const isUpTrend = currentPrice > ema50;
   const isDownTrend = currentPrice < ema50;
 
-  // 🎯 ขยายเวลาเช็กสัญญาณเป็น 5 วินาทีสุดท้ายก่อนปิดแท่ง (เพื่อให้จับจังหวะง่ายขึ้น)
+  // 🎯 ประมวลผลและล็อกสัญญาณในช่วง 5 วินาทีสุดท้ายก่อนหมดแท่ง
   if (exactTimeLeft <= 5.0 && exactTimeLeft > 0.5) {
     let scoreCALL = 0;
     let scorePUT = 0;
 
-    // เงื่อนไข 1: RSI (ปรับระดับให้ออกสัญญาณง่ายขึ้น)
     if (rsi <= 40) scoreCALL += 35;
     else if (rsi >= 60) scorePUT += 35;
 
-    // เงื่อนไข 2: Bollinger Bands
     if (currentPrice <= bb.lower) scoreCALL += 35;
     else if (currentPrice >= bb.upper) scorePUT += 35;
 
-    // เงื่อนไข 3: Trend (EMA 50)
     if (isUpTrend) scoreCALL += 25;
     if (isDownTrend) scorePUT += 25;
 
-    // เงื่อนไข 4: Candle Momentum
     const prevPrice = priceHistory[priceHistory.length - 3] || currentPrice;
     if (currentPrice > prevPrice) scoreCALL += 15;
     else if (currentPrice < prevPrice) scorePUT += 15;
 
-    // ⚡ ปรับลดเกณฑ์ความมั่นใจลงเหลือ 55% ขึ้นไปก็ออกสัญญาณทันที
     if (scoreCALL >= 55 && scoreCALL > scorePUT) {
       lockedSignal = 'CALL';
       lockedConfidence = Math.min(scoreCALL, 94.0).toFixed(1);
@@ -137,8 +132,8 @@ function processTradingEngine() {
     }
   }
 
-  // ⏳ รีเซ็ตสถานะกลับเป็น WAIT หลังจากเริ่มแท่งใหม่ไปแล้ว 10 วินาที
-  if (exactTimeLeft <= 50.0 && exactTimeLeft > 48.5) {
+  // ⏳ ให้สัญญาณ CALL / PUT ค้างไว้ 30 วินาทีในแท่งใหม่ แล้วค่อยรีเซ็ตกลับเป็น WAIT
+  if (exactTimeLeft <= 30.0 && exactTimeLeft > 28.5 && lockedSignal !== 'WAIT') {
     lockedSignal = 'WAIT';
     lockedConfidence = '0.0';
   }
@@ -185,4 +180,4 @@ setInterval(() => {
 }, 500);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Fast AI Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
