@@ -80,6 +80,7 @@
     let currentPairKey = 'eurusd';
     let currentTF = '1m';
     let latestData = null;
+    let lastSignalState = 'WAIT';
 
     const symbolsList = [
       { key: 'eurusd', name: 'EUR/USD' },
@@ -93,6 +94,31 @@
       { key: 'eurgbp', name: 'EUR/GBP' },
       { key: 'audjpy', name: 'AUD/JPY' }
     ];
+
+    // ระบบเสียงแจ้งเตือนอัตโนมัติ (Web Audio API)
+    function playAlertSound(type) {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        if (type === 'CALL') {
+          osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.15);
+        } else {
+          osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.15);
+        }
+        
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } catch (e) {}
+    }
 
     function initPairSelect() {
       const select = document.getElementById('pairSelect');
@@ -109,6 +135,7 @@
     function changePair() {
       const select = document.getElementById('pairSelect');
       currentPairKey = select.value;
+      lastSignalState = 'WAIT'; // รีเซ็ตสถานะเสียงเมื่อเปลี่ยนคู่
       updateUI();
     }
 
@@ -116,6 +143,7 @@
       currentTF = tf;
       document.getElementById('btn1m').className = tf === '1m' ? 'tf-btn active' : 'tf-btn inactive';
       document.getElementById('btn5m').className = tf === '5m' ? 'tf-btn active' : 'tf-btn inactive';
+      lastSignalState = 'WAIT'; // รีเซ็ตสถานะเสียงเมื่อเปลี่ยนไทม์เฟรม
       
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: 'change_tf', tf: tf }));
@@ -160,10 +188,25 @@
       sigDisplay.innerText = pair.signal;
       
       sigDisplay.className = 'signal-text';
-      if (pair.signal === 'CALL') sigDisplay.classList.add('signal-call');
-      else if (pair.signal === 'PUT') sigDisplay.classList.add('signal-put');
-      else if (pair.signal === 'SIDEWAY') sigDisplay.classList.add('signal-sideway');
-      else sigDisplay.classList.add('signal-wait');
+      if (pair.signal === 'CALL') {
+        sigDisplay.classList.add('signal-call');
+        if (lastSignalState !== 'CALL') {
+          playAlertSound('CALL'); // ส่งเสียงเตือน CALL
+          lastSignalState = 'CALL';
+        }
+      } else if (pair.signal === 'PUT') {
+        sigDisplay.classList.add('signal-put');
+        if (lastSignalState !== 'PUT') {
+          playAlertSound('PUT'); // ส่งเสียงเตือน PUT
+          lastSignalState = 'PUT';
+        }
+      } else if (pair.signal === 'SIDEWAY') {
+        sigDisplay.classList.add('signal-sideway');
+        lastSignalState = 'SIDEWAY';
+      } else {
+        sigDisplay.classList.add('signal-wait');
+        lastSignalState = 'WAIT';
+      }
 
       document.getElementById('confDisplay').innerText = pair.confidence + '%';
       document.getElementById('rsiDisplay').innerText = pair.rsi;
