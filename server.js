@@ -88,7 +88,6 @@ function processEngine() {
 
   symbols.forEach(s => {
     const prices = marketHistories[s.key];
-    // ลดจำนวนข้อมูลที่ต้องรอดาวน์โหลดลงเหลือ 20 เพื่อให้พร้อมใช้งานทันที
     if (!prices || prices.length < 20) {
       pairStatuses.push({
         key: s.key,
@@ -107,15 +106,14 @@ function processEngine() {
     const prevPrice = prices[prices.length - 2] || currentPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
+    // ใช้เฉพาะ EMA 5 และ EMA 20
     const ema5 = calculateEMA(prices, 5);
     const ema20 = calculateEMA(prices, 20);
-    const ema50 = calculateEMA(prices, 50);
     const bb = calculateBB(prices);
 
-    // ปรับเงื่อนไขให้ยืดหยุ่นขึ้น (ดูแค่ EMA 5 อยู่เหนือ/ใต้ EMA 50 และทิศทางราคา)
-    const isBullish = currentPrice > ema50 && ema5 >= ema20;
-    const isBearish = currentPrice < ema50 && ema5 <= ema20;
-    const isSideway = bb.bandwidth < 0.03; // กรองเฉพาะไซด์เวย์แคบๆ จริงๆ
+    const isBullish = ema5 > ema20 && currentPrice > ema20;
+    const isBearish = ema5 < ema20 && currentPrice < ema20;
+    const isSideway = bb.bandwidth < 0.03;
 
     let statusColor = 'green';
     let statusText = 'SAFE';
@@ -127,14 +125,13 @@ function processEngine() {
       statusText = 'DANGER';
       signal = 'SIDEWAY';
     } else {
-      let score = 50;
+      let score = 55;
       if (isBullish || isBearish) score += 25;
       if (currentPrice > prevPrice) score += 15;
       else score += 10;
       
-      confidence = Math.min(score, 92.0).toFixed(1);
+      confidence = Math.min(score, 94.0).toFixed(1);
 
-      // ลดเกณฑ์ตัดสินใจลงเหลือ >= 62% เพื่อให้ส่งสัญญาณเข้าออเดอร์ได้บ่อยและแม่นยำขึ้น
       if (exactTimeLeft <= 1.5 && exactTimeLeft > 0.1) {
         if (isBullish && score >= 62) signal = 'CALL';
         else if (isBearish && score >= 62) signal = 'PUT';
