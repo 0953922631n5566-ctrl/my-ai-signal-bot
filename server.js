@@ -21,7 +21,11 @@ const symbols = [
 ];
 
 let marketHistories = {};
-symbols.forEach(s => marketHistories[s.key] = []);
+let symbolSignalStates = {}; 
+symbols.forEach(s => {
+  marketHistories[s.key] = [];
+  symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0 };
+});
 
 function connectAllStreams() {
   symbols.forEach(s => {
@@ -88,13 +92,23 @@ function processEngine() {
 
   symbols.forEach(s => {
     const prices = marketHistories[s.key];
+    let state = symbolSignalStates[s.key];
+
+    // ลดเวลา Timer ลงทีละ 0.2 วินาที จนครบ 30 วินาทีแล้วค่อยรีเซ็ต
+    if (state.timer > 0) {
+      state.timer = Math.max(0, state.timer - 0.2);
+      if (state.timer === 0) {
+        state.signal = 'WAIT';
+      }
+    }
+
     if (!prices || prices.length < 20) {
       pairStatuses.push({
         key: s.key,
         name: s.name,
         statusColor: 'green',
         statusText: 'SAFE',
-        signal: 'WAIT',
+        signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
         trend: 'READY 🟢'
@@ -110,32 +124,39 @@ function processEngine() {
     const ema20 = calculateEMA(prices, 20);
     const bb = calculateBB(prices);
 
-    // เงื่อนไขเทรนด์ตามน้ำ (Trend Following)
     const isBullishTrend = ema5 > ema20 && currentPrice >= ema5;
     const isBearishTrend = ema5 < ema20 && currentPrice <= ema5;
-    const isSideway = bb.bandwidth < 0.1;
+    const isSideway = bb.bandwidth < 0.08;
 
     let statusColor = 'green';
     let statusText = 'SAFE';
-    let signal = 'WAIT';
     let confidence = '50.0';
 
     if (isSideway) {
       statusColor = 'red';
       statusText = 'DANGER';
-      signal = 'SIDEWAY';
     } else {
-      let score = 60;
+      let score = 58;
       if (isBullishTrend || isBearishTrend) score += 25;
-      if (currentPrice !== prevPrice) score += 10;
+      if (currentPrice !== prevPrice) score += 12;
       
       confidence = Math.min(score, 95.0).toFixed(1);
 
-      // ส่งสัญญาณในช่วง 0.5 ถึง 0.0 วินาทีสุดท้าย
-      if (exactTimeLeft <= 0.5 && exactTimeLeft >= 0.0) {
-        if (isBullishTrend && score >= 65) signal = 'CALL';
-        else if (isBearishTrend && score >= 65) signal = 'PUT';
+      // 🎯 ล็อกเงื่อนไขยิงสัญญาณเฉพาะช่วง 0.5 ถึง 0.0 วินาทีสุดท้ายเป๊ะๆ
+      if (exactTimeLeft <= 0.5 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
+        if (isBullishTrend && score >= 60) {
+          state.signal = 'CALL';
+          state.timer = 30.0; // 🔒 ล็อกไฟโชว์ค้างยาว 30 วินาที
+        } else if (isBearishTrend && score >= 60) {
+          state.signal = 'PUT';
+          state.timer = 30.0; // 🔒 ล็อกไฟโชว์ค้างยาว 30 วินาที
+        }
       }
+    }
+
+    let finalSignal = state.signal;
+    if (isSideway) {
+      finalSignal = 'SIDEWAY';
     }
 
     pairStatuses.push({
@@ -143,7 +164,7 @@ function processEngine() {
       name: s.name,
       statusColor: statusColor,
       statusText: statusText,
-      signal: signal,
+      signal: finalSignal,
       confidence: confidence,
       rsi: rsi,
       trend: isBullishTrend ? 'BULLISH 🟢' : (isBearishTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
