@@ -7,35 +7,62 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #060a12; color: #ffffff; padding: 14px; display: flex; flex-direction: column; gap: 12px; height: 100vh; overflow-y: auto; }
+    body { background-color: #060a12; color: #ffffff; padding: 12px; display: flex; flex-direction: column; gap: 10px; height: 100vh; overflow: hidden; }
     
-    .header { text-align: center; padding: 6px; font-weight: 900; font-size: 16px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
+    .header { text-align: center; padding: 4px; font-weight: 900; font-size: 16px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
     .status-badge { font-size: 9px; padding: 3px 8px; border-radius: 10px; font-weight: 900; }
     .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
     .status-offline { background: #dc2626; color: #ffffff; }
 
-    /* ปุ่มเมนูสลับหน้าจอ (ตำแหน่งกรอบสี่เหลี่ยมสีแดงตามที่ต้องการ) */
+    /* ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน */
     .scanner-banner { 
       background: #0f172a; 
       border-radius: 12px; 
-      padding: 12px; 
+      padding: 10px; 
       text-align: center; 
       border: 1.5px solid #0284c7; 
       color: #38bdf8; 
       font-weight: bold; 
-      font-size: 12px; 
+      font-size: 11px; 
       box-shadow: 0 0 12px rgba(2, 132, 199, 0.3); 
       cursor: pointer; 
+      flex-shrink: 0;
       transition: 0.2s; 
     }
     .scanner-banner:active { transform: scale(0.98); background: #1e293b; }
 
-    /* หน้าจอหลัก (ภาพที่ 3) */
-    #mainView { display: flex; flex-direction: column; gap: 14px; }
-    .signal-card { background: #0f172a; border-radius: 16px; padding: 20px; text-align: center; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); }
-    .pair-title { font-size: 15px; color: #facc15; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+    /* หน้าจอหลัก: ขยายความสูงให้เต็มพื้นที่กรอบสีแดงด้านล่าง */
+    #mainView { display: flex; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
     
-    .signal-box { font-size: 40px; font-weight: 900; padding: 20px; border-radius: 14px; text-transform: uppercase; letter-spacing: 2px; }
+    .signal-card { 
+      background: #0f172a; 
+      border-radius: 16px; 
+      padding: 16px; 
+      text-align: center; 
+      border: 1px solid #1e293b; 
+      display: flex; 
+      flex-direction: column; 
+      justify-content: space-between; 
+      flex: 1; 
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); 
+      min-height: 0;
+    }
+    
+    .pair-title { font-size: 14px; color: #facc15; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+    
+    .signal-box { 
+      font-size: 42px; 
+      font-weight: 900; 
+      padding: 20px; 
+      border-radius: 14px; 
+      text-transform: uppercase; 
+      letter-spacing: 2px; 
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      margin: 8px 0;
+    }
     
     .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
     .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 35px rgba(16, 185, 129, 0.9); }
@@ -44,15 +71,16 @@
 
     @keyframes blink { from { background: #7f1d1d; } to { background: #991b1b; } }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex-shrink: 0; }
     .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
     .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
     .stat-value { font-size: 16px; font-weight: 900; margin-top: 4px; color: #ffffff; }
 
-    /* หน้าจอดัชนีคู่เงินทั้งหมด (ภาพที่ 2) */
-    #dashboardView { display: none; flex-direction: column; gap: 10px; }
-    .back-main-btn { background: #1e293b; color: #38bdf8; border: 1.5px solid #0284c7; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; margin-bottom: 4px; }
+    /* หน้าจอดัชนีรายการคู่เงินทั้งหมด */
+    #dashboardView { display: none; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
+    .back-main-btn { background: #1e293b; color: #38bdf8; border: 1.5px solid #0284c7; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; flex-shrink: 0; }
     
+    .pair-grid-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding-right: 2px; }
     .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .pair-item { background: #0f172a; border-radius: 12px; padding: 12px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
     .pair-item:active { transform: scale(0.97); }
@@ -73,12 +101,12 @@
     ⚡ AI AUTO SCANNER <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
   </div>
 
-  <!-- ปุ่มเมนูตำแหน่งกรอบสี่เหลี่ยมสีแดง (คลิกเพื่อเปิดหน้ารายการคู่เงิน) -->
+  <!-- ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน -->
   <div class="scanner-banner" onclick="showDashboard()">
     🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
   </div>
 
-  <!-- หน้าจอหลัก (ภาพที่ 3) -->
+  <!-- หน้าจอหลัก (เติมเต็มพื้นที่ในกรอบสีแดงด้านล่างสุด) -->
   <div id="mainView">
     <div class="signal-card">
       <div class="pair-title">
@@ -105,11 +133,13 @@
     </div>
   </div>
 
-  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด (ภาพที่ 2) -->
+  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด -->
   <div id="dashboardView">
     <button class="back-main-btn" onclick="showMain()">← กลับหน้าจอหลัก</button>
-    <div class="pair-grid" id="pairGridContainer">
-      <!-- สร้างผ่าน JavaScript -->
+    <div class="pair-grid-scroll">
+      <div class="pair-grid" id="pairGridContainer">
+        <!-- สร้างผ่าน JavaScript -->
+      </div>
     </div>
   </div>
 
@@ -211,14 +241,12 @@
           globalPairsData = data.pairs;
           document.getElementById('timerValue').innerText = `${data.timeLeft}s`;
 
-          // เสียงเตือน 10 วินาทีสุดท้าย
           if (data.timeLeft === 10 && !warned10s) {
             playBeep(550, 0.15);
             warned10s = true;
           }
           if (data.timeLeft > 10) warned10s = false;
 
-          // อัปเดตหน้าจอตามมุมมองปัจจุบัน
           if (document.getElementById('dashboardView').style.display !== 'none') {
             updateDashboardList();
           } else {
