@@ -112,8 +112,6 @@ function processEngine() {
 
     const isBullish = ema5 > ema20 && currentPrice > ema20;
     const isBearish = ema5 < ema20 && currentPrice < ema20;
-    
-    // ปรับเกณฑ์ตรวจจับไซด์เวย์ (Bandwidth < 0.1) ให้ระบบเช็คสถานะอันตราย/ปลอดภัยได้แม่นยำขึ้น
     const isSideway = bb.bandwidth < 0.1;
 
     let statusColor = 'green';
@@ -133,7 +131,8 @@ function processEngine() {
       
       confidence = Math.min(score, 94.0).toFixed(1);
 
-      if (exactTimeLeft <= 1.5 && exactTimeLeft > 0.1) {
+      // ปรับตรงนี้: ยิงสัญญาณเฉพาะช่วง 0.5 วินาทีสุดท้ายจนถึง 0.0 วินาทีปิดแท่งเป๊ะๆ
+      if (exactTimeLeft <= 0.5 && exactTimeLeft >= 0.0) {
         if (isBullish && score >= 62) signal = 'CALL';
         else if (isBearish && score >= 62) signal = 'PUT';
       }
