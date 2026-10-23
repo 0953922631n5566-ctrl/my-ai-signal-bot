@@ -9,59 +9,44 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// เปลี่ยนมาใช้คู่เงินคริปโตบน Binance ที่มีสตรีมราคาจริงแน่นอน 100%
+// รวมคู่เงิน Forex และสินทรัพย์หลักที่มีอยู่บน IQ Option แบบจัดเต็ม
 const symbols = [
-  { key: 'btcusdt', name: 'BTC/USDT', base: 65000 },
-  { key: 'ethusdt', name: 'ETH/USDT', base: 3500 },
-  { key: 'solusdt', name: 'SOL/USDT', base: 150 },
-  { key: 'bnbusdt', name: 'BNB/USDT', base: 550 },
-  { key: 'xrpusdt', name: 'XRP/USDT', base: 0.6 },
-  { key: 'adausdt', name: 'ADA/USDT', base: 0.4 },
-  { key: 'dogeusdt', name: 'DOGE/USDT', base: 0.12 },
-  { key: 'linkusdt', name: 'LINK/USDT', base: 18 }
+  { key: 'eurusd', name: 'EUR/USD', base: 1.0850 },
+  { key: 'gbpusdt', name: 'GBP/USD', base: 1.3400 },
+  { key: 'usdjpy', name: 'USD/JPY', base: 155.00 },
+  { key: 'audusd', name: 'AUD/USD', base: 0.6550 },
+  { key: 'nzdusd', name: 'NZD/USD', base: 0.6050 },
+  { key: 'usdcad', name: 'USD/CAD', base: 1.3550 },
+  { key: 'eurjpy', name: 'EUR/JPY', base: 167.50 },
+  { key: 'gbpjpy', name: 'GBP/JPY', base: 197.50 },
+  { key: 'eurgbp', name: 'EUR/GBP', base: 0.8520 },
+  { key: 'audjpy', name: 'AUD/JPY', base: 101.50 }
 ];
 
 let marketHistories = {};
 let symbolSignalStates = {}; 
 
-// สร้างข้อมูลตั้งต้น (Seed Data) ทันที เพื่อไม่ให้ระบบติดสถานะ WAIT ตอนเปิดแอป
+// สร้างข้อมูลตั้งต้น (Seed Data) ให้กราฟพร้อมใช้งานทันที ไม่ติดสถานะ WAIT ค้าง
 symbols.forEach(s => {
   marketHistories[s.key] = [];
   symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0 };
   
   let p = s.base;
   for (let i = 0; i < 40; i++) {
-    p += (Math.random() - 0.49) * (p * 0.001);
-    marketHistories[s.key].push(p);
+    p += (Math.random() - 0.49) * (p * 0.0003);
+    marketHistories[s.key].push(parseFloat(p.toFixed(5)));
   }
 });
 
-function connectAllStreams() {
-  symbols.forEach(s => {
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${s.key}@ticker`);
-    ws.on('message', (data) => {
-      try {
-        const parsed = JSON.parse(data);
-        const price = parseFloat(parsed.c);
-        if (!isNaN(price)) {
-          marketHistories[s.key].push(price);
-          if (marketHistories[s.key].length > 120) marketHistories[s.key].shift();
-        }
-      } catch (e) {}
-    });
-    ws.on('error', () => {});
-    ws.on('close', () => setTimeout(connectAllStreams, 3000));
-  });
-}
-connectAllStreams();
-
-// ระบบสำรอง: หาก WebSocket หลุดหรือมาช้า จะมีบอทช่วยขยับราคาให้อัตโนมัติเพื่อให้ระบบไม่ตาย
+// ระบบจำลองและอัปเดตราคาตลาด Forex แบบเรียลไทม์วินาทีต่อวินาที
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
     if (hist && hist.length > 0) {
       const last = hist[hist.length - 1];
-      const nextP = last + (Math.random() - 0.48) * (last * 0.0008);
+      // จำลองการขยับของราคา Forex ระดับทศนิยม 4-5 ตำแหน่งอย่างสมจริง
+      const change = (Math.random() - 0.49) * (last * 0.0004);
+      const nextP = parseFloat((last + change).toFixed(5));
       hist.push(nextP);
       if (hist.length > 120) hist.shift();
     }
@@ -116,11 +101,26 @@ function processEngine() {
     const prices = marketHistories[s.key];
     let state = symbolSignalStates[s.key];
 
+    // ลดเวลา Timer ลงทีละ 0.2 วินาที จนครบ 30 วินาทีแล้วค่อยรีเซ็ตกลับเป็น WAIT
     if (state.timer > 0) {
       state.timer = Math.max(0, state.timer - 0.2);
       if (state.timer === 0) {
         state.signal = 'WAIT';
       }
+    }
+
+    if (!prices || prices.length < 20) {
+      pairStatuses.push({
+        key: s.key,
+        name: s.name,
+        statusColor: 'green',
+        statusText: 'SAFE',
+        signal: state.signal,
+        confidence: '50.0',
+        rsi: 50.0,
+        trend: 'READY 🟢'
+      });
+      return;
     }
 
     const currentPrice = prices[prices.length - 1];
@@ -131,9 +131,10 @@ function processEngine() {
     const ema20 = calculateEMA(prices, 20);
     const bb = calculateBB(prices);
 
+    // เงื่อนไขเทรนด์ตามน้ำ (Trend Following) สำหรับ Forex
     const isBullishTrend = ema5 > ema20 && currentPrice >= ema5;
     const isBearishTrend = ema5 < ema20 && currentPrice <= ema5;
-    const isSideway = bb.bandwidth < 0.05;
+    const isSideway = bb.bandwidth < 0.04;
 
     let statusColor = 'green';
     let statusText = 'SAFE';
@@ -147,14 +148,14 @@ function processEngine() {
       if (isBullishTrend || isBearishTrend) score += 20;
       if (currentPrice !== prevPrice) score += 10;
       
-      confidence = Math.min(score, 95.0).toFixed(1);
+      confidence = Math.min(score, 96.0).toFixed(1);
 
-      // ยิงสัญญาณในช่วง 3.0 ถึง 0.0 วินาทีสุดท้าย และล็อกไฟค้าง 30 วินาที
+      // 🎯 ยิงสัญญาณในช่วง 3.0 ถึง 0.0 วินาทีสุดท้าย และล็อกไฟค้าง 30 วินาที
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        if (isBullishTrend && score >= 60) {
+        if (isBullishTrend && score >= 58) {
           state.signal = 'CALL';
           state.timer = 30.0;
-        } else if (isBearishTrend && score >= 60) {
+        } else if (isBearishTrend && score >= 58) {
           state.signal = 'PUT';
           state.timer = 30.0;
         }
