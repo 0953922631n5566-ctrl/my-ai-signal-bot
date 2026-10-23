@@ -105,7 +105,7 @@ function processEngine() {
       }
     }
 
-    if (!prices || prices.length < 20) {
+    if (!prices || prices.length < 25) {
       pairStatuses.push({
         key: s.key,
         name: s.name,
@@ -124,29 +124,28 @@ function processEngine() {
     const prevPrice = prices[prices.length - 2] || currentPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
-    const ema5 = calculateEMA(prices, 5);
-    const ema20 = calculateEMA(prices, 20);
+    // เปลี่ยนมาใช้ค่า EMA 6 และ EMA 21
+    const ema6 = calculateEMA(prices, 6);
+    const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
 
-    const isBullishTrend = ema5 > ema20 && currentPrice >= ema5;
-    const isBearishTrend = ema5 < ema20 && currentPrice <= ema5;
+    const isBullishTrend = ema6 > ema21 && currentPrice >= ema6;
+    const isBearishTrend = ema6 < ema21 && currentPrice <= ema6;
     const isSideway = bb.bandwidth < 0.04;
 
-    // 🛡️ ระบบกรองป้องกัน Overextended (ราคายืดตัวแรงเกินไปจนเสี่ยงพักตัว)
-    const isRsiOverboughtExtreme = rsi >= 72.0; // ฝั่งซื้อแพงเกินไป
-    const isRsiOversoldExtreme = rsi <= 28.0;   // ฝั่งขายถูกเกินไป
-    const priceStretch = Math.abs(currentPrice - ema5) / currentPrice * 100;
-    const isTooFarFromEma = priceStretch > 0.08; // ยืดห่างจากเส้น EMA เกิน 0.08%
+    // ตัวกรองป้องกัน Overextended และความยืดของราคา
+    const isRsiOverboughtExtreme = rsi >= 72.0;
+    const isRsiOversoldExtreme = rsi <= 28.0;
+    const priceStretch = Math.abs(currentPrice - ema6) / currentPrice * 100;
+    const isTooFarFromEma = priceStretch > 0.08;
 
     let calculatedScore = 50.0;
     if (!isSideway) {
-      const emaDiff = Math.abs(ema5 - ema20) / currentPrice * 1000;
+      const emaDiff = Math.abs(ema6 - ema21) / currentPrice * 1000;
       const momentum = Math.abs(currentPrice - prevPrice) / currentPrice * 1000;
 
-      // ให้คะแนนพื้นฐาน
       calculatedScore = 60.0 + (emaDiff * 12.0) + (momentum * 8.0);
 
-      // ถ้าพุ่งแรงเกินไป ให้หักคะแนนความมั่นใจลงเพื่อป้องกันไฟ VIP หลอก
       if (isTooFarFromEma) {
         calculatedScore -= 15.0; 
       }
@@ -162,22 +161,20 @@ function processEngine() {
       statusText = 'DANGER';
       calculatedScore = 40.0;
     } else {
-      // 🎯 ยิงสัญญาณช่วง 3.0 วินาทีสุดท้ายเฉพาะออร์เดอร์ที่ปลอดภัย ไม่ติด Overextended
+      // ยิงสัญญาณช่วง 3.0 วินาทีสุดท้ายด้วยชุด EMA 6/21 ที่นิ่งและชัวร์ขึ้น
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        // เงื่อนไข CALL: ต้องไม่ติด Overbought และไม่ยืดห่าง EMA เกินไป
         if (isBullishTrend && !isRsiOverboughtExtreme && calculatedScore >= 60.0) {
           state.signal = 'CALL';
           state.timer = 30.0;
           state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma; //VIP ต้องไม่ยืดเกินไป
+          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma;
         } 
-        // เงื่อนไข PUT: ต้องไม่ติด Oversold และไม่ยืดห่าง EMA เกินไป
         else if (isBearishTrend && !isRsiOversoldExtreme && calculatedScore >= 60.0) {
           state.signal = 'PUT';
           state.timer = 30.0;
           state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma; //VIP ต้องไม่ยืดเกินไป
+          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma;
         }
       }
     }
