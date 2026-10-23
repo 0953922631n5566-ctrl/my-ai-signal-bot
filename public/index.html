@@ -49,7 +49,7 @@
   </div>
 
   <div class="scanner-banner">
-    🔍 ระบบกำลังสแกนหาคู่เงินที่มีความแม่นยำสูงสุด (≥ 80%) อัตโนมัติ...
+    🔍 ระบบกำลังสแกนหาคู่เงินที่มีความแม่นยำสูง (≥ 68%) อัตโนมัติ...
   </div>
 
   <div class="signal-card">
@@ -133,7 +133,7 @@
           if (timeLeft > 10) warned10s = false;
 
           if (data.signal !== 'WAIT' && lastSignalState === 'WAIT') {
-            playBeep(850, 0.3); // เสียงเตือนเมื่อ AI เจอคู่เงินที่ใช่และส่งสัญญาณ CALL/PUT
+            playBeep(850, 0.3);
           }
           lastSignalState = data.signal;
 
