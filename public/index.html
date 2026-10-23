@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AI TRADING DASHBOARD</title>
+  <title>AI AUTO SCANNER PRO</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -14,9 +14,44 @@
     .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
     .status-offline { background: #dc2626; color: #ffffff; }
 
-    /* หน้าจอหลัก: รายการคู่เงินทั้งหมด */
-    #dashboardView { display: flex; flex-direction: column; gap: 10px; }
-    .scanner-banner { background: #0f172a; border-radius: 12px; padding: 10px; text-align: center; border: 1px solid #0284c7; color: #38bdf8; font-weight: bold; font-size: 12px; box-shadow: 0 0 12px rgba(2, 132, 199, 0.3); }
+    /* ปุ่มเมนูสลับหน้าจอ (ตำแหน่งกรอบสี่เหลี่ยมสีแดงตามที่ต้องการ) */
+    .scanner-banner { 
+      background: #0f172a; 
+      border-radius: 12px; 
+      padding: 12px; 
+      text-align: center; 
+      border: 1.5px solid #0284c7; 
+      color: #38bdf8; 
+      font-weight: bold; 
+      font-size: 12px; 
+      box-shadow: 0 0 12px rgba(2, 132, 199, 0.3); 
+      cursor: pointer; 
+      transition: 0.2s; 
+    }
+    .scanner-banner:active { transform: scale(0.98); background: #1e293b; }
+
+    /* หน้าจอหลัก (ภาพที่ 3) */
+    #mainView { display: flex; flex-direction: column; gap: 14px; }
+    .signal-card { background: #0f172a; border-radius: 16px; padding: 20px; text-align: center; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); }
+    .pair-title { font-size: 15px; color: #facc15; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+    
+    .signal-box { font-size: 40px; font-weight: 900; padding: 20px; border-radius: 14px; text-transform: uppercase; letter-spacing: 2px; }
+    
+    .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
+    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 35px rgba(16, 185, 129, 0.9); }
+    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 35px rgba(244, 63, 94, 0.9); }
+    .SIDEWAY { background: #7f1d1d; color: #fef08a; border: 3px solid #ef4444; animation: blink 0.5s infinite alternate; }
+
+    @keyframes blink { from { background: #7f1d1d; } to { background: #991b1b; } }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
+    .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
+    .stat-value { font-size: 16px; font-weight: 900; margin-top: 4px; color: #ffffff; }
+
+    /* หน้าจอดัชนีคู่เงินทั้งหมด (ภาพที่ 2) */
+    #dashboardView { display: none; flex-direction: column; gap: 10px; }
+    .back-main-btn { background: #1e293b; color: #38bdf8; border: 1.5px solid #0284c7; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; margin-bottom: 4px; }
     
     .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .pair-item { background: #0f172a; border-radius: 12px; padding: 12px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
@@ -29,53 +64,26 @@
 
     @keyframes pulseRed { from { opacity: 0.6; } to { opacity: 1; box-shadow: 0 0 8px #dc2626; } }
 
-    .pair-info { font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; }
-
-    /* หน้าจอเจาะลึกคู่เงิน */
-    #detailView { display: none; flex-direction: column; gap: 12px; }
-    .back-btn { background: #1e293b; color: #38bdf8; border: 1px solid #334155; padding: 8px 14px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; }
-    
-    .signal-card { background: #0f172a; border-radius: 16px; padding: 18px; text-align: center; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); }
-    
-    .signal-box { font-size: 38px; font-weight: 900; padding: 18px; border-radius: 14px; text-transform: uppercase; letter-spacing: 2px; }
-    
-    .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 30px rgba(16, 185, 129, 0.9); }
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 30px rgba(244, 63, 94, 0.9); }
-    .SIDEWAY { background: #7f1d1d; color: #fef08a; border: 3px solid #ef4444; animation: blink 0.5s infinite alternate; }
-
-    @keyframes blink { from { background: #7f1d1d; } to { background: #991b1b; } }
-
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
-    .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
-    .stat-value { font-size: 15px; font-weight: 900; margin-top: 4px; color: #ffffff; }
+    .pair-info { font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
 
   <div class="header">
-    ⚡ AI TRADING DASHBOARD <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
+    ⚡ AI AUTO SCANNER <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
   </div>
 
-  <!-- หน้าจอหลัก: แสดงรายการคู่เงินพร้อมสถานะ เขียว/แดง -->
-  <div id="dashboardView">
-    <div class="scanner-banner">
-      📊 แดชบอร์ดสแกนอัตโนมัติ: 🟢 ปลอดภัย (เทรนด์) | 🔴 อันตราย (ไซด์เวย์)
-    </div>
-    <div class="pair-grid" id="pairGridContainer">
-      <!-- สร้างผ่าน JavaScript -->
-    </div>
+  <!-- ปุ่มเมนูตำแหน่งกรอบสี่เหลี่ยมสีแดง (คลิกเพื่อเปิดหน้ารายการคู่เงิน) -->
+  <div class="scanner-banner" onclick="showDashboard()">
+    🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
   </div>
 
-  <!-- หน้าจอย่อย: รายละเอียดสัญญาณของคู่เงินที่เลือก -->
-  <div id="detailView">
-    <button class="back-btn" onclick="goBackToDashboard()">← กลับหน้าหลัก (เลือกคู่เงิน)</button>
-    
+  <!-- หน้าจอหลัก (ภาพที่ 3) -->
+  <div id="mainView">
     <div class="signal-card">
-      <div class="pair-header" style="justify-content: space-between;">
-        <span id="selectedPairName" style="font-size: 16px; color: #facc15;">EUR/USD</span>
-        <span id="selectedPairTrend" class="badge-green">SAFE</span>
+      <div class="pair-title">
+        <span>AI Selected: <strong id="marketLabel" style="color: #ffffff;">EUR/USD</strong></span>
+        <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">TRIPLE EMA ACTIVE 🟢</span>
       </div>
 
       <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
@@ -94,6 +102,14 @@
           <div class="stat-value" id="timerValue" style="color: #38bdf8;">00s</div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด (ภาพที่ 2) -->
+  <div id="dashboardView">
+    <button class="back-main-btn" onclick="showMain()">← กลับหน้าจอหลัก</button>
+    <div class="pair-grid" id="pairGridContainer">
+      <!-- สร้างผ่าน JavaScript -->
     </div>
   </div>
 
@@ -125,57 +141,59 @@
     let lastSignalState = 'WAIT';
     let warned10s = false;
 
-    function selectPair(key) {
-      currentSelectedKey = key;
-      document.getElementById('dashboardView').style.display = 'none';
-      document.getElementById('detailView').style.display = 'flex';
-      updateDetailView();
-    }
-
-    function goBackToDashboard() {
-      document.getElementById('detailView').style.display = 'none';
+    function showDashboard() {
+      document.getElementById('mainView').style.display = 'none';
       document.getElementById('dashboardView').style.display = 'flex';
+      updateDashboardList();
     }
 
-    function updateDashboard() {
+    function showMain() {
+      document.getElementById('dashboardView').style.display = 'none';
+      document.getElementById('mainView').style.display = 'flex';
+    }
+
+    function selectPairAndReturn(key) {
+      currentSelectedKey = key;
+      showMain();
+      updateMainView();
+    }
+
+    function updateDashboardList() {
       const container = document.getElementById('pairGridContainer');
       container.innerHTML = '';
 
       globalPairsData.forEach(p => {
-        const isGreen = p.statusColor === 'green';
-        const badgeClass = isGreen ? 'badge-green' : 'badge-red';
-        const statusText = isGreen ? '🟢 ปลอดภัย' : '🔴 อันตราย';
+        const isSafe = p.statusColor === 'green';
+        const badgeClass = isSafe ? 'badge-green' : 'badge-red';
+        const statusText = isSafe ? '🟢 ปลอดภัย' : '🔴 อันตราย';
 
         const div = document.createElement('div');
         div.className = 'pair-item';
-        div.onclick = () => selectPair(p.key);
+        div.onclick = () => selectPairAndReturn(p.key);
         div.innerHTML = `
           <div class="pair-header">
             <span>${p.name}</span>
-            <span class="${badgeClass}">${isGreen ? 'SAFE' : 'DANGER'}</span>
+            <span class="${badgeClass}">${isSafe ? 'SAFE' : 'DANGER'}</span>
           </div>
           <div class="pair-info">
             <span>RSI: ${p.rsi}</span>
-            <span style="color: ${isGreen ? '#34d399' : '#f87171'}">${statusText}</span>
+            <span style="color: ${isSafe ? '#34d399' : '#f87171'}">${statusText}</span>
           </div>
         `;
         container.appendChild(div);
       });
     }
 
-    function updateDetailView() {
+    function updateMainView() {
       const p = globalPairsData.find(item => item.key === currentSelectedKey);
       if (!p) return;
 
-      document.getElementById('selectedPairName').innerText = p.name;
-      const trendBadge = document.getElementById('selectedPairTrend');
-      trendBadge.className = p.statusColor === 'green' ? 'badge-green' : 'badge-red';
-      trendBadge.innerText = p.statusText;
-
+      document.getElementById('marketLabel').innerText = p.name;
       document.getElementById('signalDisplay').innerText = p.signal;
       document.getElementById('signalDisplay').className = `signal-box ${p.signal}`;
       document.getElementById('confValue').innerText = `${p.confidence}%`;
       document.getElementById('rsiValue').innerText = p.rsi;
+      document.getElementById('trendLabel').innerText = p.trend;
     }
 
     function connectWS() {
@@ -202,9 +220,9 @@
 
           // อัปเดตหน้าจอตามมุมมองปัจจุบัน
           if (document.getElementById('dashboardView').style.display !== 'none') {
-            updateDashboard();
+            updateDashboardList();
           } else {
-            updateDetailView();
+            updateMainView();
             const activePair = globalPairsData.find(i => i.key === currentSelectedKey);
             if (activePair && activePair.signal !== 'WAIT' && activePair.signal !== lastSignalState) {
               playBeep(850, 0.3);
