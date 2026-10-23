@@ -50,6 +50,51 @@ setInterval(() => {
   });
 }, 1000);
 
+// 🧠 โครงข่ายประสาทเทียมแท้ (Tiny Neural Network - Multi-Layer Perceptron)
+class TinyNeuralNetwork {
+  constructor() {
+    // กำหนดค่าน้ำหนัก (Weights) และค่า Bias ของเซลล์ประสาทจำลอง
+    // Input layer: 4 มิติ [ความต่าง EMA, ค่า RSI ปกติ, ความกว้าง BB, โมเมนตัมราคา]
+    this.W1 = [
+      [ 0.85, -0.42,  0.25,  0.50],
+      [-0.30,  0.70, -0.45,  0.20],
+      [ 0.55,  0.30,  0.80, -0.35],
+      [-0.25, -0.50,  0.15,  0.90]
+    ];
+    this.B1 = [0.15, -0.10, 0.20, 0.05];
+    
+    // Output layer weights (รวมผลจาก Hidden Layer 4 ตัว ออกมาเป็น 1 ค่าความน่าจะเป็น)
+    this.W2 = [ 0.65, -0.75, 0.45, 0.55 ];
+    this.B2 = 0.0;
+  }
+
+  // Activation Function (Sigmoid) แปลงค่าให้อยู่ระหว่าง 0 ถึง 1
+  sigmoid(x) {
+    return 1 / (1 + Math.exp(-Math.max(-15, Math.min(15, x))));
+  }
+
+  // ประมวลผล Forward Pass ผ่านโครงข่ายสมองกล
+  predict(inputs) {
+    let hidden = [];
+    for (let i = 0; i < this.W1.length; i++) {
+      let sum = this.B1[i];
+      for (let j = 0; j < inputs.length; j++) {
+        sum += inputs[j] * this.W1[i][j];
+      }
+      hidden.push(this.sigmoid(sum));
+    }
+
+    let outSum = this.B2;
+    for (let i = 0; i < hidden.length; i++) {
+      outSum += hidden[i] * this.W2[i];
+    }
+    return this.sigmoid(outSum); // คืนค่าความน่าจะเป็น (0.0 ถึง 1.0)
+  }
+}
+
+// สร้างอินสแตนซ์สมองกล AI ประจำระบบ
+const tradingAI = new TinyNeuralNetwork();
+
 function calculateEMA(prices, period) {
   if (prices.length < period) return prices[prices.length - 1] || 0;
   const k = 2 / (period + 1);
@@ -85,7 +130,6 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานแบบไดนามิก
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -112,7 +156,7 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'AI READY',
+        statusText: 'NEURAL NET READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
@@ -124,77 +168,55 @@ function processEngine() {
 
     const currentPrice = prices[prices.length - 1];
     const prevPrice = prices[prices.length - 2] || currentPrice;
-    const prev2Price = prices[prices.length - 3] || prevPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
     const ema6 = calculateEMA(prices, 6);
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
-
-    // วิเคราะห์พฤติกรรมแท่งเทียนปัจจุบัน (Price Action & Rejection)
-    const candleDelta = currentPrice - prevPrice;
-    const prevCandleDelta = prevPrice - prev2Price;
     const isSideway = bb.bandwidth < 0.035;
 
-    // AI ตรวจจับกับดักราคา (Trap Detection)
-    // ถ้าราคาพยายามพุ่งขึ้นแต่โมเมนตัมกำลังหมดและ RSI อยู่โซนซื้อเกิน -> ตรวจพบกับดักฝั่งซื้อ (Bullish Trap)
-    const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
-    // ถ้าราคาพยายามทุบลงแต่โมเมนตัมเริ่มหมดและ RSI อยู่โซนขายเกิน -> ตรวจพบกับดักฝั่งขาย (Bearish Trap)
-    const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
+    // 🔬 แปลงตัวแปรตลาดให้อยู่ในรูป Input Vector สำหรับส่งเข้า Neural Network (-1 ถึง 1 หรือสเกลที่เหมาะสม)
+    const emaDiffFeature = (ema6 - ema21) / currentPrice * 1000;
+    const rsiFeature = (rsi - 50) / 50;
+    const bbWidthFeature = bb.bandwidth / 0.1;
+    const momentumFeature = (currentPrice - prevPrice) / currentPrice * 1000;
+
+    // 🤖 ให้โครงข่ายประสาทเทียมคำนวณความน่าจะเป็น (Neural Network Forward Pass)
+    const aiProbability = tradingAI.predict([emaDiffFeature, rsiFeature, bbWidthFeature, momentumFeature]);
+    
+    // แปลงผลลัพธ์ความน่าจะเป็นจาก AI เป็นเปอร์เซ็นต์ความมั่นใจ
+    let aiConfidence = parseFloat((Math.abs(aiProbability - 0.5) * 200).toFixed(1));
+    aiConfidence = Math.min(Math.max(aiConfidence, 50.0), 98.0);
 
     let aiDecision = 'WAIT';
-    let aiConfidence = 50.0;
     let isVipSignal = false;
     let statusText = 'SAFE';
 
     if (isSideway) {
       statusText = 'DANGER (SIDEWAY)';
       aiDecision = 'SIDEWAY';
-      aiConfidence = 40.0;
     } else {
-      // คำนวณความแข็งแกร่งของเทรนด์พื้นฐาน
-      const trendStrength = Math.abs(ema6 - ema21) / currentPrice * 1000;
-      aiConfidence = Math.min(65.0 + (trendStrength * 15.0), 95.0);
-
-      // 🎯 ช่วง 3 วินาทีสุดท้าย AI ตัดสินใจหน้างานและพลิกเกมอัตโนมัติ
+      // 🎯 ช่วง 3 วินาทีสุดท้าย ให้สมองกล Neural Network ตัดสินใจสั่งการ
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        if (isBullishTrap) {
-          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าขึ้น -> อัด PUT (สับขาหลอกตลาด)
-          aiDecision = 'PUT';
-          aiConfidence = 92.5;
-          isVipSignal = true;
-          state.signal = 'PUT';
+        // ถ้าผลลัพธ์โครงข่ายประสาทเทียมโน้มเอียงไปทางสูง (> 0.68) -> สั่ง CALL
+        if (aiProbability > 0.68 && rsi < 72) {
+          aiDecision = 'CALL';
+          state.signal = 'CALL';
           state.timer = 30.0;
+          isVipSignal = aiConfidence >= 82.0;
         } 
-        else if (isBearishTrap) {
-          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าลง -> อัด CALL (สับขาหลอกตลาด)
-          aiDecision = 'CALL';
-          aiConfidence = 92.5;
-          isVipSignal = true;
-          state.signal = 'CALL';
-          state.timer = 30.0;
-        }
-        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 70) {
-          // เทรนด์ปกติขาขึ้นแข็งแกร่ง
-          aiDecision = 'CALL';
-          state.signal = 'CALL';
-          state.timer = 30.0;
-          isVipSignal = aiConfidence >= 85.0;
-        }
-        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 30) {
-          // เทรนด์ปกติขาลงแข็งแกร่ง
+        // ถ้าผลลัพธ์โครงข่ายประสาทเทียมโน้มเอียงไปทางต่ำ (< 0.32) -> สั่ง PUT
+        else if (aiProbability < 0.32 && rsi > 28) {
           aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
-          isVipSignal = aiConfidence >= 85.0;
+          isVipSignal = aiConfidence >= 82.0;
         }
       }
     }
 
-    // คงสถานะสัญญาณไว้จนกว่าจะครบ Timer 30 วินาที
-    let finalSignal = state.signal !== 'WAIT' ? state.signal : aiDecision;
-    if (isSideway) finalSignal = 'SIDEWAY';
+    let finalSignal = state.signal !== 'WAIT' ? state.signal : (isSideway ? 'SIDEWAY' : aiDecision);
 
     pairStatuses.push({
       key: s.key,
@@ -204,7 +226,7 @@ function processEngine() {
       signal: finalSignal,
       confidence: aiConfidence.toFixed(1),
       rsi: rsi,
-      trend: isBullishTrap ? 'BULLISH TRAP ⚠️' : (isBearishTrap ? 'BEARISH TRAP ⚠️' : (ema6 > ema21 ? 'BULLISH 🟢' : 'BEARISH 🔴')),
+      trend: aiProbability > 0.5 ? 'NN BULLISH 🟢' : 'NN BEARISH 🔴',
       isVip: isVipSignal
     });
   });
@@ -226,4 +248,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Neural Network Engine running on port ${PORT}`));
