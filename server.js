@@ -124,9 +124,10 @@ function processEngine() {
     const ema20 = calculateEMA(prices, 20);
     const bb = calculateBB(prices);
 
-    const isBullishTrend = ema5 > ema20 && currentPrice >= ema5;
-    const isBearishTrend = ema5 < ema20 && currentPrice <= ema5;
-    const isSideway = bb.bandwidth < 0.08;
+    // ปรับเงื่อนไขให้ยืดหยุ่นและไวต่อเทรนด์แบบในภาพ (ราคาอยู่เหนือเส้นและ EMA เรียงตัว)
+    const isBullishTrend = ema5 > ema20 && currentPrice >= (ema5 * 0.9995);
+    const isBearishTrend = ema5 < ema20 && currentPrice <= (ema5 * 1.0005);
+    const isSideway = bb.bandwidth < 0.06;
 
     let statusColor = 'green';
     let statusText = 'SAFE';
@@ -136,18 +137,18 @@ function processEngine() {
       statusColor = 'red';
       statusText = 'DANGER';
     } else {
-      let score = 58;
+      let score = 62;
       if (isBullishTrend || isBearishTrend) score += 25;
-      if (currentPrice !== prevPrice) score += 12;
+      if (currentPrice > prevPrice) score += 10;
       
-      confidence = Math.min(score, 95.0).toFixed(1);
+      confidence = Math.min(score, 96.0).toFixed(1);
 
-      // 🎯 ล็อกเงื่อนไขยิงสัญญาณเฉพาะช่วง 0.5 ถึง 0.0 วินาทีสุดท้ายเป๊ะๆ
-      if (exactTimeLeft <= 0.5 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        if (isBullishTrend && score >= 60) {
+      // 🎯 ตั้งค่าเวลา AI-Optimized: เช็คสัญญาณในช่วง 3.0 ถึง 0.0 วินาทีสุดท้าย (กว้างพอที่จะไม่พลาดและแม่นยำ)
+      if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
+        if (isBullishTrend && score >= 58) {
           state.signal = 'CALL';
           state.timer = 30.0; // 🔒 ล็อกไฟโชว์ค้างยาว 30 วินาที
-        } else if (isBearishTrend && score >= 60) {
+        } else if (isBearishTrend && score >= 58) {
           state.signal = 'PUT';
           state.timer = 30.0; // 🔒 ล็อกไฟโชว์ค้างยาว 30 วินาที
         }
