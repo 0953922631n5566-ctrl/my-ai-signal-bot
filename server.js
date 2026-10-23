@@ -88,16 +88,17 @@ function processEngine() {
 
   symbols.forEach(s => {
     const prices = marketHistories[s.key];
-    if (!prices || prices.length < 50) {
+    // ลดจำนวนข้อมูลที่ต้องรอดาวน์โหลดลงเหลือ 20 เพื่อให้พร้อมใช้งานทันที
+    if (!prices || prices.length < 20) {
       pairStatuses.push({
         key: s.key,
         name: s.name,
         statusColor: 'green',
         statusText: 'SAFE',
         signal: 'WAIT',
-        confidence: '0.0',
+        confidence: '50.0',
         rsi: 50.0,
-        trend: 'INITIALIZING'
+        trend: 'READY 🟢'
       });
       return;
     }
@@ -111,28 +112,32 @@ function processEngine() {
     const ema50 = calculateEMA(prices, 50);
     const bb = calculateBB(prices);
 
-    const isBullishTrend = ema5 > ema20 && ema20 > ema50;
-    const isBearishTrend = ema5 < ema20 && ema20 < ema50;
-    const isSideway = bb.bandwidth < 0.05 || (rsi >= 46 && rsi <= 54);
+    // ปรับเงื่อนไขให้ยืดหยุ่นขึ้น (ดูแค่ EMA 5 อยู่เหนือ/ใต้ EMA 50 และทิศทางราคา)
+    const isBullish = currentPrice > ema50 && ema5 >= ema20;
+    const isBearish = currentPrice < ema50 && ema5 <= ema20;
+    const isSideway = bb.bandwidth < 0.03; // กรองเฉพาะไซด์เวย์แคบๆ จริงๆ
 
     let statusColor = 'green';
     let statusText = 'SAFE';
     let signal = 'WAIT';
-    let confidence = '0.0';
+    let confidence = '50.0';
 
     if (isSideway) {
       statusColor = 'red';
       statusText = 'DANGER';
       signal = 'SIDEWAY';
     } else {
-      let score = 40;
-      if (isBullishTrend || isBearishTrend) score += 40;
-      if (currentPrice !== prevPrice) score += 15;
-      confidence = Math.min(score, 95.0).toFixed(1);
+      let score = 50;
+      if (isBullish || isBearish) score += 25;
+      if (currentPrice > prevPrice) score += 15;
+      else score += 10;
+      
+      confidence = Math.min(score, 92.0).toFixed(1);
 
-      if (exactTimeLeft <= 1.0 && exactTimeLeft > 0.1) {
-        if (isBullishTrend && score >= 68) signal = 'CALL';
-        else if (isBearishTrend && score >= 68) signal = 'PUT';
+      // ลดเกณฑ์ตัดสินใจลงเหลือ >= 62% เพื่อให้ส่งสัญญาณเข้าออเดอร์ได้บ่อยและแม่นยำขึ้น
+      if (exactTimeLeft <= 1.5 && exactTimeLeft > 0.1) {
+        if (isBullish && score >= 62) signal = 'CALL';
+        else if (isBearish && score >= 62) signal = 'PUT';
       }
     }
 
@@ -144,7 +149,7 @@ function processEngine() {
       signal: signal,
       confidence: confidence,
       rsi: rsi,
-      trend: isBullishTrend ? 'BULLISH 🟢' : (isBearishTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
+      trend: isBullish ? 'BULLISH 🟢' : (isBearish ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
     });
   });
 
@@ -165,4 +170,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`App Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
