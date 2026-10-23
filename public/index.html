@@ -1,273 +1,214 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AI AUTO SCANNER PRO</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background-color: #060a12; color: #ffffff; padding: 12px; display: flex; flex-direction: column; gap: 10px; height: 100vh; overflow: hidden; }
-    
-    .header { text-align: center; padding: 4px; font-weight: 900; font-size: 16px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
-    .status-badge { font-size: 9px; padding: 3px 8px; border-radius: 10px; font-weight: 900; }
-    .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
-    .status-offline { background: #dc2626; color: #ffffff; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noghjkbot - AI Auto Scanner</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #0f172a; color: #fff; padding: 10px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { width: 100%; max-width: 400px; background: #1e293b; border-radius: 16px; padding: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .title { font-size: 16px; font-weight: bold; color: #38bdf8; display: flex; align-items: center; gap: 5px; }
+        .badge-live { background: #22c55e; color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        
+        .selector-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px; margin-bottom: 15px; font-size: 13px; color: #94a3b8; text-align: center; cursor: pointer; }
+        .selector-box:hover { border-color: #38bdf8; color: #fff; }
 
-    /* ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน */
-    .scanner-banner { 
-      background: #0f172a; 
-      border-radius: 12px; 
-      padding: 10px; 
-      text-align: center; 
-      border: 1.5px solid #0284c7; 
-      color: #38bdf8; 
-      font-weight: bold; 
-      font-size: 11px; 
-      box-shadow: 0 0 12px rgba(2, 132, 199, 0.3); 
-      cursor: pointer; 
-      flex-shrink: 0;
-      transition: 0.2s; 
-    }
-    .scanner-banner:active { transform: scale(0.98); background: #1e293b; }
+        .signal-card { background: #0f172a; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 15px; border: 1px solid #334155; transition: all 0.3s ease; position: relative; }
+        .signal-title { font-size: 13px; color: #94a3b8; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+        .signal-status { font-size: 36px; font-weight: bold; letter-spacing: 2px; margin: 20px 0; }
+        .signal-wait { color: #94a3b8; }
+        .signal-call { color: #22c55e; text-shadow: 0 0 15px rgba(34,197,94,0.5); }
+        .signal-put { color: #ef4444; text-shadow: 0 0 15px rgba(239,68,68,0.5); }
+        .signal-sideway { color: #eab308; }
 
-    /* หน้าจอหลัก: ขยายความสูงให้เต็มพื้นที่กรอบสีแดงด้านล่าง */
-    #mainView { display: flex; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
-    
-    .signal-card { 
-      background: #0f172a; 
-      border-radius: 16px; 
-      padding: 16px; 
-      text-align: center; 
-      border: 1px solid #1e293b; 
-      display: flex; 
-      flex-direction: column; 
-      justify-content: space-between; 
-      flex: 1; 
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); 
-      min-height: 0;
-    }
-    
-    .pair-title { font-size: 14px; color: #facc15; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
-    
-    .signal-box { 
-      font-size: 42px; 
-      font-weight: 900; 
-      padding: 20px; 
-      border-radius: 14px; 
-      text-transform: uppercase; 
-      letter-spacing: 2px; 
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex: 1;
-      margin: 8px 0;
-    }
-    
-    .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 35px rgba(16, 185, 129, 0.9); }
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 35px rgba(244, 63, 94, 0.9); }
-    .SIDEWAY { background: #7f1d1d; color: #fef08a; border: 3px solid #ef4444; animation: blink 0.5s infinite alternate; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .metric-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 5px; text-align: center; }
+        .metric-label { font-size: 10px; color: #94a3b8; margin-bottom: 4px; }
+        .metric-val { font-size: 14px; font-weight: bold; color: #fff; }
 
-    @keyframes blink { from { background: #7f1d1d; } to { background: #991b1b; } }
+        .pairs-list { display: flex; flex-direction: column; gap: 8px; max-height: 350px; overflow-y: auto; }
+        .pair-item { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .pair-item:hover { border-color: #38bdf8; }
+        
+        /* ไฟกระพริบวูบวาบสำหรับไม้เด็ด VIP 90%+ */
+        @keyframes vipBlinkCall {
+          0% { box-shadow: 0 0 10px #00ff88, inset 0 0 10px #00ff88; opacity: 1; }
+          50% { box-shadow: 0 0 35px #00ff88, 0 0 50px #00ff88, inset 0 0 20px #ffffff; opacity: 0.85; }
+          100% { box-shadow: 0 0 10px #00ff88, inset 0 0 10px #00ff88; opacity: 1; }
+        }
+        @keyframes vipBlinkPut {
+          0% { box-shadow: 0 0 10px #ff3366, inset 0 0 10px #ff3366; opacity: 1; }
+          50% { box-shadow: 0 0 35px #ff3366, 0 0 50px #ff3366, inset 0 0 20px #ffffff; opacity: 0.85; }
+          100% { box-shadow: 0 0 10px #ff3366, inset 0 0 10px #ff3366; opacity: 1; }
+        }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex-shrink: 0; }
-    .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
-    .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
-    .stat-value { font-size: 16px; font-weight: 900; margin-top: 4px; color: #ffffff; }
+        .signal-vip-call {
+          animation: vipBlinkCall 0.6s infinite alternate !important;
+          border: 2px solid #00ff88 !important;
+          background: rgba(0, 255, 136, 0.05) !important;
+        }
 
-    /* หน้าจอดัชนีรายการคู่เงินทั้งหมด */
-    #dashboardView { display: none; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
-    .back-main-btn { background: #1e293b; color: #38bdf8; border: 1.5px solid #0284c7; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; flex-shrink: 0; }
-    
-    .pair-grid-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding-right: 2px; }
-    .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .pair-item { background: #0f172a; border-radius: 12px; padding: 12px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-    .pair-item:active { transform: scale(0.97); }
-    
-    .pair-header { display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 14px; color: #ffffff; }
-    
-    .badge-green { background: rgba(5, 150, 105, 0.25); color: #34d399; border: 1px solid #059669; font-size: 9px; padding: 2px 8px; border-radius: 6px; font-weight: bold; }
-    .badge-red { background: rgba(220, 38, 38, 0.25); color: #fca5a5; border: 1px solid #dc2626; font-size: 9px; padding: 2px 8px; border-radius: 6px; font-weight: bold; animation: pulseRed 1s infinite alternate; }
-
-    @keyframes pulseRed { from { opacity: 0.6; } to { opacity: 1; box-shadow: 0 0 8px #dc2626; } }
-
-    .pair-info { font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; }
-  </style>
+        .signal-vip-put {
+          animation: vipBlinkPut 0.6s infinite alternate !important;
+          border: 2px solid #ff3366 !important;
+          background: rgba(255, 51, 102, 0.05) !important;
+        }
+        .hidden { display: none !important; }
+    </style>
 </head>
 <body>
-
-  <div class="header">
-    ⚡ AI AUTO SCANNER <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
-  </div>
-
-  <!-- ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน -->
-  <div class="scanner-banner" onclick="showDashboard()">
-    🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
-  </div>
-
-  <!-- หน้าจอหลัก (เติมเต็มพื้นที่ในกรอบสีแดงด้านล่างสุด) -->
-  <div id="mainView">
-    <div class="signal-card">
-      <div class="pair-title">
-        <span>AI Selected: <strong id="marketLabel" style="color: #ffffff;">EUR/USD</strong></span>
-        <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">TRIPLE EMA ACTIVE 🟢</span>
-      </div>
-
-      <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
-      
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-label">Confidence</div>
-          <div class="stat-value" id="confValue" style="color: #38bdf8;">0.0%</div>
+    <div class="container">
+        <div class="header">
+            <div class="title">⚡ AI AUTO SCANNER <span class="badge-live">LIVE</span></div>
         </div>
-        <div class="stat-box">
-          <div class="stat-label">RSI (14)</div>
-          <div class="stat-value" id="rsiValue" style="color: #facc15;">50.0</div>
+
+        <div class="selector-box" id="selectorToggle" onclick="toggleView()">
+            🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
         </div>
-        <div class="stat-box">
-          <div class="stat-label">แท่งถัดไปใน</div>
-          <div class="stat-value" id="timerValue" style="color: #38bdf8;">00s</div>
+
+        <!-- หน้าจอแสดงผลหลัก (Single View) -->
+        <div id="singleView">
+            <div class="signal-card" id="mainCard">
+                <div class="signal-title">
+                    <span id="selectedPairName">AI Selected: EUR/USD</span>
+                    <span id="trendBadge" style="font-size:11px;">BULLISH 🟢</span>
+                </div>
+                <div class="signal-status signal-wait" id="mainSignal">WAIT</div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-box">
+                    <div class="metric-label">Confidence</div>
+                    <div class="metric-val" id="valConfidence">50.0%</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">RSI (14)</div>
+                    <div class="metric-val" id="valRsi">50.0</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">แท่งถัดไปใน</div>
+                    <div class="metric-val" id="valTimeLeft">60s</div>
+                </div>
+            </div>
         </div>
-      </div>
+
+        <!-- หน้าจอรายชื่อคู่เงินทั้งหมด (List View) -->
+        <div id="listView" class="hidden">
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px; display: flex; justify-content: space-between;">
+                <span>เลือกคู่เงินเพื่อติดตาม</span>
+                <span style="cursor:pointer; color:#38bdf8;" onclick="toggleView()">⬅ กลับหน้าหลัก</span>
+            </div>
+            <div class="pairs-list" id="pairsContainer"></div>
+        </div>
     </div>
-  </div>
 
-  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด -->
-  <div id="dashboardView">
-    <button class="back-main-btn" onclick="showMain()">← กลับหน้าจอหลัก</button>
-    <div class="pair-grid-scroll">
-      <div class="pair-grid" id="pairGridContainer">
-        <!-- สร้างผ่าน JavaScript -->
-      </div>
-    </div>
-  </div>
+    <script>
+        let ws;
+        let currentSelectedKey = 'eurusd';
+        let isShowingList = false;
+        let cachedPairsData = [];
 
-  <script>
-    if (window.Telegram && window.Telegram.WebApp) {
-      Telegram.WebApp.ready();
-      Telegram.WebApp.expand();
-    }
-
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playBeep(freq = 800, duration = 0.25) {
-      try {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + duration);
-      } catch (e) {}
-    }
-
-    let ws;
-    let currentSelectedKey = 'eurusdt';
-    let globalPairsData = [];
-    let lastSignalState = 'WAIT';
-    let warned10s = false;
-
-    function showDashboard() {
-      document.getElementById('mainView').style.display = 'none';
-      document.getElementById('dashboardView').style.display = 'flex';
-      updateDashboardList();
-    }
-
-    function showMain() {
-      document.getElementById('dashboardView').style.display = 'none';
-      document.getElementById('mainView').style.display = 'flex';
-    }
-
-    function selectPairAndReturn(key) {
-      currentSelectedKey = key;
-      showMain();
-      updateMainView();
-    }
-
-    function updateDashboardList() {
-      const container = document.getElementById('pairGridContainer');
-      container.innerHTML = '';
-
-      globalPairsData.forEach(p => {
-        const isSafe = p.statusColor === 'green';
-        const badgeClass = isSafe ? 'badge-green' : 'badge-red';
-        const statusText = isSafe ? '🟢 ปลอดภัย' : '🔴 อันตราย';
-
-        const div = document.createElement('div');
-        div.className = 'pair-item';
-        div.onclick = () => selectPairAndReturn(p.key);
-        div.innerHTML = `
-          <div class="pair-header">
-            <span>${p.name}</span>
-            <span class="${badgeClass}">${isSafe ? 'SAFE' : 'DANGER'}</span>
-          </div>
-          <div class="pair-info">
-            <span>RSI: ${p.rsi}</span>
-            <span style="color: ${isSafe ? '#34d399' : '#f87171'}">${statusText}</span>
-          </div>
-        `;
-        container.appendChild(div);
-      });
-    }
-
-    function updateMainView() {
-      const p = globalPairsData.find(item => item.key === currentSelectedKey);
-      if (!p) return;
-
-      document.getElementById('marketLabel').innerText = p.name;
-      document.getElementById('signalDisplay').innerText = p.signal;
-      document.getElementById('signalDisplay').className = `signal-box ${p.signal}`;
-      document.getElementById('confValue').innerText = `${p.confidence}%`;
-      document.getElementById('rsiValue').innerText = p.rsi;
-      document.getElementById('trendLabel').innerText = p.trend;
-    }
-
-    function connectWS() {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${protocol}//${window.location.host}`);
-
-      ws.onopen = () => {
-        document.getElementById('netStatus').innerText = 'LIVE';
-        document.getElementById('netStatus').className = 'status-badge status-online';
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'scanner_update') {
-          globalPairsData = data.pairs;
-          document.getElementById('timerValue').innerText = `${data.timeLeft}s`;
-
-          if (data.timeLeft === 10 && !warned10s) {
-            playBeep(550, 0.15);
-            warned10s = true;
-          }
-          if (data.timeLeft > 10) warned10s = false;
-
-          if (document.getElementById('dashboardView').style.display !== 'none') {
-            updateDashboardList();
-          } else {
-            updateMainView();
-            const activePair = globalPairsData.find(i => i.key === currentSelectedKey);
-            if (activePair && activePair.signal !== 'WAIT' && activePair.signal !== lastSignalState) {
-              playBeep(850, 0.3);
-            }
-            if (activePair) lastSignalState = activePair.signal;
-          }
+        function toggleView() {
+            isShowingList = !isShowingList;
+            document.getElementById('singleView').classList.toggle('hidden', isShowingList);
+            document.getElementById('listView').classList.toggle('hidden', !isShowingList);
+            if (isShowingList) renderPairsList();
         }
-      };
 
-      ws.onclose = () => {
-        document.getElementById('netStatus').innerText = 'OFFLINE';
-        document.getElementById('netStatus').className = 'status-badge status-offline';
-        setTimeout(connectWS, 2000);
-      };
-    }
+        function selectPair(key) {
+            currentSelectedKey = key;
+            toggleView();
+            updateUI();
+        }
 
-    connectWS();
-  </script>
+        function connectWS() {
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            ws = new WebSocket(protocol + window.location.host);
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'scanner_update') {
+                        cachedPairsData = data.pairs;
+                        updateUI(data.timeLeft);
+                    }
+                } catch(e) {}
+            };
+
+            ws.onclose = function() {
+                setTimeout(connectWS, 3000);
+            };
+        }
+
+        function updateUI(timeLeftVal) {
+            if (!cachedPairsData || cachedPairsData.length === 0) return;
+
+            const currentPair = cachedPairsData.find(p => p.key === currentSelectedKey) || cachedPairsData[0];
+            
+            document.getElementById('selectedPairName').innerText = `AI Selected: ${currentPair.name}`;
+            document.getElementById('trendBadge').innerText = currentPair.trend;
+            
+            const signalEl = document.getElementById('mainSignal');
+            const cardEl = document.getElementById('mainCard');
+            
+            signalEl.className = 'signal-status';
+            cardEl.className = 'signal-card';
+
+            if (currentPair.signal === 'CALL') {
+                signalEl.innerText = 'CALL';
+                signalEl.classList.add('signal-call');
+                if (currentPair.isVip) {
+                    cardEl.classList.add('signal-vip-call');
+                }
+            } else if (currentPair.signal === 'PUT') {
+                signalEl.innerText = 'PUT';
+                signalEl.classList.add('signal-put');
+                if (currentPair.isVip) {
+                    cardEl.classList.add('signal-vip-put');
+                }
+            } else if (currentPair.signal === 'SIDEWAY') {
+                signalEl.innerText = 'SIDEWAY';
+                signalEl.classList.add('signal-sideway');
+            } else {
+                signalEl.innerText = 'WAIT';
+                signalEl.classList.add('signal-wait');
+            }
+
+            document.getElementById('valConfidence').innerText = currentPair.confidence + '%';
+            document.getElementById('valRsi').innerText = currentPair.rsi;
+            if (timeLeftVal !== undefined) {
+                document.getElementById('valTimeLeft').innerText = timeLeftVal + 's';
+            }
+
+            if (isShowingList) {
+                renderPairsList();
+            }
+        }
+
+        function renderPairsList() {
+            const container = document.getElementById('pairsContainer');
+            container.innerHTML = '';
+            cachedPairsData.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'pair-item';
+                div.innerHTML = `
+                    <div>
+                        <div style="font-weight:bold; font-size:14px;">${p.name}</div>
+                        <div style="font-size:11px; color:#94a3b8;">RSI: ${p.rsi} | ${p.trend}</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-weight:bold; font-size:13px; color: ${p.signal === 'CALL' ? '#22c55e' : (p.signal === 'PUT' ? '#ef4444' : '#94a3b8')}">${p.signal} ${p.isVip ? '🔥VIP' : ''}</div>
+                        <div style="font-size:11px; color:#38bdf8;">${p.confidence}%</div>
+                    </div>
+                `;
+                div.onclick = () => selectPair(p.key);
+                container.appendChild(div);
+            });
+        }
+
+        connectWS();
+    </script>
 </body>
 </html>
