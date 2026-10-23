@@ -36,6 +36,7 @@ symbols.forEach(s => {
   }
 });
 
+// จำลองการขยับราคาตลาดเรียลไทม์
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
@@ -84,6 +85,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
+// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานแบบไดนามิก
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -110,11 +112,11 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'SAFE',
+        statusText: 'AI READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
-        trend: 'READY 🟢',
+        trend: 'ANALYZING 🟢',
         isVip: false
       });
       return;
@@ -122,87 +124,88 @@ function processEngine() {
 
     const currentPrice = prices[prices.length - 1];
     const prevPrice = prices[prices.length - 2] || currentPrice;
-    const prevOpenCloseDiff = Math.abs(currentPrice - prevPrice);
+    const prev2Price = prices[prices.length - 3] || prevPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
     const ema6 = calculateEMA(prices, 6);
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
 
-    const isBullishTrend = ema6 > ema21 && currentPrice >= ema6;
-    const isBearishTrend = ema6 < ema21 && currentPrice <= ema6;
-    const isSideway = bb.bandwidth < 0.04;
+    // วิเคราะห์พฤติกรรมแท่งเทียนปัจจุบัน (Price Action & Rejection)
+    const candleDelta = currentPrice - prevPrice;
+    const prevCandleDelta = prevPrice - prev2Price;
+    const isSideway = bb.bandwidth < 0.035;
 
-    // 🔄 ระบบตรวจจับสัญญาณหลอก (Fakeout Detection สำหรับพลิกเกมสวน)
-    // หาก RSI อยู่ในโซนซื้อมากเกินไป (Overbought) แต่แท่งเทียนพยายามดันขึ้น บอทจะมองเป็น "สัญญาณหลอกขึ้นเพื่อตบลง"
-    const isFakeBullish = isBullishTrend && rsi >= 70.0; 
-    // หาก RSI อยู่ในโซนขายมากเกินไป (Oversold) แต่แท่งเทียนพยายามดันลง บอทจะมองเป็น "สัญญาณหลอกลงเพื่อตบขึ้น"
-    const isFakeBearish = isBearishTrend && rsi <= 30.0;
+    // AI ตรวจจับกับดักราคา (Trap Detection)
+    // ถ้าราคาพยายามพุ่งขึ้นแต่โมเมนตัมกำลังหมดและ RSI อยู่โซนซื้อเกิน -> ตรวจพบกับดักฝั่งซื้อ (Bullish Trap)
+    const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
+    // ถ้าราคาพยายามทุบลงแต่โมเมนตัมเริ่มหมดและ RSI อยู่โซนขายเกิน -> ตรวจพบกับดักฝั่งขาย (Bearish Trap)
+    const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
 
-    let calculatedScore = 50.0;
-    if (!isSideway) {
-      const emaDiff = Math.abs(ema6 - ema21) / currentPrice * 1000;
-      calculatedScore = 60.0 + (emaDiff * 12.0);
-      calculatedScore = Math.min(Math.max(calculatedScore, 50.0), 96.0);
-    }
-
-    let statusColor = 'green';
+    let aiDecision = 'WAIT';
+    let aiConfidence = 50.0;
+    let isVipSignal = false;
     let statusText = 'SAFE';
 
     if (isSideway) {
-      statusColor = 'red';
-      statusText = 'DANGER';
-      calculatedScore = 40.0;
+      statusText = 'DANGER (SIDEWAY)';
+      aiDecision = 'SIDEWAY';
+      aiConfidence = 40.0;
     } else {
-      // 🎯 ยิงสัญญาณช่วง 3.0 วินาทีสุดท้าย พร้อมระบบ "พลิกเกมสวนทันที" ถ้าเจอสัญญาณหลอก
+      // คำนวณความแข็งแกร่งของเทรนด์พื้นฐาน
+      const trendStrength = Math.abs(ema6 - ema21) / currentPrice * 1000;
+      aiConfidence = Math.min(65.0 + (trendStrength * 15.0), 95.0);
+
+      // 🎯 ช่วง 3 วินาทีสุดท้าย AI ตัดสินใจหน้างานและพลิกเกมอัตโนมัติ
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        if (isFakeBullish) {
-          // เจอสัญญาณหลอกว่าขึ้น (Bullish แต่ RSI สูงเกินไป) -> พลิกเกมสวนเป็น PUT ทันทีตั้งแต่ต้นแท่ง!
+        if (isBullishTrap) {
+          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าขึ้น -> อัด PUT (สับขาหลอกตลาด)
+          aiDecision = 'PUT';
+          aiConfidence = 92.5;
+          isVipSignal = true;
           state.signal = 'PUT';
           state.timer = 30.0;
-          state.confidence = '91.5'; // ให้ความมั่นใจสูงเพราะเป็นการดักตบกลับ
-          state.isVip = true;
         } 
-        else if (isFakeBearish) {
-          // เจอสัญญาณหลอกว่าลง (Bearish แต่ RSI ต่ำเกินไป) -> พลิกเกมสวนเป็น CALL ทันทีตั้งแต่ต้นแท่ง!
+        else if (isBearishTrap) {
+          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าลง -> อัด CALL (สับขาหลอกตลาด)
+          aiDecision = 'CALL';
+          aiConfidence = 92.5;
+          isVipSignal = true;
           state.signal = 'CALL';
           state.timer = 30.0;
-          state.confidence = '91.5';
-          state.isVip = true;
         }
-        else if (isBullishTrend && calculatedScore >= 60.0) {
-          // เทรนด์ปกติขาขึ้น
+        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 70) {
+          // เทรนด์ปกติขาขึ้นแข็งแกร่ง
+          aiDecision = 'CALL';
           state.signal = 'CALL';
           state.timer = 30.0;
-          state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 88.0;
-        } 
-        else if (isBearishTrend && calculatedScore >= 60.0) {
-          // เทรนด์ปกติขาลง
+          isVipSignal = aiConfidence >= 85.0;
+        }
+        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 30) {
+          // เทรนด์ปกติขาลงแข็งแกร่ง
+          aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
-          state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 88.0;
+          isVipSignal = aiConfidence >= 85.0;
         }
       }
     }
 
-    let finalSignal = state.signal;
-    if (isSideway) {
-      finalSignal = 'SIDEWAY';
-    }
+    // คงสถานะสัญญาณไว้จนกว่าจะครบ Timer 30 วินาที
+    let finalSignal = state.signal !== 'WAIT' ? state.signal : aiDecision;
+    if (isSideway) finalSignal = 'SIDEWAY';
 
     pairStatuses.push({
       key: s.key,
       name: s.name,
-      statusColor: statusColor,
+      statusColor: isSideway ? 'red' : 'green',
       statusText: statusText,
       signal: finalSignal,
-      confidence: state.signal !== 'WAIT' ? state.confidence : calculatedScore.toFixed(1),
+      confidence: aiConfidence.toFixed(1),
       rsi: rsi,
-      trend: isBullishTrend ? 'BULLISH 🟢' : (isBearishTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪'),
-      isVip: state.isVip
+      trend: isBullishTrap ? 'BULLISH TRAP ⚠️' : (isBearishTrap ? 'BEARISH TRAP ⚠️' : (ema6 > ema21 ? 'BULLISH 🟢' : 'BEARISH 🔴')),
+      isVip: isVipSignal
     });
   });
 
