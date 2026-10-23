@@ -88,7 +88,7 @@ function processEngine() {
 
   symbols.forEach(s => {
     const prices = marketHistories[s.key];
-    if (!prices || prices.length < 30) {
+    if (!prices || prices.length < 50) {
       pairStatuses.push({
         key: s.key,
         name: s.name,
@@ -105,31 +105,36 @@ function processEngine() {
     const currentPrice = prices[prices.length - 1];
     const prevPrice = prices[prices.length - 2] || currentPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
+    
+    // คำนวณเส้น EMA ทั้ง 3 ระยะ
+    const ema5 = calculateEMA(prices, 5);
+    const ema20 = calculateEMA(prices, 20);
     const ema50 = calculateEMA(prices, 50);
     const bb = calculateBB(prices);
 
-    const isUpTrend = currentPrice > ema50;
-    const isDownTrend = currentPrice < ema50;
-    const isSideway = bb.bandwidth < 0.05 || (rsi >= 45 && rsi <= 55);
+    // เงื่อนไข Triple EMA Alignment
+    const isBullishTrend = ema5 > ema20 && ema20 > ema50;
+    const isBearishTrend = ema5 < ema20 && ema20 < ema50;
+    const isSideway = bb.bandwidth < 0.05 || (rsi >= 46 && rsi <= 54);
 
-    let statusColor = 'green'; // 🟢 ปลอดภัย เทรนด์ดี
+    let statusColor = 'green';
     let statusText = 'SAFE (TREND)';
     let signal = 'WAIT';
     let confidence = '0.0';
 
     if (isSideway) {
-      statusColor = 'red'; // 🔴 อันตราย ไซด์เวย์
+      statusColor = 'red';
       statusText = 'DANGER (SIDEWAY)';
       signal = 'SIDEWAY';
     } else {
       let score = 40;
-      if (isUpTrend || isDownTrend) score += 35;
+      if (isBullishTrend || isBearishTrend) score += 40; // ได้คะแนนสูงเมื่อเส้น EMA เรียงตัวสวยงาม
       if (currentPrice !== prevPrice) score += 15;
-      confidence = Math.min(score, 94.0).toFixed(1);
+      confidence = Math.min(score, 95.0).toFixed(1);
 
       if (exactTimeLeft <= 1.0 && exactTimeLeft > 0.1) {
-        if (isUpTrend && score >= 68) signal = 'CALL';
-        else if (isDownTrend && score >= 68) signal = 'PUT';
+        if (isBullishTrend && score >= 68) signal = 'CALL';
+        else if (isBearishTrend && score >= 68) signal = 'PUT';
       }
     }
 
@@ -141,7 +146,7 @@ function processEngine() {
       signal: signal,
       confidence: confidence,
       rsi: rsi,
-      trend: isUpTrend ? 'BULLISH 🟢' : (isDownTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
+      trend: isBullishTrend ? 'BULLISH 🟢' : (isBearishTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
     });
   });
 
@@ -162,4 +167,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Scanner Dashboard running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Triple EMA Scanner Engine running on port ${PORT}`));
