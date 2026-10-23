@@ -132,15 +132,26 @@ function processEngine() {
     const isBearishTrend = ema5 < ema20 && currentPrice <= ema5;
     const isSideway = bb.bandwidth < 0.04;
 
-    // 🧮 คำนวณเปอร์เซ็นต์ Confidence ตามค่าสถิติและเทคนิคจริง
+    // 🛡️ ระบบกรองป้องกัน Overextended (ราคายืดตัวแรงเกินไปจนเสี่ยงพักตัว)
+    const isRsiOverboughtExtreme = rsi >= 72.0; // ฝั่งซื้อแพงเกินไป
+    const isRsiOversoldExtreme = rsi <= 28.0;   // ฝั่งขายถูกเกินไป
+    const priceStretch = Math.abs(currentPrice - ema5) / currentPrice * 100;
+    const isTooFarFromEma = priceStretch > 0.08; // ยืดห่างจากเส้น EMA เกิน 0.08%
+
     let calculatedScore = 50.0;
     if (!isSideway) {
-      const emaDiff = Math.abs(ema5 - ema20) / currentPrice * 1000; // ระยะห่าง EMA
-      const rsiStrength = isBullishTrend ? Math.max(0, rsi - 50) : Math.max(0, 50 - rsi);
+      const emaDiff = Math.abs(ema5 - ema20) / currentPrice * 1000;
       const momentum = Math.abs(currentPrice - prevPrice) / currentPrice * 1000;
 
-      calculatedScore = 60.0 + (emaDiff * 15.0) + (rsiStrength * 0.8) + (momentum * 10.0);
-      calculatedScore = Math.min(Math.max(calculatedScore, 55.0), 98.5); // บีบให้อยู่ในกรอบ 55% - 98.5%
+      // ให้คะแนนพื้นฐาน
+      calculatedScore = 60.0 + (emaDiff * 12.0) + (momentum * 8.0);
+
+      // ถ้าพุ่งแรงเกินไป ให้หักคะแนนความมั่นใจลงเพื่อป้องกันไฟ VIP หลอก
+      if (isTooFarFromEma) {
+        calculatedScore -= 15.0; 
+      }
+
+      calculatedScore = Math.min(Math.max(calculatedScore, 50.0), 96.0);
     }
 
     let statusColor = 'green';
@@ -151,18 +162,22 @@ function processEngine() {
       statusText = 'DANGER';
       calculatedScore = 40.0;
     } else {
-      // 🎯 ยิงสัญญาณช่วง 3.0 วินาทีสุดท้าย และตั้งค่าไฟ VIP หากความมั่นใจสูงเกิน 90%
+      // 🎯 ยิงสัญญาณช่วง 3.0 วินาทีสุดท้ายเฉพาะออร์เดอร์ที่ปลอดภัย ไม่ติด Overextended
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        if (isBullishTrend && calculatedScore >= 60.0) {
+        
+        // เงื่อนไข CALL: ต้องไม่ติด Overbought และไม่ยืดห่าง EMA เกินไป
+        if (isBullishTrend && !isRsiOverboughtExtreme && calculatedScore >= 60.0) {
           state.signal = 'CALL';
           state.timer = 30.0;
           state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 90.0; // ล็อกสถานะ VIP 90%+
-        } else if (isBearishTrend && calculatedScore >= 60.0) {
+          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma; //VIP ต้องไม่ยืดเกินไป
+        } 
+        // เงื่อนไข PUT: ต้องไม่ติด Oversold และไม่ยืดห่าง EMA เกินไป
+        else if (isBearishTrend && !isRsiOversoldExtreme && calculatedScore >= 60.0) {
           state.signal = 'PUT';
           state.timer = 30.0;
           state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 90.0; // ล็อกสถานะ VIP 90%+
+          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma; //VIP ต้องไม่ยืดเกินไป
         }
       }
     }
