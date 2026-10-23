@@ -106,14 +106,15 @@ function processEngine() {
     const prevPrice = prices[prices.length - 2] || currentPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
-    // ใช้เฉพาะ EMA 5 และ EMA 20
     const ema5 = calculateEMA(prices, 5);
     const ema20 = calculateEMA(prices, 20);
     const bb = calculateBB(prices);
 
     const isBullish = ema5 > ema20 && currentPrice > ema20;
     const isBearish = ema5 < ema20 && currentPrice < ema20;
-    const isSideway = bb.bandwidth < 0.03;
+    
+    // ปรับเกณฑ์ตรวจจับไซด์เวย์ (Bandwidth < 0.1) ให้ระบบเช็คสถานะอันตราย/ปลอดภัยได้แม่นยำขึ้น
+    const isSideway = bb.bandwidth < 0.1;
 
     let statusColor = 'green';
     let statusText = 'SAFE';
