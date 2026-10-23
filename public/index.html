@@ -20,19 +20,25 @@
     .tf-btn.active { background: #22c55e; box-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
     .tf-btn.inactive { background: #334155; color: #94a3b8; }
 
-    .signal-card { flex: 1; background: #0f172a; border-radius: 16px; border: 2px solid #1e293b; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; position: relative; text-align: center; }
+    .signal-card { flex: 1; background: #0f172a; border-radius: 16px; border: 2px solid #1e293b; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; position: relative; text-align: center; transition: 0.3s; }
     
     @keyframes pulseAnim {
       0% { transform: scale(1); opacity: 0.95; }
-      50% { transform: scale(1.04); opacity: 1; text-shadow: 0 0 25px currentColor; }
+      50% { transform: scale(1.04); opacity: 1; }
       100% { transform: scale(1); opacity: 0.95; }
     }
 
     .signal-text { font-size: 38px; font-weight: 900; letter-spacing: 2px; margin: 10px 0; animation: pulseAnim 0.8s infinite alternate; }
     .signal-wait { color: #94a3b8; animation: none; }
-    .signal-call { color: #22c55e; }
-    .signal-put { color: #ef4444; }
-    .signal-sideway { color: #f59e0b; animation: none; }
+    
+    /* สไตล์ CALL (เขียว) */
+    .signal-card.call-mode { border-color: #22c55e; background: rgba(34, 197, 94, 0.05); }
+    .signal-call { color: #22c55e; text-shadow: 0 0 20px rgba(34, 197, 94, 0.6); }
+
+    /* สไตล์ PUT (แดงอ่อนในกล่อง / แดงเข้มที่ขอบและลูกศร) */
+    .signal-card.put-mode { border-color: #991b1b; background: rgba(239, 68, 68, 0.06); }
+    .signal-put { color: #fca5a5; text-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
+    .arrow-put { color: #b91c1c !important; }
 
     .footer-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .metric-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 10px; text-align: center; }
@@ -54,7 +60,7 @@
 
   <div class="scanner-banner">
     <select id="pairSelect" class="pair-selector" onchange="changePair()">
-      <!-- ตัวเลือกคู่เงินพร้อมสถานะ -->
+      <!-- ตัวเลือกคู่เงินถูกสร้างแบบไม่กระพริบ -->
     </select>
     <div class="info-row">
       <span id="selectedPairName">AI Selected: EUR/USD</span>
@@ -88,7 +94,7 @@
     let currentTF = '1m';
     let latestData = null;
     let lastSignalState = 'WAIT';
-    let lastTimeLeft = 60;
+    let isDropdownInitialized = false;
 
     const symbolsList = [
       { key: 'eurusd', name: 'EUR/USD' },
@@ -103,8 +109,8 @@
       { key: 'audjpy', name: 'AUD/JPY' }
     ];
 
-    // 🔊 เสียงเตือนเตรียมตัว (ตอนเหลือ 10 วินาทีสุดท้าย ให้เฝ้าหน้าจอ)
-    function playWarningAlarm() {
+    // 🔊 เสียงติ๊ดสั้นๆ แบบเข็มนาฬิกา
+    function playClockTickSound() {
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const osc = audioCtx.createOscillator();
@@ -112,63 +118,51 @@
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         
-        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-        osc.frequency.setValueAtTime(500, audioCtx.currentTime + 0.1);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
         
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.03);
         
         osc.start();
-        osc.stop(audioCtx.currentTime + 0.2);
+        osc.stop(audioCtx.currentTime + 0.03);
       } catch (e) {}
     }
 
-    // 🔊 เสียงสัญญาณจริง (CALL / PUT)
-    function playSignalSound(type) {
-      try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        
-        if (type === 'CALL') {
-          osc.frequency.setValueAtTime(500, audioCtx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.2);
-        } else {
-          osc.frequency.setValueAtTime(700, audioCtx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.2);
-        }
-        
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-        
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.4);
-      } catch (e) {}
-    }
-
-    // อัปเดตรายการคู่เงินในดรอปดาวน์ พร้อมแสดงสถานะ (ปลอดภัย/อันตราย)
+    // สร้างหรืออัปเดตเมนูดรอปดาวน์แบบไม่ทำให้หน้าจอเมนูกระพริบ
     function updatePairSelectOptions(pairsData) {
       const select = document.getElementById('pairSelect');
-      const currentSelected = select.value || currentPairKey;
       
-      select.innerHTML = '';
-      symbolsList.forEach(s => {
-        const pInfo = pairsData ? pairsData.find(p => p.key === s.key) : null;
-        let statusIcon = '🟢';
-        let statusText = 'SAFE';
-        
-        if (pInfo) {
-          statusIcon = pInfo.statusText === 'DANGER' ? '🔴' : '🟢';
-          statusText = pInfo.statusText;
-        }
+      if (!isDropdownInitialized) {
+        select.innerHTML = '';
+        symbolsList.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.key;
+          opt.id = 'opt_' + s.key;
+          opt.textContent = `🟢 ${s.name} [SAFE]`;
+          select.appendChild(opt);
+        });
+        select.value = currentPairKey;
+        isDropdownInitialized = true;
+      }
 
-        const opt = document.createElement('option');
-        opt.value = s.key;
-        opt.textContent = `${statusIcon} ${s.name} [${statusText}]`;
-        if (s.key === currentSelected) opt.selected = true;
-        select.appendChild(opt);
+      // อัปเดตข้อความสถานะด้านในแบบเรียลไทม์โดยไม่ต้องรีเฟรช DOM ทั้งยวง
+      symbolsList.forEach(s => {
+        const opt = document.getElementById('opt_' + s.key);
+        if (opt) {
+          const pInfo = pairsData ? pairsData.find(p => p.key === s.key) : null;
+          let statusIcon = '🟢';
+          let statusText = 'SAFE';
+          
+          if (pInfo) {
+            statusIcon = pInfo.statusText === 'DANGER' ? '🔴' : '🟢';
+            statusText = pInfo.statusText;
+          }
+          const newText = `${statusIcon} ${s.name} [${statusText}]`;
+          if (opt.textContent !== newText) {
+            opt.textContent = newText;
+          }
+        }
       });
     }
 
@@ -219,13 +213,7 @@
       const timeLeft = latestData.timeLeft;
       document.getElementById('timeDisplay').innerText = timeLeft + 's';
 
-      // 🔔 แจ้งเตือนล่วงหน้าตอนเหลือ 10 วินาทีสุดท้าย ให้เฝ้าหน้าจอ
-      if (timeLeft === 10 && lastTimeLeft !== 10) {
-        playWarningAlarm();
-      }
-      lastTimeLeft = timeLeft;
-
-      // อัปเดตสถานะดรอปดาวน์คู่เงิน
+      // อัปเดตสถานะดรอปดาวน์คู่เงินแบบสมูท ไม่กระพริบ
       updatePairSelectOptions(latestData.pairs);
 
       const pair = latestData.pairs.find(p => p.key === currentPairKey) || latestData.pairs[0];
@@ -239,20 +227,25 @@
       badge.style.color = pair.statusText === 'DANGER' ? '#ef4444' : '#22c55e';
 
       const sigDisplay = document.getElementById('signalDisplay');
+      const sigCard = document.getElementById('signalCard');
+      
       sigDisplay.className = 'signal-text';
+      sigCard.className = 'signal-card';
 
       if (pair.signal === 'CALL') {
-        sigDisplay.innerHTML = '▲ CALL ▲';
+        sigDisplay.innerHTML = '<span style="color:#22c55e;">▲</span> CALL <span style="color:#22c55e;">▲</span>';
         sigDisplay.classList.add('signal-call');
+        sigCard.classList.add('call-mode');
         if (lastSignalState !== 'CALL') {
-          playSignalSound('CALL');
+          playClockTickSound();
           lastSignalState = 'CALL';
         }
       } else if (pair.signal === 'PUT') {
-        sigDisplay.innerHTML = '▼ PUT ▼';
+        sigDisplay.innerHTML = '<span class="arrow-put">▼</span> PUT <span class="arrow-put">▼</span>';
         sigDisplay.classList.add('signal-put');
+        sigCard.classList.add('put-mode');
         if (lastSignalState !== 'PUT') {
-          playSignalSound('PUT');
+          playClockTickSound();
           lastSignalState = 'PUT';
         }
       } else if (pair.signal === 'SIDEWAY') {
