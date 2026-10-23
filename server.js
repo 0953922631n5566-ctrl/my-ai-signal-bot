@@ -148,7 +148,7 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'NEURAL NET READY',
+        statusText: 'TREND FILTER ACTIVE',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
@@ -165,7 +165,7 @@ function processEngine() {
     const ema6 = calculateEMA(prices, 6);
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
-    const isSideway = bb.bandwidth < 0.025; // ผ่อนเกณฑ์ไซด์เวย์ให้ออกออร์เดอร์ง่ายขึ้น
+    const isSideway = bb.bandwidth < 0.025;
 
     const emaDiffFeature = (ema6 - ema21) / currentPrice * 1000;
     const rsiFeature = (rsi - 50) / 50;
@@ -182,19 +182,26 @@ function processEngine() {
     let isVipSignal = false;
     let statusText = 'SAFE';
 
+    // เช็คเทรนด์หลักจากเส้น EMA
+    const isUptrend = ema6 > ema21;
+    const isDowntrend = ema6 < ema21;
+
     if (isSideway) {
       statusText = 'DANGER (SIDEWAY)';
       aiDecision = 'SIDEWAY';
     } else {
-      // 🎯 ขยายเวลาตัดสินใจเป็น 5 วินาทีสุดท้าย และผ่อนเกณฑ์ AI ให้ยิงออร์เดอร์ได้ง่ายขึ้น
+      // 🎯 กฎเหล็ก: ห้ามสวนเทรนด์เด็ดขาด ช่วง 5 วินาทีสุดท้าย
       if (exactTimeLeft <= 5.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        if (aiProbability > 0.58 && rsi < 75) {
+        
+        // ถ้าเป็นเทรนด์ขาขึ้น และ AI เห็นพ้อง -> ยิง CALL เท่านั้น
+        if (isUptrend && currentPrice >= ema6 && aiProbability > 0.45 && rsi < 75) {
           aiDecision = 'CALL';
           state.signal = 'CALL';
           state.timer = 30.0;
           isVipSignal = aiConfidence >= 80.0;
         } 
-        else if (aiProbability < 0.42 && rsi > 25) {
+        // ถ้าเป็นเทรนด์ขาลง และ AI เห็นพ้อง -> ยิง PUT เท่านั้น (ห้ามสวนเด็ดขาด)
+        else if (isDowntrend && currentPrice <= ema6 && aiProbability < 0.55 && rsi > 25) {
           aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
@@ -213,7 +220,7 @@ function processEngine() {
       signal: finalSignal,
       confidence: aiConfidence.toFixed(1),
       rsi: rsi,
-      trend: aiProbability > 0.5 ? 'NN BULLISH 🟢' : 'NN BEARISH 🔴',
+      trend: isUptrend ? 'BULLISH TREND 🟢' : 'BEARISH TREND 🔴',
       isVip: isVipSignal
     });
   });
@@ -235,4 +242,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Neural Network Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Trend-Protected Engine running on port ${PORT}`));
