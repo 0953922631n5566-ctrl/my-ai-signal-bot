@@ -122,9 +122,9 @@ function processEngine() {
 
     const currentPrice = prices[prices.length - 1];
     const prevPrice = prices[prices.length - 2] || currentPrice;
+    const prevOpenCloseDiff = Math.abs(currentPrice - prevPrice);
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
-    // เปลี่ยนมาใช้ค่า EMA 6 และ EMA 21
     const ema6 = calculateEMA(prices, 6);
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
@@ -133,23 +133,16 @@ function processEngine() {
     const isBearishTrend = ema6 < ema21 && currentPrice <= ema6;
     const isSideway = bb.bandwidth < 0.04;
 
-    // ตัวกรองป้องกัน Overextended และความยืดของราคา
-    const isRsiOverboughtExtreme = rsi >= 72.0;
-    const isRsiOversoldExtreme = rsi <= 28.0;
-    const priceStretch = Math.abs(currentPrice - ema6) / currentPrice * 100;
-    const isTooFarFromEma = priceStretch > 0.08;
+    // 🔄 ระบบตรวจจับสัญญาณหลอก (Fakeout Detection สำหรับพลิกเกมสวน)
+    // หาก RSI อยู่ในโซนซื้อมากเกินไป (Overbought) แต่แท่งเทียนพยายามดันขึ้น บอทจะมองเป็น "สัญญาณหลอกขึ้นเพื่อตบลง"
+    const isFakeBullish = isBullishTrend && rsi >= 70.0; 
+    // หาก RSI อยู่ในโซนขายมากเกินไป (Oversold) แต่แท่งเทียนพยายามดันลง บอทจะมองเป็น "สัญญาณหลอกลงเพื่อตบขึ้น"
+    const isFakeBearish = isBearishTrend && rsi <= 30.0;
 
     let calculatedScore = 50.0;
     if (!isSideway) {
       const emaDiff = Math.abs(ema6 - ema21) / currentPrice * 1000;
-      const momentum = Math.abs(currentPrice - prevPrice) / currentPrice * 1000;
-
-      calculatedScore = 60.0 + (emaDiff * 12.0) + (momentum * 8.0);
-
-      if (isTooFarFromEma) {
-        calculatedScore -= 15.0; 
-      }
-
+      calculatedScore = 60.0 + (emaDiff * 12.0);
       calculatedScore = Math.min(Math.max(calculatedScore, 50.0), 96.0);
     }
 
@@ -161,20 +154,36 @@ function processEngine() {
       statusText = 'DANGER';
       calculatedScore = 40.0;
     } else {
-      // ยิงสัญญาณช่วง 3.0 วินาทีสุดท้ายด้วยชุด EMA 6/21 ที่นิ่งและชัวร์ขึ้น
+      // 🎯 ยิงสัญญาณช่วง 3.0 วินาทีสุดท้าย พร้อมระบบ "พลิกเกมสวนทันที" ถ้าเจอสัญญาณหลอก
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        if (isBullishTrend && !isRsiOverboughtExtreme && calculatedScore >= 60.0) {
+        if (isFakeBullish) {
+          // เจอสัญญาณหลอกว่าขึ้น (Bullish แต่ RSI สูงเกินไป) -> พลิกเกมสวนเป็น PUT ทันทีตั้งแต่ต้นแท่ง!
+          state.signal = 'PUT';
+          state.timer = 30.0;
+          state.confidence = '91.5'; // ให้ความมั่นใจสูงเพราะเป็นการดักตบกลับ
+          state.isVip = true;
+        } 
+        else if (isFakeBearish) {
+          // เจอสัญญาณหลอกว่าลง (Bearish แต่ RSI ต่ำเกินไป) -> พลิกเกมสวนเป็น CALL ทันทีตั้งแต่ต้นแท่ง!
+          state.signal = 'CALL';
+          state.timer = 30.0;
+          state.confidence = '91.5';
+          state.isVip = true;
+        }
+        else if (isBullishTrend && calculatedScore >= 60.0) {
+          // เทรนด์ปกติขาขึ้น
           state.signal = 'CALL';
           state.timer = 30.0;
           state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma;
+          state.isVip = calculatedScore >= 88.0;
         } 
-        else if (isBearishTrend && !isRsiOversoldExtreme && calculatedScore >= 60.0) {
+        else if (isBearishTrend && calculatedScore >= 60.0) {
+          // เทรนด์ปกติขาลง
           state.signal = 'PUT';
           state.timer = 30.0;
           state.confidence = calculatedScore.toFixed(1);
-          state.isVip = calculatedScore >= 88.0 && !isTooFarFromEma;
+          state.isVip = calculatedScore >= 88.0;
         }
       }
     }
