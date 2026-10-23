@@ -9,7 +9,6 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// รวมคู่เงิน Forex และสินทรัพย์หลักที่มีอยู่บน IQ Option แบบจัดเต็ม
 const symbols = [
   { key: 'eurusd', name: 'EUR/USD', base: 1.0850 },
   { key: 'gbpusdt', name: 'GBP/USD', base: 1.3400 },
@@ -26,10 +25,9 @@ const symbols = [
 let marketHistories = {};
 let symbolSignalStates = {}; 
 
-// สร้างข้อมูลตั้งต้น (Seed Data) ให้กราฟพร้อมใช้งานทันที ไม่ติดสถานะ WAIT ค้าง
 symbols.forEach(s => {
   marketHistories[s.key] = [];
-  symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0 };
+  symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0, confidence: '50.0', isVip: false };
   
   let p = s.base;
   for (let i = 0; i < 40; i++) {
@@ -38,13 +36,11 @@ symbols.forEach(s => {
   }
 });
 
-// ระบบจำลองและอัปเดตราคาตลาด Forex แบบเรียลไทม์วินาทีต่อวินาที
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
     if (hist && hist.length > 0) {
       const last = hist[hist.length - 1];
-      // จำลองการขยับของราคา Forex ระดับทศนิยม 4-5 ตำแหน่งอย่างสมจริง
       const change = (Math.random() - 0.49) * (last * 0.0004);
       const nextP = parseFloat((last + change).toFixed(5));
       hist.push(nextP);
@@ -101,11 +97,11 @@ function processEngine() {
     const prices = marketHistories[s.key];
     let state = symbolSignalStates[s.key];
 
-    // ลดเวลา Timer ลงทีละ 0.2 วินาที จนครบ 30 วินาทีแล้วค่อยรีเซ็ตกลับเป็น WAIT
     if (state.timer > 0) {
       state.timer = Math.max(0, state.timer - 0.2);
       if (state.timer === 0) {
         state.signal = 'WAIT';
+        state.isVip = false;
       }
     }
 
@@ -118,7 +114,8 @@ function processEngine() {
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
-        trend: 'READY 🟢'
+        trend: 'READY 🟢',
+        isVip: false
       });
       return;
     }
@@ -131,33 +128,41 @@ function processEngine() {
     const ema20 = calculateEMA(prices, 20);
     const bb = calculateBB(prices);
 
-    // เงื่อนไขเทรนด์ตามน้ำ (Trend Following) สำหรับ Forex
     const isBullishTrend = ema5 > ema20 && currentPrice >= ema5;
     const isBearishTrend = ema5 < ema20 && currentPrice <= ema5;
     const isSideway = bb.bandwidth < 0.04;
 
+    // 🧮 คำนวณเปอร์เซ็นต์ Confidence ตามค่าสถิติและเทคนิคจริง
+    let calculatedScore = 50.0;
+    if (!isSideway) {
+      const emaDiff = Math.abs(ema5 - ema20) / currentPrice * 1000; // ระยะห่าง EMA
+      const rsiStrength = isBullishTrend ? Math.max(0, rsi - 50) : Math.max(0, 50 - rsi);
+      const momentum = Math.abs(currentPrice - prevPrice) / currentPrice * 1000;
+
+      calculatedScore = 60.0 + (emaDiff * 15.0) + (rsiStrength * 0.8) + (momentum * 10.0);
+      calculatedScore = Math.min(Math.max(calculatedScore, 55.0), 98.5); // บีบให้อยู่ในกรอบ 55% - 98.5%
+    }
+
     let statusColor = 'green';
     let statusText = 'SAFE';
-    let confidence = '50.0';
 
     if (isSideway) {
       statusColor = 'red';
       statusText = 'DANGER';
+      calculatedScore = 40.0;
     } else {
-      let score = 65;
-      if (isBullishTrend || isBearishTrend) score += 20;
-      if (currentPrice !== prevPrice) score += 10;
-      
-      confidence = Math.min(score, 96.0).toFixed(1);
-
-      // 🎯 ยิงสัญญาณในช่วง 3.0 ถึง 0.0 วินาทีสุดท้าย และล็อกไฟค้าง 30 วินาที
+      // 🎯 ยิงสัญญาณช่วง 3.0 วินาทีสุดท้าย และตั้งค่าไฟ VIP หากความมั่นใจสูงเกิน 90%
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        if (isBullishTrend && score >= 58) {
+        if (isBullishTrend && calculatedScore >= 60.0) {
           state.signal = 'CALL';
           state.timer = 30.0;
-        } else if (isBearishTrend && score >= 58) {
+          state.confidence = calculatedScore.toFixed(1);
+          state.isVip = calculatedScore >= 90.0; // ล็อกสถานะ VIP 90%+
+        } else if (isBearishTrend && calculatedScore >= 60.0) {
           state.signal = 'PUT';
           state.timer = 30.0;
+          state.confidence = calculatedScore.toFixed(1);
+          state.isVip = calculatedScore >= 90.0; // ล็อกสถานะ VIP 90%+
         }
       }
     }
@@ -173,9 +178,10 @@ function processEngine() {
       statusColor: statusColor,
       statusText: statusText,
       signal: finalSignal,
-      confidence: confidence,
+      confidence: state.signal !== 'WAIT' ? state.confidence : calculatedScore.toFixed(1),
       rsi: rsi,
-      trend: isBullishTrend ? 'BULLISH 🟢' : (isBearishTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
+      trend: isBullishTrend ? 'BULLISH 🟢' : (isBearishTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪'),
+      isVip: state.isVip
     });
   });
 
