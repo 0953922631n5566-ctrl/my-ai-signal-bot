@@ -36,7 +36,7 @@ symbols.forEach(s => {
   }
 });
 
-// จำลองราคาตลาดเรียลไทม์
+// จำลองการขยับราคาตลาดเรียลไทม์
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
@@ -49,45 +49,6 @@ setInterval(() => {
     }
   });
 }, 1000);
-
-// 🧠 สมองกล Neural Network ที่ปรับจูนค่าน้ำหนักให้เสถียรยิ่งขึ้น
-class TunedNeuralNetwork {
-  constructor() {
-    // ปรับแต่ง Matrix Weights ให้ตอบสนองต่อทิศทางราคาและโมเมนตัมได้แม่นยำขึ้น
-    this.W1 = [
-      [ 0.95, -0.20,  0.10,  0.60],
-      [-0.20,  0.85, -0.30,  0.10],
-      [ 0.40,  0.20,  0.90, -0.20],
-      [-0.10, -0.40,  0.20,  0.95]
-    ];
-    this.B1 = [0.10, -0.05, 0.15, 0.02];
-    this.W2 = [ 0.75, -0.80, 0.50, 0.60 ];
-    this.B2 = 0.0;
-  }
-
-  sigmoid(x) {
-    return 1 / (1 + Math.exp(-Math.max(-15, Math.min(15, x))));
-  }
-
-  predict(inputs) {
-    let hidden = [];
-    for (let i = 0; i < this.W1.length; i++) {
-      let sum = this.B1[i];
-      for (let j = 0; j < inputs.length; j++) {
-        sum += inputs[j] * this.W1[i][j];
-      }
-      hidden.push(this.sigmoid(sum));
-    }
-
-    let outSum = this.B2;
-    for (let i = 0; i < hidden.length; i++) {
-      outSum += hidden[i] * this.W2[i];
-    }
-    return this.sigmoid(outSum);
-  }
-}
-
-const tradingAI = new TunedNeuralNetwork();
 
 function calculateEMA(prices, period) {
   if (prices.length < period) return prices[prices.length - 1] || 0;
@@ -124,6 +85,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
+// ⚔️ ระบบประลองกำลัง AI ฝั่งเขียว vs ฝั่งแดง (Tug-of-War Engine)
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -150,11 +112,11 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'TUNED AI READY',
+        statusText: 'ARENA READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
-        trend: 'ANALYZING 🟢',
+        trend: 'FIGHTING 🟢',
         isVip: false
       });
       return;
@@ -162,69 +124,80 @@ function processEngine() {
 
     const currentPrice = prices[prices.length - 1];
     const prevPrice = prices[prices.length - 2] || currentPrice;
+    const prev2Price = prices[prices.length - 3] || prevPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
     const ema6 = calculateEMA(prices, 6);
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
-    const isSideway = bb.bandwidth < 0.02;
+    const isSideway = bb.bandwidth < 0.035;
 
-    // คำนวณ Features ป้อนเข้าโครงข่ายประสาทเทียม
-    const emaDiffFeature = (ema6 - ema21) / currentPrice * 1000;
-    const rsiFeature = (rsi - 50) / 50;
-    const bbWidthFeature = bb.bandwidth / 0.1;
-    const momentumFeature = (currentPrice - prevPrice) / currentPrice * 1000;
+    // 🟢 คำนวณพลังฝั่งเขียว (Green Agent Score)
+    let greenPower = 50.0;
+    if (ema6 > ema21) greenPower += 20.0;
+    if (currentPrice > prevPrice) greenPower += 15.0;
+    if (prevPrice > prev2Price) greenPower += 10.0;
+    if (rsi > 40 && rsi < 65) greenPower += 10.0; // อยู่ในโซนวิ่งขึ้นสวยๆ
 
-    const aiProbability = tradingAI.predict([emaDiffFeature, rsiFeature, bbWidthFeature, momentumFeature]);
-    
-    // คำนวณเปอร์เซ็นต์ความมั่นใจให้สะท้อนความเป็นจริง
-    let dynamicFluctuation = Math.abs(rsi - 50) * 0.7 + Math.abs(currentPrice - prevPrice) * 18000;
-    let aiConfidence = 58.0 + dynamicFluctuation + (aiProbability * 10.0);
-    aiConfidence = parseFloat(Math.min(Math.max(aiConfidence, 52.0), 98.0).toFixed(1));
+    // 🔴 คำนวณพลังฝั่งแดง (Red Agent Score)
+    let redPower = 50.0;
+    if (ema6 < ema21) redPower += 20.0;
+    if (currentPrice < prevPrice) redPower += 15.0;
+    if (prevPrice < prev2Price) redPower += 10.0;
+    if (rsi > 35 && rsi < 60) redPower += 10.0; // อยู่ในโซนทุบลงสวยๆ
 
-    let aiDecision = 'WAIT';
+    // 🔄 ตรวจจับจังหวะ "ฝั่งเขียวพยายามดึงขึ้นแต่โดนฝั่งแดงกดจนหมดทางสู้" (หรือสลับกัน)
+    const isGreenTrapped = (currentPrice < ema6) && (rsi > 68); // ทำท่าจะขึ้นแต่ overbought โดนตบ
+    const isRedTrapped = (currentPrice > ema6) && (rsi < 32);   // ทำท่าจะลงแต่ oversold โดนดีด
+
+    let finalDecision = 'WAIT';
+    let finalConfidence = 50.0;
     let isVipSignal = false;
-    let statusText = 'SAFE TREND';
-
-    // เช็คเทรนด์หลักจาก EMA อย่างเคร่งครัด
-    const isUptrend = ema6 > ema21;
-    const isDowntrend = ema6 < ema21;
+    let statusText = 'SAFE';
 
     if (isSideway) {
       statusText = 'DANGER (SIDEWAY)';
-      aiDecision = 'SIDEWAY';
+      finalDecision = 'SIDEWAY';
+      finalConfidence = 40.0;
     } else {
-      // 🎯 ล็อคจังหวะช่วง 5 วินาทีสุดท้าย และบังคับให้ไปตามทิศทางเทรนด์เท่านั้น (ห้ามสวนเทรนด์เด็ดขาด)
-      if (exactTimeLeft <= 5.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
+      // 🎯 ตัดสินใจในช่วง 3 วินาทีสุดท้ายก่อนจบแท่ง
+      if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        // ขาขึ้นเท่านั้น: ห้ามออก PUT ถ้ากราฟเป็นขาขึ้น
-        if (isUptrend && aiProbability > 0.48 && rsi < 70) {
-          aiDecision = 'CALL';
-          state.signal = 'CALL';
-          state.timer = 30.0;
-          isVipSignal = aiConfidence >= 82.0;
-        } 
-        // ขาลงเท่านั้น: ห้ามออก CALL ถ้าน้องบอทเห็นกราฟดิ่งเป็นขาลง
-        else if (isDowntrend && aiProbability < 0.52 && rsi > 30) {
-          aiDecision = 'PUT';
+        if (isGreenTrapped || (redPower > greenPower + 15.0)) {
+          // ฝั่งเขียวหมดสภาพ หรือพลังฝั่งแดงชนะขาดลอย -> หักดิบพลิกเกมเป็น PUT ทันที!
+          finalDecision = 'PUT';
+          finalConfidence = Math.min(65.0 + (redPower * 0.3), 94.5).toFixed(1);
+          isVipSignal = parseFloat(finalConfidence) >= 85.0;
           state.signal = 'PUT';
           state.timer = 30.0;
-          isVipSignal = aiConfidence >= 82.0;
+        } 
+        else if (isRedTrapped || (greenPower > redPower + 15.0)) {
+          // ฝั่งแดงหมดสภาพ หรือพลังฝั่งเขียวชนะขาดลอย -> หักดิบพลิกเกมเป็น CALL ทันที!
+          finalDecision = 'CALL';
+          finalConfidence = Math.min(65.0 + (greenPower * 0.3), 94.5).toFixed(1);
+          isVipSignal = parseFloat(finalConfidence) >= 85.0;
+          state.signal = 'CALL';
+          state.timer = 30.0;
         }
       }
     }
 
-    let finalSignal = state.signal !== 'WAIT' ? state.signal : (isSideway ? 'SIDEWAY' : aiDecision);
+    let displayedSignal = state.signal !== 'WAIT' ? state.signal : finalDecision;
+    if (isSideway) displayedSignal = 'SIDEWAY';
+
+    let trendLabel = 'NEUTRAL ⚪';
+    if (greenPower > redPower) trendLabel = 'BULLISH WIN 🟢';
+    else if (redPower > greenPower) trendLabel = 'BEARISH WIN 🔴';
 
     pairStatuses.push({
       key: s.key,
       name: s.name,
       statusColor: isSideway ? 'red' : 'green',
       statusText: statusText,
-      signal: finalSignal,
-      confidence: aiConfidence.toFixed(1),
+      signal: displayedSignal,
+      confidence: finalConfidence.toFixed(1),
       rsi: rsi,
-      trend: isUptrend ? 'BULLISH 🟢' : 'BEARISH 🔴',
+      trend: trendLabel,
       isVip: isVipSignal
     });
   });
@@ -246,4 +219,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Tuned AI Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
