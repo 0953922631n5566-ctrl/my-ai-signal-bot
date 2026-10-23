@@ -8,222 +8,118 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     body { background-color: #060a12; color: #ffffff; padding: 12px; display: flex; flex-direction: column; gap: 10px; height: 100vh; overflow: hidden; }
-    
     .header { text-align: center; padding: 4px; font-weight: 900; font-size: 16px; color: #38bdf8; display: flex; align-items: center; justify-content: center; gap: 8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
-    .status-badge { font-size: 9px; padding: 3px 8px; border-radius: 10px; font-weight: 900; }
-    .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
-    .status-offline { background: #dc2626; color: #ffffff; }
-
-    /* ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน */
-    .scanner-banner { 
-      background: #0f172a; 
-      border-radius: 12px; 
-      padding: 10px; 
-      text-align: center; 
-      border: 1.5px solid #0284c7; 
-      color: #38bdf8; 
-      font-weight: bold; 
-      font-size: 11px; 
-      box-shadow: 0 0 12px rgba(2, 132, 199, 0.3); 
-      cursor: pointer; 
-      flex-shrink: 0;
-      transition: 0.2s; 
-    }
-    .scanner-banner:active { transform: scale(0.98); background: #1e293b; }
-
-    /* หน้าจอหลัก: ขยายความสูงให้เต็มพื้นที่กรอบสีแดงด้านล่าง */
-    #mainView { display: flex; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
+    .scanner-banner { background: #0f172a; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; border: 1px solid #1e293b; }
+    .pair-selector { background: #1e293b; border: 1px solid #334155; color: #ffffff; padding: 8px 12px; border-radius: 8px; width: 100%; text-align: center; font-size: 13px; font-weight: bold; cursor: pointer; }
+    .info-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; }
+    .badge-active { background: #059669; color: #ffffff; padding: 2px 8px; border-radius: 6px; font-size: 10px; border: 1px solid #34d399; }
     
-    .signal-card { 
-      background: #0f172a; 
-      border-radius: 16px; 
-      padding: 16px; 
-      text-align: center; 
-      border: 1px solid #1e293b; 
-      display: flex; 
-      flex-direction: column; 
-      justify-content: space-between; 
-      flex: 1; 
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7); 
-      min-height: 0;
-    }
-    
-    .pair-title { font-size: 14px; color: #facc15; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
-    
-    .signal-box { 
-      font-size: 42px; 
-      font-weight: 900; 
-      padding: 20px; 
-      border-radius: 14px; 
-      text-transform: uppercase; 
-      letter-spacing: 2px; 
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex: 1;
-      margin: 8px 0;
-    }
-    
-    .WAIT { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
-    .CALL { background: #047857; color: #ffffff; border: 3px solid #10b981; box-shadow: 0 0 35px rgba(16, 185, 129, 0.9); }
-    .PUT { background: #be123c; color: #ffffff; border: 3px solid #f43f5e; box-shadow: 0 0 35px rgba(244, 63, 94, 0.9); }
-    .SIDEWAY { background: #7f1d1d; color: #fef08a; border: 3px solid #ef4444; animation: blink 0.5s infinite alternate; }
+    /* ปุ่มสลับ Timeframe */
+    .tf-container { display: flex; justify-content: center; gap: 10px; margin: 2px 0; }
+    .tf-btn { flex: 1; padding: 8px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; color: white; font-size: 13px; transition: 0.2s; }
+    .tf-btn.active { background: #22c55e; box-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+    .tf-btn.inactive { background: #334155; color: #94a3b8; }
 
-    @keyframes blink { from { background: #7f1d1d; } to { background: #991b1b; } }
+    .signal-card { flex: 1; background: #0f172a; border-radius: 16px; border: 2px solid #1e293b; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; position: relative; text-align: center; }
+    .signal-text { font-size: 42px; font-weight: 900; letter-spacing: 2px; margin: 10px 0; }
+    .signal-wait { color: #94a3b8; }
+    .signal-call { color: #22c55e; text-shadow: 0 0 20px rgba(34, 197, 94, 0.5); }
+    .signal-put { color: #ef4444; text-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
+    .signal-sideway { color: #f59e0b; text-shadow: 0 0 20px rgba(245, 158, 11, 0.5); }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex-shrink: 0; }
-    .stat-box { background: #060a12; border-radius: 10px; padding: 10px; text-align: center; border: 1px solid #1e293b; }
-    .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
-    .stat-value { font-size: 16px; font-weight: 900; margin-top: 4px; color: #ffffff; }
-
-    /* หน้าจอดัชนีรายการคู่เงินทั้งหมด */
-    #dashboardView { display: none; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
-    .back-main-btn { background: #1e293b; color: #38bdf8; border: 1.5px solid #0284c7; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; flex-shrink: 0; }
-    
-    .pair-grid-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding-right: 2px; }
-    .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .pair-item { background: #0f172a; border-radius: 12px; padding: 12px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-    .pair-item:active { transform: scale(0.97); }
-    
-    .pair-header { display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 14px; color: #ffffff; }
-    
-    .badge-green { background: rgba(5, 150, 105, 0.25); color: #34d399; border: 1px solid #059669; font-size: 9px; padding: 2px 8px; border-radius: 6px; font-weight: bold; }
-    .badge-red { background: rgba(220, 38, 38, 0.25); color: #fca5a5; border: 1px solid #dc2626; font-size: 9px; padding: 2px 8px; border-radius: 6px; font-weight: bold; animation: pulseRed 1s infinite alternate; }
-
-    @keyframes pulseRed { from { opacity: 0.6; } to { opacity: 1; box-shadow: 0 0 8px #dc2626; } }
-
-    .pair-info { font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; }
+    .footer-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .metric-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 10px; text-align: center; }
+    .metric-label { font-size: 10px; color: #94a3b8; margin-bottom: 4px; }
+    .metric-value { font-size: 15px; font-weight: bold; color: #f8fafc; }
   </style>
 </head>
 <body>
 
   <div class="header">
-    ⚡ AI AUTO SCANNER <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
+    ⚡ Noghjklbot <span class="badge-active">LIVE</span>
   </div>
 
-  <!-- ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน -->
-  <div class="scanner-banner" onclick="showDashboard()">
-    🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
+  <!-- ปุ่มสลับโหมด Timeframe -->
+  <div class="tf-container">
+    <button id="btn1m" class="tf-btn active" onclick="switchTF('1m')">⏱️ 1 นาที</button>
+    <button id="btn5m" class="tf-btn inactive" onclick="switchTF('5m')">⏱️ 5 นาที</button>
   </div>
 
-  <!-- หน้าจอหลัก (เติมเต็มพื้นที่ในกรอบสีแดงด้านล่างสุด) -->
-  <div id="mainView">
-    <div class="signal-card">
-      <div class="pair-title">
-        <span>AI Selected: <strong id="marketLabel" style="color: #ffffff;">EUR/USD</strong></span>
-        <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">TRIPLE EMA ACTIVE 🟢</span>
-      </div>
-
-      <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
-      
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-label">Confidence</div>
-          <div class="stat-value" id="confValue" style="color: #38bdf8;">0.0%</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">RSI (14)</div>
-          <div class="stat-value" id="rsiValue" style="color: #facc15;">50.0</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">แท่งถัดไปใน</div>
-          <div class="stat-value" id="timerValue" style="color: #38bdf8;">00s</div>
-        </div>
-      </div>
+  <div class="scanner-banner">
+    <select id="pairSelect" class="pair-selector" onchange="changePair()">
+      <!-- ตัวเลือกคู่เงิน -->
+    </select>
+    <div class="info-row">
+      <span id="selectedPairName">AI Selected: EUR/USD</span>
+      <span style="color: #22c55e;">TRIPLE EMA ACTIVE 🟢</span>
     </div>
   </div>
 
-  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด -->
-  <div id="dashboardView">
-    <button class="back-main-btn" onclick="showMain()">← กลับหน้าจอหลัก</button>
-    <div class="pair-grid-scroll">
-      <div class="pair-grid" id="pairGridContainer">
-        <!-- สร้างผ่าน JavaScript -->
-      </div>
+  <div class="signal-card" id="signalCard">
+    <div style="font-size: 11px; color: #64748b; position: absolute; top: 12px; left: 16px;" id="trendLabel">TREND: READY 🟢</div>
+    <div class="signal-text signal-wait" id="signalDisplay">WAIT</div>
+  </div>
+
+  <div class="footer-metrics">
+    <div class="metric-box">
+      <div class="metric-label">Confidence</div>
+      <div class="metric-value" id="confDisplay">0.0%</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-label">RSI (14)</div>
+      <div class="metric-value" id="rsiDisplay">50.0</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-label" id="timerLabel">แท่งถัดไปใน</div>
+      <div class="metric-value" id="timeDisplay">--s</div>
     </div>
   </div>
 
   <script>
-    if (window.Telegram && window.Telegram.WebApp) {
-      Telegram.WebApp.ready();
-      Telegram.WebApp.expand();
-    }
-
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playBeep(freq = 800, duration = 0.25) {
-      try {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + duration);
-      } catch (e) {}
-    }
-
     let ws;
-    let currentSelectedKey = 'eurusdt';
-    let globalPairsData = [];
-    let lastSignalState = 'WAIT';
-    let warned10s = false;
+    let currentPairKey = 'eurusd';
+    let currentTF = '1m';
+    let latestData = null;
 
-    function showDashboard() {
-      document.getElementById('mainView').style.display = 'none';
-      document.getElementById('dashboardView').style.display = 'flex';
-      updateDashboardList();
-    }
+    const symbolsList = [
+      { key: 'eurusd', name: 'EUR/USD' },
+      { key: 'gbpusdt', name: 'GBP/USD' },
+      { key: 'usdjpy', name: 'USD/JPY' },
+      { key: 'audusd', name: 'AUD/USD' },
+      { key: 'nzdusd', name: 'NZD/USD' },
+      { key: 'usdcad', name: 'USD/CAD' },
+      { key: 'eurjpy', name: 'EUR/JPY' },
+      { key: 'gbpjpy', name: 'GBP/JPY' },
+      { key: 'eurgbp', name: 'EUR/GBP' },
+      { key: 'audjpy', name: 'AUD/JPY' }
+    ];
 
-    function showMain() {
-      document.getElementById('dashboardView').style.display = 'none';
-      document.getElementById('mainView').style.display = 'flex';
-    }
-
-    function selectPairAndReturn(key) {
-      currentSelectedKey = key;
-      showMain();
-      updateMainView();
-    }
-
-    function updateDashboardList() {
-      const container = document.getElementById('pairGridContainer');
-      container.innerHTML = '';
-
-      globalPairsData.forEach(p => {
-        const isSafe = p.statusColor === 'green';
-        const badgeClass = isSafe ? 'badge-green' : 'badge-red';
-        const statusText = isSafe ? '🟢 ปลอดภัย' : '🔴 อันตราย';
-
-        const div = document.createElement('div');
-        div.className = 'pair-item';
-        div.onclick = () => selectPairAndReturn(p.key);
-        div.innerHTML = `
-          <div class="pair-header">
-            <span>${p.name}</span>
-            <span class="${badgeClass}">${isSafe ? 'SAFE' : 'DANGER'}</span>
-          </div>
-          <div class="pair-info">
-            <span>RSI: ${p.rsi}</span>
-            <span style="color: ${isSafe ? '#34d399' : '#f87171'}">${statusText}</span>
-          </div>
-        `;
-        container.appendChild(div);
+    function initPairSelect() {
+      const select = document.getElementById('pairSelect');
+      select.innerHTML = '';
+      symbolsList.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.key;
+        opt.textContent = s.name;
+        if(s.key === currentPairKey) opt.selected = true;
+        select.appendChild(opt);
       });
     }
 
-    function updateMainView() {
-      const p = globalPairsData.find(item => item.key === currentSelectedKey);
-      if (!p) return;
+    function changePair() {
+      const select = document.getElementById('pairSelect');
+      currentPairKey = select.value;
+      updateUI();
+    }
 
-      document.getElementById('marketLabel').innerText = p.name;
-      document.getElementById('signalDisplay').innerText = p.signal;
-      document.getElementById('signalDisplay').className = `signal-box ${p.signal}`;
-      document.getElementById('confValue').innerText = `${p.confidence}%`;
-      document.getElementById('rsiValue').innerText = p.rsi;
-      document.getElementById('trendLabel').innerText = p.trend;
+    function switchTF(tf) {
+      currentTF = tf;
+      document.getElementById('btn1m').className = tf === '1m' ? 'tf-btn active' : 'tf-btn inactive';
+      document.getElementById('btn5m').className = tf === '5m' ? 'tf-btn active' : 'tf-btn inactive';
+      
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'change_tf', tf: tf }));
+      }
     }
 
     function connectWS() {
@@ -231,43 +127,52 @@
       ws = new WebSocket(`${protocol}//${window.location.host}`);
 
       ws.onopen = () => {
-        document.getElementById('netStatus').innerText = 'LIVE';
-        document.getElementById('netStatus').className = 'status-badge status-online';
+        ws.send(JSON.stringify({ action: 'change_tf', tf: currentTF }));
       };
 
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'scanner_update') {
-          globalPairsData = data.pairs;
-          document.getElementById('timerValue').innerText = `${data.timeLeft}s`;
-
-          if (data.timeLeft === 10 && !warned10s) {
-            playBeep(550, 0.15);
-            warned10s = true;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'scanner_update') {
+            latestData = data;
+            updateUI();
           }
-          if (data.timeLeft > 10) warned10s = false;
-
-          if (document.getElementById('dashboardView').style.display !== 'none') {
-            updateDashboardList();
-          } else {
-            updateMainView();
-            const activePair = globalPairsData.find(i => i.key === currentSelectedKey);
-            if (activePair && activePair.signal !== 'WAIT' && activePair.signal !== lastSignalState) {
-              playBeep(850, 0.3);
-            }
-            if (activePair) lastSignalState = activePair.signal;
-          }
-        }
+        } catch (e) {}
       };
 
       ws.onclose = () => {
-        document.getElementById('netStatus').innerText = 'OFFLINE';
-        document.getElementById('netStatus').className = 'status-badge status-offline';
         setTimeout(connectWS, 2000);
       };
     }
 
-    connectWS();
+    function updateUI() {
+      if (!latestData) return;
+
+      document.getElementById('timeDisplay').innerText = latestData.timeLeft + 's';
+
+      const pair = latestData.pairs.find(p => p.key === currentPairKey) || latestData.pairs[0];
+      if (!pair) return;
+
+      document.getElementById('selectedPairName').innerText = `AI Selected: ${pair.name}`;
+      document.getElementById('trendLabel').innerText = `TREND: ${pair.trend}`;
+      
+      const sigDisplay = document.getElementById('signalDisplay');
+      sigDisplay.innerText = pair.signal;
+      
+      sigDisplay.className = 'signal-text';
+      if (pair.signal === 'CALL') sigDisplay.classList.add('signal-call');
+      else if (pair.signal === 'PUT') sigDisplay.classList.add('signal-put');
+      else if (pair.signal === 'SIDEWAY') sigDisplay.classList.add('signal-sideway');
+      else sigDisplay.classList.add('signal-wait');
+
+      document.getElementById('confDisplay').innerText = pair.confidence + '%';
+      document.getElementById('rsiDisplay').innerText = pair.rsi;
+    }
+
+    window.onload = () => {
+      initPairSelect();
+      connectWS();
+    };
   </script>
 </body>
 </html>
