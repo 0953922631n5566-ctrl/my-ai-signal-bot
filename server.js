@@ -93,7 +93,7 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'CONNECTING...',
+        statusText: 'SAFE',
         signal: 'WAIT',
         confidence: '0.0',
         rsi: 50.0,
@@ -106,29 +106,27 @@ function processEngine() {
     const prevPrice = prices[prices.length - 2] || currentPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
     
-    // คำนวณเส้น EMA ทั้ง 3 ระยะ
     const ema5 = calculateEMA(prices, 5);
     const ema20 = calculateEMA(prices, 20);
     const ema50 = calculateEMA(prices, 50);
     const bb = calculateBB(prices);
 
-    // เงื่อนไข Triple EMA Alignment
     const isBullishTrend = ema5 > ema20 && ema20 > ema50;
     const isBearishTrend = ema5 < ema20 && ema20 < ema50;
     const isSideway = bb.bandwidth < 0.05 || (rsi >= 46 && rsi <= 54);
 
     let statusColor = 'green';
-    let statusText = 'SAFE (TREND)';
+    let statusText = 'SAFE';
     let signal = 'WAIT';
     let confidence = '0.0';
 
     if (isSideway) {
       statusColor = 'red';
-      statusText = 'DANGER (SIDEWAY)';
+      statusText = 'DANGER';
       signal = 'SIDEWAY';
     } else {
       let score = 40;
-      if (isBullishTrend || isBearishTrend) score += 40; // ได้คะแนนสูงเมื่อเส้น EMA เรียงตัวสวยงาม
+      if (isBullishTrend || isBearishTrend) score += 40;
       if (currentPrice !== prevPrice) score += 15;
       confidence = Math.min(score, 95.0).toFixed(1);
 
@@ -167,4 +165,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Triple EMA Scanner Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`App Engine running on port ${PORT}`));
