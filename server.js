@@ -36,7 +36,6 @@ symbols.forEach(s => {
   }
 });
 
-// จำลองการขยับราคาตลาดเรียลไทม์
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
@@ -50,11 +49,9 @@ setInterval(() => {
   });
 }, 1000);
 
-// 🧠 โครงข่ายประสาทเทียมแท้ (Tiny Neural Network - Multi-Layer Perceptron)
+// 🧠 โครงข่ายประสาทเทียมแท้ (Tiny Neural Network)
 class TinyNeuralNetwork {
   constructor() {
-    // กำหนดค่าน้ำหนัก (Weights) และค่า Bias ของเซลล์ประสาทจำลอง
-    // Input layer: 4 มิติ [ความต่าง EMA, ค่า RSI ปกติ, ความกว้าง BB, โมเมนตัมราคา]
     this.W1 = [
       [ 0.85, -0.42,  0.25,  0.50],
       [-0.30,  0.70, -0.45,  0.20],
@@ -62,18 +59,14 @@ class TinyNeuralNetwork {
       [-0.25, -0.50,  0.15,  0.90]
     ];
     this.B1 = [0.15, -0.10, 0.20, 0.05];
-    
-    // Output layer weights (รวมผลจาก Hidden Layer 4 ตัว ออกมาเป็น 1 ค่าความน่าจะเป็น)
     this.W2 = [ 0.65, -0.75, 0.45, 0.55 ];
     this.B2 = 0.0;
   }
 
-  // Activation Function (Sigmoid) แปลงค่าให้อยู่ระหว่าง 0 ถึง 1
   sigmoid(x) {
     return 1 / (1 + Math.exp(-Math.max(-15, Math.min(15, x))));
   }
 
-  // ประมวลผล Forward Pass ผ่านโครงข่ายสมองกล
   predict(inputs) {
     let hidden = [];
     for (let i = 0; i < this.W1.length; i++) {
@@ -88,11 +81,10 @@ class TinyNeuralNetwork {
     for (let i = 0; i < hidden.length; i++) {
       outSum += hidden[i] * this.W2[i];
     }
-    return this.sigmoid(outSum); // คืนค่าความน่าจะเป็น (0.0 ถึง 1.0)
+    return this.sigmoid(outSum);
   }
 }
 
-// สร้างอินสแตนซ์สมองกล AI ประจำระบบ
 const tradingAI = new TinyNeuralNetwork();
 
 function calculateEMA(prices, period) {
@@ -173,20 +165,18 @@ function processEngine() {
     const ema6 = calculateEMA(prices, 6);
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
-    const isSideway = bb.bandwidth < 0.035;
+    const isSideway = bb.bandwidth < 0.025; // ผ่อนเกณฑ์ไซด์เวย์ให้ออกออร์เดอร์ง่ายขึ้น
 
-    // 🔬 แปลงตัวแปรตลาดให้อยู่ในรูป Input Vector สำหรับส่งเข้า Neural Network (-1 ถึง 1 หรือสเกลที่เหมาะสม)
     const emaDiffFeature = (ema6 - ema21) / currentPrice * 1000;
     const rsiFeature = (rsi - 50) / 50;
     const bbWidthFeature = bb.bandwidth / 0.1;
     const momentumFeature = (currentPrice - prevPrice) / currentPrice * 1000;
 
-    // 🤖 ให้โครงข่ายประสาทเทียมคำนวณความน่าจะเป็น (Neural Network Forward Pass)
     const aiProbability = tradingAI.predict([emaDiffFeature, rsiFeature, bbWidthFeature, momentumFeature]);
     
-    // แปลงผลลัพธ์ความน่าจะเป็นจาก AI เป็นเปอร์เซ็นต์ความมั่นใจ
-    let aiConfidence = parseFloat((Math.abs(aiProbability - 0.5) * 200).toFixed(1));
-    aiConfidence = Math.min(Math.max(aiConfidence, 50.0), 98.0);
+    let dynamicFluctuation = Math.abs(rsi - 50) * 0.6 + Math.abs(currentPrice - prevPrice) * 20000;
+    let aiConfidence = 55.0 + dynamicFluctuation + (aiProbability * 15.0);
+    aiConfidence = parseFloat(Math.min(Math.max(aiConfidence, 50.0), 97.0).toFixed(1));
 
     let aiDecision = 'WAIT';
     let isVipSignal = false;
@@ -196,22 +186,19 @@ function processEngine() {
       statusText = 'DANGER (SIDEWAY)';
       aiDecision = 'SIDEWAY';
     } else {
-      // 🎯 ช่วง 3 วินาทีสุดท้าย ให้สมองกล Neural Network ตัดสินใจสั่งการ
-      if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        
-        // ถ้าผลลัพธ์โครงข่ายประสาทเทียมโน้มเอียงไปทางสูง (> 0.68) -> สั่ง CALL
-        if (aiProbability > 0.68 && rsi < 72) {
+      // 🎯 ขยายเวลาตัดสินใจเป็น 5 วินาทีสุดท้าย และผ่อนเกณฑ์ AI ให้ยิงออร์เดอร์ได้ง่ายขึ้น
+      if (exactTimeLeft <= 5.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
+        if (aiProbability > 0.58 && rsi < 75) {
           aiDecision = 'CALL';
           state.signal = 'CALL';
           state.timer = 30.0;
-          isVipSignal = aiConfidence >= 82.0;
+          isVipSignal = aiConfidence >= 80.0;
         } 
-        // ถ้าผลลัพธ์โครงข่ายประสาทเทียมโน้มเอียงไปทางต่ำ (< 0.32) -> สั่ง PUT
-        else if (aiProbability < 0.32 && rsi > 28) {
+        else if (aiProbability < 0.42 && rsi > 25) {
           aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
-          isVipSignal = aiConfidence >= 82.0;
+          isVipSignal = aiConfidence >= 80.0;
         }
       }
     }
