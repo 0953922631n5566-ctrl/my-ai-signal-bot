@@ -110,8 +110,9 @@ function processEngine() {
     const ema20 = calculateEMA(prices, 20);
     const bb = calculateBB(prices);
 
-    const isBullish = ema5 > ema20 && currentPrice > ema20;
-    const isBearish = ema5 < ema20 && currentPrice < ema20;
+    // เงื่อนไขเทรนด์ตามน้ำ (Trend Following)
+    const isBullishTrend = ema5 > ema20 && currentPrice >= ema5;
+    const isBearishTrend = ema5 < ema20 && currentPrice <= ema5;
     const isSideway = bb.bandwidth < 0.1;
 
     let statusColor = 'green';
@@ -124,17 +125,16 @@ function processEngine() {
       statusText = 'DANGER';
       signal = 'SIDEWAY';
     } else {
-      let score = 55;
-      if (isBullish || isBearish) score += 25;
-      if (currentPrice > prevPrice) score += 15;
-      else score += 10;
+      let score = 60;
+      if (isBullishTrend || isBearishTrend) score += 25;
+      if (currentPrice !== prevPrice) score += 10;
       
-      confidence = Math.min(score, 94.0).toFixed(1);
+      confidence = Math.min(score, 95.0).toFixed(1);
 
-      // ปรับตรงนี้: ยิงสัญญาณเฉพาะช่วง 0.5 วินาทีสุดท้ายจนถึง 0.0 วินาทีปิดแท่งเป๊ะๆ
+      // ส่งสัญญาณในช่วง 0.5 ถึง 0.0 วินาทีสุดท้าย
       if (exactTimeLeft <= 0.5 && exactTimeLeft >= 0.0) {
-        if (isBullish && score >= 62) signal = 'CALL';
-        else if (isBearish && score >= 62) signal = 'PUT';
+        if (isBullishTrend && score >= 65) signal = 'CALL';
+        else if (isBearishTrend && score >= 65) signal = 'PUT';
       }
     }
 
@@ -146,7 +146,7 @@ function processEngine() {
       signal: signal,
       confidence: confidence,
       rsi: rsi,
-      trend: isBullish ? 'BULLISH 🟢' : (isBearish ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
+      trend: isBullishTrend ? 'BULLISH 🟢' : (isBearishTrend ? 'BEARISH 🔴' : 'NEUTRAL ⚪')
     });
   });
 
