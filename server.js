@@ -11,7 +11,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // กำหนดคู่เงินตลาด OTC โดยเฉพาะสำหรับ IQ Option
 const symbols = [
-  { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.1165 },
+  { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
   { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
   { key: 'usdjpy', name: 'USD/JPY (OTC)', base: 155.00 },
   { key: 'audusd', name: 'AUD/USD (OTC)', base: 0.6550 },
@@ -32,19 +32,18 @@ symbols.forEach(s => {
   
   let p = s.base;
   for (let i = 0; i < 40; i++) {
-    p += (Math.random() - 0.47) * (p * 0.00035); // ปรับแรงอวยฝั่งขึ้นตามลักษณะเทรนด์ในภาพ
+    p += (Math.random() - 0.49) * (p * 0.0003);
     marketHistories[s.key].push(parseFloat(p.toFixed(5)));
   }
 });
 
-// จำลองการขยับราคาตลาด OTC ให้สอดคล้องกับพฤติกรรมเทรนด์ขาขึ้น
+// จำลองการขยับราคาตลาด OTC เรียลไทม์
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
     if (hist && hist.length > 0) {
       const last = hist[hist.length - 1];
-      // ให้แรงเหวี่ยงเอียงไปทางขึ้นเล็กน้อย (0.47) ตามภาพตัวอย่างเทรนด์ขาขึ้น
-      const change = (Math.random() - 0.47) * (last * 0.00045);
+      const change = (Math.random() - 0.492) * (last * 0.00045);
       const nextP = parseFloat((last + change).toFixed(5));
       hist.push(nextP);
       if (hist.length > 120) hist.shift();
@@ -87,7 +86,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🧠 ระบบ AI วิเคราะห์ตามภาพเทรนด์ขาขึ้นและจุดดัก Trap ของ OTC
+// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานสำหรับ OTC
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -137,9 +136,8 @@ function processEngine() {
     const prevCandleDelta = prevPrice - prev2Price;
     const isSideway = bb.bandwidth < 0.035;
 
-    // เงื่อนไขดักจับ Trap สอดคล้องกับพฤติกรรมกราฟในภาพ
-    const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 70;
-    const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 30;
+    const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
+    const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
 
     let aiDecision = 'WAIT';
     let aiConfidence = 50.0;
@@ -152,31 +150,30 @@ function processEngine() {
       aiConfidence = 40.0;
     } else {
       const trendStrength = Math.abs(ema6 - ema21) / currentPrice * 1000;
-      aiConfidence = Math.min(68.0 + (trendStrength * 16.0), 96.0);
+      aiConfidence = Math.min(65.0 + (trendStrength * 15.0), 95.0);
 
-      // ตัดสินใจช่วงท้ายแท่ง (3 วินาทีสุดท้าย)
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         if (isBullishTrap) {
           aiDecision = 'PUT';
-          aiConfidence = 93.0;
+          aiConfidence = 92.5;
           isVipSignal = true;
           state.signal = 'PUT';
           state.timer = 30.0;
         } 
         else if (isBearishTrap) {
           aiDecision = 'CALL';
-          aiConfidence = 93.0;
+          aiConfidence = 92.5;
           isVipSignal = true;
           state.signal = 'CALL';
           state.timer = 30.0;
         }
-        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 75) {
+        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 70) {
           aiDecision = 'CALL';
           state.signal = 'CALL';
           state.timer = 30.0;
           isVipSignal = aiConfidence >= 85.0;
         }
-        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 25) {
+        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 30) {
           aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
@@ -217,5 +214,6 @@ setInterval(() => {
   });
 }, 200);
 
+// แก้ไขจุดเชื่อมต่อพอร์ตให้รองรับระบบ Cloud ของ Render 100%
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`OTC Engine running on port ${PORT}`));
