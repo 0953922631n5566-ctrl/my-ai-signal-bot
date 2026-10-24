@@ -9,7 +9,6 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// กำหนดคู่เงินตลาด OTC โดยเฉพาะสำหรับ IQ Option
 const symbols = [
   { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
   { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
@@ -37,7 +36,6 @@ symbols.forEach(s => {
   }
 });
 
-// จำลองการขยับราคาตลาด OTC เรียลไทม์
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
@@ -87,51 +85,8 @@ function calculateRSI(prices, period = 14) {
 }
 
 // ----------------------------------------------------
-// 🤖 สภาวะกรรมการ AI ย่อย (Specialized AI Agents Committee)
+// 🤖 สภาวะกรรมการ AI แบบสมดุล (Trend Follow + Smart Trap)
 // ----------------------------------------------------
-
-// AI ตัวที่ 1: แผนกคัดกรองความผันผวน & ไซด์เวย์ (Volatility & Sideway Guard Agent)
-const agentSidewayGuard = (bb) => {
-  const isSideway = bb.bandwidth < 0.035;
-  return {
-    passed: !isSideway,
-    reason: isSideway ? 'DANGER: Market in Sideway Box' : 'Passed Sideway Filter'
-  };
-};
-
-// AI ตัวที่ 2: แผนกวิเคราะห์แนวโน้มและความแข็งแกร่ง (Trend Analyzer Agent)
-const agentTrendAnalyzer = (currentPrice, ema6, ema21) => {
-  const diff = ema6 - ema21;
-  const trendStrength = Math.abs(diff) / currentPrice * 1000;
-  const isBullish = diff > 0;
-  
-  return {
-    trend: isBullish ? 'BULLISH' : 'BEARISH',
-    strength: trendStrength,
-    passed: trendStrength > 0.15, // ถ้าแรงเหวี่ยงน้อยเกินไปถือว่าไม่ผ่านเกณฑ์เทรนด์ชัดเจน
-    reason: trendStrength > 0.15 ? 'Strong Trend Detected' : 'Weak Trend / Choppy'
-  };
-};
-
-// AI ตัวที่ 3: แผนกตรวจจับกับดักราคาตลาด OTC (OTC Trap Detection Agent)
-const agentTrapDetector = (candleDelta, prevCandleDelta, rsi) => {
-  const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
-  const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
-
-  if (isBullishTrap) return { detected: true, type: 'PUT', label: 'BULLISH TRAP ⚠️' };
-  if (isBearishTrap) return { detected: true, type: 'CALL', label: 'BEARISH TRAP ⚠️' };
-  return { detected: false, type: 'NONE', label: 'NO TRAP' };
-};
-
-// AI ตัวที่ 4: แผนกประเมินความเสี่ยงและให้คะแนนความมั่นใจ (Risk & Scoring Agent)
-const agentRiskScorer = (trendResult, rsi, isVipCondition) => {
-  let score = 60.0 + (trendResult.strength * 12.0);
-  if (rsi > 75 || rsi < 25) score += 10.0; // Overbought/Oversold bonus
-  return Math.min(Math.max(score, 50.0), 96.0);
-};
-
-
-// 🧠 สมองกลหลัก (Master Coordinator) สั่งการและประสานงาน AI ทุกตัวร่วมกัน
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -158,11 +113,11 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'MULTI-AI READY',
+        statusText: 'HYBRID AI READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
-        trend: 'AI COMMITTEE INITIALIZING 🟢',
+        trend: 'ANALYZING 🟢',
         isVip: false
       });
       return;
@@ -177,69 +132,58 @@ function processEngine() {
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
 
-    const candleDelta = currentPrice - prevPrice;
-    const prevCandleDelta = prevPrice - prev2Price;
-
-    // --- ให้ AI แต่ละแผนกเริ่มทำงานร่วมกันเป็นทีม ---
-    const sidewayCheck = agentSidewayGuard(bb);
-    const trendCheck = agentTrendAnalyzer(currentPrice, ema6, ema21);
-    const trapCheck = agentTrapDetector(candleDelta, prevCandleDelta, rsi);
+    const isSideway = bb.bandwidth < 0.03;
 
     let aiDecision = 'WAIT';
-    let statusText = 'MULTI-AI SAFE';
-    let trendLabel = trendCheck.trend === 'BULLISH' ? 'BULLISH 🟢' : 'BEARISH 🔴';
+    let aiConfidence = 70.0;
     let isVipSignal = false;
-    let confidence = 50.0;
+    let statusText = 'SAFE';
+    let trendLabel = ema6 > ema21 ? 'BULLISH 🟢' : 'BEARISH 🔴';
 
-    // แผนกที่ 1: ถ้าตรวจพบ Sideway ส่งต่อให้ฝ่ายคุมความเสี่ยงบล็อกทันที
-    if (!sidewayCheck.passed) {
-      statusText = 'DANGER (SIDEWAY AGENT BLOCKED)';
+    if (isSideway) {
+      statusText = 'DANGER (SIDEWAY)';
       aiDecision = 'SIDEWAY';
-      confidence = 40.0;
+      aiConfidence = 40.0;
       trendLabel = 'SIDEWAY ⚠️';
-    } 
-    else {
-      // แผนกที่ 2 & 3: หากผ่านสิทธิ์ไซด์เวย์ ให้ AI ตรวจจับ Trap และ Trend ทำงานร่วมกัน
-      confidence = agentRiskScorer(trendCheck, rsi);
+    } else {
+      // คำนวณความชันเพื่อดูว่าตลาดวิ่งเป็นเทรนด์ชัดเจนไหม
+      const isStrongBullish = ema6 > ema21 && currentPrice > ema6 && rsi < 80;
+      const isStrongBearish = ema6 < ema21 && currentPrice < ema6 && rsi > 20;
 
-      // ตัดสินใจในช่วง 3 วินาทีสุดท้ายก่อนปิดแท่ง
+      // 🎯 ตัดสินใจในช่วง 3 วินาทีสุดท้าย
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        // ถ้าแผนก Trap ตรวจพบกับดักราคา สั่งพลิกเกมทันที! (Priority สูงสุด)
-        if (trapCheck.detected) {
-          aiDecision = trapCheck.type;
-          confidence = 93.5;
-          isVipSignal = true;
-          state.signal = trapCheck.type;
-          state.timer = 30.0;
-          trendLabel = trapCheck.label;
-        } 
-        // ถ้าไม่มี Trap ให้แผนก Trend และความแข็งแกร่งพิจารณาต่อ
-        else if (trendCheck.trend === 'BULLISH' && currentPrice >= ema6 && rsi < 70) {
+        if (isStrongBullish) {
+          // ถ้าตลาดเป็นเทรนด์ขาขึ้นแข็งแกร่ง -> "แทงขึ้นตามน้ำ (CALL)" ไม่ฝืนสวน!
           aiDecision = 'CALL';
+          aiConfidence = 88.0;
+          isVipSignal = true;
           state.signal = 'CALL';
           state.timer = 30.0;
-          isVipSignal = confidence >= 85.0;
+          trendLabel = 'STRONG UPTREND 🚀';
         } 
-        else if (trendCheck.trend === 'BEARISH' && currentPrice <= ema6 && rsi > 30) {
+        else if (isStrongBearish) {
+          // ถ้าตลาดเป็นเทรนด์ขาลงแข็งแกร่ง -> "แทงลงตามน้ำ (PUT)" ไม่ฝืนสวน!
           aiDecision = 'PUT';
+          aiConfidence = 88.0;
+          isVipSignal = true;
           state.signal = 'PUT';
           state.timer = 30.0;
-          isVipSignal = confidence >= 85.0;
+          trendLabel = 'STRONG DOWNTREND 📉';
         }
       }
     }
 
     let finalSignal = state.signal !== 'WAIT' ? state.signal : aiDecision;
-    if (!sidewayCheck.passed) finalSignal = 'SIDEWAY';
+    if (isSideway) finalSignal = 'SIDEWAY';
 
     pairStatuses.push({
       key: s.key,
       name: s.name,
-      statusColor: !sidewayCheck.passed ? 'red' : 'green',
+      statusColor: isSideway ? 'red' : 'green',
       statusText: statusText,
       signal: finalSignal,
-      confidence: confidence.toFixed(1),
+      confidence: aiConfidence.toFixed(1),
       rsi: rsi,
       trend: trendLabel,
       isVip: isVipSignal
@@ -263,4 +207,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`Multi-AI Committee OTC Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Hybrid Trend-Following Engine running on port ${PORT}`));
