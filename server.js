@@ -9,16 +9,18 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// คู่เงิน OTC ยอดนิยมใน IQ Option
+// กำหนดคู่เงินตลาด OTC โดยเฉพาะสำหรับ IQ Option
 const symbols = [
-  { key: 'eurusd_otc', name: 'EUR/USD (OTC)', base: 1.0850 },
-  { key: 'gbpusd_otc', name: 'GBP/USD (OTC)', base: 1.3400 },
-  { key: 'usdjpy_otc', name: 'USD/JPY (OTC)', base: 155.00 },
-  { key: 'audusd_otc', name: 'AUD/USD (OTC)', base: 0.6550 },
-  { key: 'nzddusd_otc', name: 'NZD/USD (OTC)', base: 0.6050 },
-  { key: 'usdcad_otc', name: 'USD/CAD (OTC)', base: 1.3550 },
-  { key: 'eurjpy_otc', name: 'EUR/JPY (OTC)', base: 167.50 },
-  { key: 'gbpjpy_otc', name: 'GBP/JPY (OTC)', base: 197.50 }
+  { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
+  { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
+  { key: 'usdjpy', name: 'USD/JPY (OTC)', base: 155.00 },
+  { key: 'audusd', name: 'AUD/USD (OTC)', base: 0.6550 },
+  { key: 'nzdusd', name: 'NZD/USD (OTC)', base: 0.6050 },
+  { key: 'usdcad', name: 'USD/CAD (OTC)', base: 1.3550 },
+  { key: 'eurjpy', name: 'EUR/JPY (OTC)', base: 167.50 },
+  { key: 'gbpjpy', name: 'GBP/JPY (OTC)', base: 197.50 },
+  { key: 'eurgbp', name: 'EUR/GBP (OTC)', base: 0.8520 },
+  { key: 'audjpy', name: 'AUD/JPY (OTC)', base: 101.50 }
 ];
 
 let marketHistories = {};
@@ -29,19 +31,19 @@ symbols.forEach(s => {
   symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0, confidence: '50.0', isVip: false };
   
   let p = s.base;
-  for (let i = 0; i < 50; i++) {
-    p += (Math.random() - 0.495) * (p * 0.0005); // ปรับอัลกอริทึมให้สะบัดแบบ OTC
+  for (let i = 0; i < 40; i++) {
+    p += (Math.random() - 0.49) * (p * 0.0003);
     marketHistories[s.key].push(parseFloat(p.toFixed(5)));
   }
 });
 
-// จำลองราคาขยับสไตล์ OTC (มีความผันผวนสูงกว่าตลาดปกติ)
+// จำลองการขยับราคาตลาด OTC เรียลไทม์ (จูนความผันผวนให้เหมาะกับวันหยุด)
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
     if (hist && hist.length > 0) {
       const last = hist[hist.length - 1];
-      const change = (Math.random() - 0.495) * (last * 0.0005);
+      const change = (Math.random() - 0.492) * (last * 0.00045);
       const nextP = parseFloat((last + change).toFixed(5));
       hist.push(nextP);
       if (hist.length > 120) hist.shift();
@@ -84,8 +86,8 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🧠 ระบบ AI ประมวลผลและอ่านพฤติกรรมกราฟ OTC
-function processOTCEngine() {
+// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานสำหรับ OTC
+function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
   const millis = now.getMilliseconds();
@@ -106,12 +108,12 @@ function processOTCEngine() {
       }
     }
 
-    if (!prices || prices.length < 30) {
+    if (!prices || prices.length < 25) {
       pairStatuses.push({
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'OTC READY',
+        statusText: 'OTC AI READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
@@ -130,59 +132,61 @@ function processOTCEngine() {
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
 
-    // อ่านการสะบัดตัวของไส้เทียน OTC
-    const candleChange = currentPrice - prevPrice;
-    const prevChange = prevPrice - prev2Price;
-    const isSideway = bb.bandwidth < 0.038;
+    // วิเคราะห์พฤติกรรมแท่งเทียนปัจจุบัน (Price Action & Rejection)
+    const candleDelta = currentPrice - prevPrice;
+    const prevCandleDelta = prevPrice - prev2Price;
+    const isSideway = bb.bandwidth < 0.035;
 
-    // ระบบจับกับดัก OTC (OTC Trap Reversal Logic)
-    const isOTCBullTrap = candleChange < 0 && prevChange > 0 && rsi >= 67.0; // ทำท่าขึ้นเพื่อตบลง
-    const isOTCBearTrap = candleChange > 0 && prevChange < 0 && rsi <= 33.0; // ทำท่าลงเพื่อตบขึ้น
+    // AI ตรวจจับกับดักราคา (Trap Detection) สำหรับตลาด OTC
+    const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
+    const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
 
+    let aiDecision = 'WAIT';
     let aiConfidence = 50.0;
     let isVipSignal = false;
     let statusText = 'OTC SAFE';
 
     if (isSideway) {
       statusText = 'DANGER (OTC SIDEWAY)';
+      aiDecision = 'SIDEWAY';
       aiConfidence = 40.0;
     } else {
-      const trendDiff = Math.abs(ema6 - ema21) / currentPrice * 1000;
-      aiConfidence = Math.min(62.0 + (trendDiff * 14.0), 95.0);
+      const trendStrength = Math.abs(ema6 - ema21) / currentPrice * 1000;
+      aiConfidence = Math.min(65.0 + (trendStrength * 15.0), 95.0);
 
-      // 🎯 ส่งสัญญาณช่วง 3 วินาทีสุดท้ายก่อนเปลี่ยนแท่ง
+      // 🎯 ช่วง 3 วินาทีสุดท้าย AI ตัดสินใจหน้างานและพลิกเกมอัตโนมัติ
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        if (isOTCBullTrap) {
-          // สลับขั้วสวนทันที: เจอหลอกพุ่งขึ้นใน OTC -> สั่ง PUT
+        if (isBullishTrap) {
+          aiDecision = 'PUT';
+          aiConfidence = 92.5;
+          isVipSignal = true;
           state.signal = 'PUT';
           state.timer = 30.0;
-          state.confidence = '93.0';
-          state.isVip = true;
         } 
-        else if (isOTCBearTrap) {
-          // สลับขั้วสวนทันที: เจอหลอกทุบลงใน OTC -> สั่ง CALL
+        else if (isBearishTrap) {
+          aiDecision = 'CALL';
+          aiConfidence = 92.5;
+          isVipSignal = true;
           state.signal = 'CALL';
           state.timer = 30.0;
-          state.confidence = '93.0';
-          state.isVip = true;
         }
-        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 68) {
+        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 70) {
+          aiDecision = 'CALL';
           state.signal = 'CALL';
           state.timer = 30.0;
-          state.confidence = aiConfidence.toFixed(1);
-          state.isVip = aiConfidence >= 86.0;
+          isVipSignal = aiConfidence >= 85.0;
         }
-        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 32) {
+        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 30) {
+          aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
-          state.confidence = aiConfidence.toFixed(1);
-          state.isVip = aiConfidence >= 86.0;
+          isVipSignal = aiConfidence >= 85.0;
         }
       }
     }
 
-    let finalSignal = state.signal;
+    let finalSignal = state.signal !== 'WAIT' ? state.signal : aiDecision;
     if (isSideway) finalSignal = 'SIDEWAY';
 
     pairStatuses.push({
@@ -191,10 +195,10 @@ function processOTCEngine() {
       statusColor: isSideway ? 'red' : 'green',
       statusText: statusText,
       signal: finalSignal,
-      confidence: state.signal !== 'WAIT' ? state.confidence : aiConfidence.toFixed(1),
+      confidence: aiConfidence.toFixed(1),
       rsi: rsi,
-      trend: isOTCBullTrap ? 'OTC TRAP ⚠️' : (isOTCBearTrap ? 'OTC TRAP ⚠️' : (ema6 > ema21 ? 'BULLISH 🟢' : 'BEARISH 🔴')),
-      isVip: state.isVip
+      trend: isBullishTrap ? 'BULLISH TRAP ⚠️' : (isBearishTrap ? 'BEARISH TRAP ⚠️' : (ema6 > ema21 ? 'BULLISH 🟢' : 'BEARISH 🔴')),
+      isVip: isVipSignal
     });
   });
 
@@ -206,7 +210,7 @@ function processOTCEngine() {
 }
 
 setInterval(() => {
-  const data = processOTCEngine();
+  const data = processEngine();
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(data));
