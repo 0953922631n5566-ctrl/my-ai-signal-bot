@@ -1,49 +1,180 @@
-// ตัวอย่างฟังก์ชันรับข้อมูลจาก WebSocket แล้วมาเรนเดอร์หน้าจอ
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    
-    if (data.type === 'scanner_update') {
-        // อัปเดตเวลาถอยหลังตรงกลางจอ
-        document.getElementById('timer').innerText = data.timeLeft + 's';
-        
-        const container = document.getElementById('pairs-container');
-        container.innerHTML = ''; // ล้างค่าเก่าเพื่ออัปเดตเรียลไทม์
-        
-        data.pairs.forEach(pair => {
-            // กำหนดสีหลอดไฟสัญญาณ
-            let lightColor = pair.signal === 'CALL' ? '#22c55e' : (pair.signal === 'PUT' ? '#ef4444' : '#eab308');
-            let glowEffect = pair.isVip ? 'box-shadow: 0 0 15px ' + lightColor + ';' : '';
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTC PRO Scanner & Signal Live</title>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .timer-box {
+            background: #1e293b;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #38bdf8;
+            margin-bottom: 15px;
+            border: 1px solid #334155;
+        }
+        .pair-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+            border: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .pair-info h3 {
+            margin: 0 0 5px 0;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+        }
+        .pair-info p {
+            margin: 0;
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .action-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .signal-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+            color: white;
+            text-align: center;
+            min-width: 60px;
+        }
+        .trade-btn {
+            background: #3b82f6;
+            color: white;
+            padding: 8px 14px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .trade-btn:hover {
+            background: #2563eb;
+        }
+        .led-dot {
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.15); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .pulsing {
+            animation: pulse 1s infinite;
+        }
+    </style>
+</head>
+<body>
 
-            // สร้างลิงก์ทางลัดไปยังแพลตฟอร์มเทรด (เช่น IQ Option หรือเว็บเทรดที่คุณใช้)
-            // คุณสามารถเปลี่ยน URL เป็นลิงก์ห้องเทรดหรือคู่เงินนั้นๆ ได้ตามต้องการ
-            const brokerUrl = `https://iqoption.com/traderoom/`; // หรือลิงก์เจาะจงคู่เงินถ้าแพลตฟอร์มรองรับ
+    <div class="container">
+        <header>
+            <h2>⚡ OTC PRO Live Scanner ⚡</h2>
+            <div class="timer-box">
+                ⏱️ ปิดแท่งใน: <span id="timer">--s</span>
+            </div>
+        </header>
 
-            const card = document.createElement('div');
-            card.style = `background: #1e293b; border-radius: 12px; padding: 15px; margin-bottom: 10px; border: 1px solid #334155; ${glowEffect}`;
-            
-            card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h3 style="margin: 0; color: #f8fafc; font-size: 18px;">
-                            <span style="height: 12px; width: 12px; background-color: ${lightColor}; border-radius: 50%; display: inline-block; margin-right: 8px; animation: pulse 1s infinite;"></span>
-                            ${pair.name}
-                        </h3>
-                        <p style="margin: 5px 0 0 0; color: #94a3b8; font-size: 13px;">
-                            Trend: ${pair.trend} | RSI: ${pair.rsi} | Confidence: ${pair.confidence}%
-                        </p>
-                    </div>
-                    <div>
-                        <span style="padding: 6px 12px; border-radius: 6px; font-weight: bold; background: ${lightColor}; color: white; display: inline-block; margin-right: 10px;">
-                            ${pair.signal}
-                        </span>
-                        <!-- ปุ่มทางลัดคลิกเพื่อไปเทรดคู่เงินนั้น -->
-                        <a href="${brokerUrl}" target="_blank" style="background: #3b82f6; color: white; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">
-                            🚀 ไปเทรด
-                        </a>
-                    </div>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-    }
-};
+        <!-- พื้นแสดงผลคู่เงินแบบเรียลไทม์ -->
+        <div id="pairs-container">
+            <p style="text-align: center; color: #64748b;">กำลังเชื่อมต่อระบบสัญญาณ...</p>
+        </div>
+    </div>
+
+    <script>
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+        ws.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'scanner_update') {
+                    // อัปเดตเวลานับถอยหลัง
+                    document.getElementById('timer').innerText = data.timeLeft + 's';
+                    
+                    const container = document.getElementById('pairs-container');
+                    container.innerHTML = ''; // ล้างค่าเก่าเพื่ออัปเดตเรียลไทม์
+                    
+                    data.pairs.forEach(pair => {
+                        // กำหนดสีหลอดไฟและป้ายสัญญาณ
+                        let lightColor = '#eab308'; // ค่าเริ่มต้น WAIT
+                        if (pair.signal === 'CALL') lightColor = '#22c55e';
+                        else if (pair.signal === 'PUT') lightColor = '#ef4444';
+                        else if (pair.signal === 'SIDEWAY') lightColor = '#f97316';
+
+                        let glowStyle = pair.isVip ? `box-shadow: 0 0 15px ${lightColor}; border-color: ${lightColor};` : '';
+
+                        // ลิงก์ทางลัดไปยังแพลตฟอร์มเทรด (สามารถเปลี่ยน URL ได้ตามต้องการ)
+                        const brokerUrl = 'https://iqoption.com/traderoom/';
+
+                        const card = document.createElement('div');
+                        card.className = 'pair-card';
+                        if (pair.isVip) {
+                            card.style.cssText = glowStyle;
+                        }
+
+                        card.innerHTML = `
+                            <div class="pair-info">
+                                <h3>
+                                    <span class="led-dot pulsing" style="background-color: ${lightColor};"></span>
+                                    ${pair.name}
+                                </h3>
+                                <p>Trend: ${pair.trend} | RSI: ${pair.rsi} | Conf: ${pair.confidence}%</p>
+                            </div>
+                            <div class="action-area">
+                                <div class="signal-badge" style="background-color: ${lightColor};">
+                                    ${pair.signal}
+                                </div>
+                                <a href="${brokerUrl}" target="_blank" class="trade-btn">
+                                    🚀 ไปเทรด
+                                </a>
+                            </div>
+                        `;
+                        container.appendChild(card);
+                    });
+                }
+            } catch (err) {
+                console.error('Data parsing error:', err);
+            }
+        };
+
+        ws.onclose = function() {
+            console.log('WebSocket disconnected. Reconnecting...');
+            setTimeout(() => {
+                location.reload();
+            }, 5000);
+        };
+    </script>
+</body>
+</html>
