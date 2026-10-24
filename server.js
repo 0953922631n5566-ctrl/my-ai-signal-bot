@@ -1,258 +1,399 @@
+'use strict';
+
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
 const path = require('path');
+const WebSocket = require('ws');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({
+  server,
+  maxPayload: 1024 * 16
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 🧠 ส่วนตั้งค่าระบบ Quant และเกณฑ์การให้คะแนนระดับโปร
 const CONFIG = {
-  historyLimit: 3000,
-  minBars: 60,
-  fastEMA: 6,
-  slowEMA: 21,
+  historyLimit: 500,
+  minHistory: 60,
+  emaFast: 6,
+  emaSlow: 21,
   rsiPeriod: 14,
-  minScore: 70,
-  minScoreGap: 20,
-  cooldownMs: 60_000,
-  expiryMs: 60_000,
-  maxBarAgeMs: 120_000
+  bbPeriod: 20,
+  minScore: 75,
+  cooldownMs: 30_000,
+  signalDurationMs: 30_000,
+  evaluationMs: 500,
+  maxDataAgeMs: 15_000 // ขยายเวลาเผื่อจังหวะเน็ตช้าเล็กน้อย
 };
 
-// ฟังก์ชันคำนวณ EMA มาตรฐาน
-function ema(values, period) {
-  if (values.length < period) return null;
-  const k = 2 / (period + 1);
-  let result = values[0];
-  for (let i = 1; i < values.length; i++) {
-    result = values[i] * k + result * (1 - k);
+// ตั้งค่าคู่เงินพร้อม Venue และ Symbol สำหรับดึงจาก otcharts.com
+const symbols = [
+  { key: 'eurusd', venue: 'iqoption', symbol: 'EURUSD-OTC', name: 'EUR/USD (OTC)' },
+  { key: 'gbpusdt', venue: 'iqoption', symbol: 'GBPUSD-OTC', name: 'GBP/USD (OTC)' },
+  { key: 'usdjpy', venue: 'iqoption', symbol: 'USDJPY-OTC', name: 'USD/JPY (OTC)' },
+  { key: 'audusd', venue: 'iqoption', symbol: 'AUDUSD-OTC', name: 'AUD/USD (OTC)' },
+  { key: 'nzdusd', venue: 'iqoption', symbol: 'NZDUSD-OTC', name: 'NZD/USD (OTC)' },
+  { key: 'usdcad', venue: 'iqoption', symbol: 'USDCAD-OTC', name: 'USD/CAD (OTC)' },
+  { key: 'eurjpy', venue: 'iqoption', symbol: 'EURJPY-OTC', name: 'EUR/JPY (OTC)' },
+  { key: 'gbpjpy', venue: 'iqoption', symbol: 'GBPJPY-OTC', name: 'GBP/JPY (OTC)' },
+  { key: 'eurgbp', venue: 'iqoption', symbol: 'EURGBP-OTC', name: 'EUR/GBP (OTC)' },
+  { key: 'audjpy', venue: 'iqoption', symbol: 'AUDJPY-OTC', name: 'AUD/JPY (OTC)' }
+];
+
+const marketHistories = Object.fromEntries(
+  symbols.map(s => [s.key, []])
+);
+
+const symbolSignalStates = Object.fromEntries(
+  symbols.map(s => [
+    s.key,
+    {
+      signal: 'WAIT',
+      expiresAt: 0,
+      lastSignalAt: 0,
+      lastSignalPrice: null,
+      lastSignalBar: null
+    }
+  ])
+);
+
+// ฟังก์ชันรับราคาจริงเข้าสู่ระบบ
+function updatePrice(key, price, timestamp = Date.now()) {
+  if (!marketHistories[key]) return false;
+  if (!Number.isFinite(price) || price <= 0) return false;
+
+  const history = marketHistories[key];
+  const last = history[history.length - 1];
+
+  if (last && timestamp <= last.timestamp) {
+    return false;
   }
-  return result;
+
+  history.push({ price, timestamp });
+
+  if (history.length > CONFIG.historyLimit) {
+    history.splice(0, history.length - CONFIG.historyLimit);
+  }
+
+  return true;
 }
 
-// ฟังก์ชันคำนวณ RSI สูตรดั้งเดิมของ Wilder (แม่นยำสูง)
-function rsiWilder(values, period = 14) {
-  if (values.length < period + 1) return null;
+function getPrices(history) {
+  return history.map(item => item.price);
+}
+
+// --- ส่วนเชื่อมต่อ API ภายนอก (otcharts.com) ---
+const OTCHARTS_BASE = 'https://otcharts.com';
+const OTCHARTS_KEY = process.env.OTCHARTS_API_KEY;
+
+async function fetchInitialCandles(s) {
+  if (!OTCHARTS_KEY) {
+    console.warn('[API Warning] Missing OTCHARTS_API_KEY environment variable.');
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({
+      venue: s.venue,
+      symbol: s.symbol,
+      tf: '60',
+      limit: '300'
+    });
+
+    const response = await fetch(`${OTCHARTS_BASE}/v1/candles?${params}`, {
+      headers: { Authorization: `Bearer ${OTCHARTS_KEY}` },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+
+    const result = await response.json();
+    if (Array.isArray(result.candles)) {
+      result.candles.forEach(c => {
+        updatePrice(s.key, Number(c.close), Number(c.time) * 1000);
+      });
+      console.log(`[API Success] Loaded historical candles for ${s.name}: ${marketHistories[s.key].length} bars`);
+    }
+  } catch (err) {
+    console.error(`[API Error] Failed to load history for ${s.name}:`, err.message);
+  }
+}
+
+async function startStream(s) {
+  if (!OTCHARTS_KEY) return;
+
+  try {
+    const params = new URLSearchParams({ venue: s.venue, symbol: s.symbol });
+    const response = await fetch(`${OTCHARTS_BASE}/v1/stream?${params}`, {
+      headers: { Authorization: `Bearer ${OTCHARTS_KEY}` },
+      signal: AbortSignal.timeout(24 * 60 * 60 * 1000)
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Stream HTTP error ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let eventName = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          try {
+            const data = JSON.parse(line.slice(5).trim());
+            if (eventName === 'tick' && Number.isFinite(Number(data.price))) {
+              updatePrice(s.key, Number(data.price), Number(data.time) * 1000);
+            }
+          } catch (e) {
+            // ignore parse error
+          }
+          eventName = '';
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[Stream Warning] Stream disconnected for ${s.name}, retrying in 5s...`);
+    setTimeout(() => startStream(s), 5000);
+  }
+}
+
+// เริ่มต้นดึงข้อมูลประวัติและเปิดสตรีมจริงทันทีเมื่อรันเซิร์ฟเวอร์
+symbols.forEach(s => {
+  fetchInitialCandles(s).then(() => {
+    startStream(s);
+  });
+});
+// ------------------------------------------------
+
+function calculateEMA(prices, period) {
+  if (!prices.length) return null;
+  const k = 2 / (period + 1);
+  let ema = prices[0];
+  for (let i = 1; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
+function calculateRSI(prices, period = 14) {
+  if (prices.length < period + 1) return null;
   let gain = 0;
   let loss = 0;
   for (let i = 1; i <= period; i++) {
-    const d = values[i] - values[i - 1];
-    gain += Math.max(d, 0);
-    loss += Math.max(-d, 0);
+    const change = prices[i] - prices[i - 1];
+    gain += Math.max(change, 0);
+    loss += Math.max(-change, 0);
   }
   let avgGain = gain / period;
   let avgLoss = loss / period;
-  for (let i = period + 1; i < values.length; i++) {
-    const d = values[i] - values[i - 1];
-    avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
+  for (let i = period + 1; i < prices.length; i++) {
+    const change = prices[i] - prices[i - 1];
+    avgGain = (avgGain * (period - 1) + Math.max(change, 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(-change, 0)) / period;
   }
   if (avgGain === 0 && avgLoss === 0) return 50;
   if (avgLoss === 0) return 100;
-  return 100 - 100 / (1 + avgGain / avgLoss);
+  if (avgGain === 0) return 0;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
 }
 
-// 📊 ระบบวิเคราะห์และให้คะแนน (Scoring Engine)
-function analyze(candles, now = Date.now()) {
-  if (!Array.isArray(candles) || candles.length < CONFIG.minBars) {
-    return { signal: 'WAIT', reason: 'INSUFFICIENT_DATA' };
-  }
-  const bars = candles.slice(-CONFIG.historyLimit);
-  const last = bars[bars.length - 1];
-  if (now - last.time > CONFIG.maxBarAgeMs) {
-    return { signal: 'WAIT', reason: 'STALE_DATA' };
-  }
-  const closes = bars.map(b => b.close);
-  if (closes.some(p => !Number.isFinite(p) || p <= 0)) {
-    return { signal: 'WAIT', reason: 'INVALID_PRICE' };
-  }
-  const fast = ema(closes, CONFIG.fastEMA);
-  const slow = ema(closes, CONFIG.slowEMA);
-  const rsi = rsiWilder(closes, CONFIG.rsiPeriod);
-
-  if (fast == null || slow == null || rsi == null) {
-    return { signal: 'WAIT', reason: 'INDICATORS_NOT_READY' };
-  }
-
-  const recent = closes.slice(-20);
-  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const variance = recent.reduce((sum, p) => sum + (p - mean) ** 2, 0) / recent.length;
-  const volatilityPct = mean > 0 ? Math.sqrt(variance) / mean * 100 : 0;
-
-  if (volatilityPct < 0.005) {
-    return { signal: 'WAIT', reason: 'LOW_VOLATILITY', rsi: Number(rsi.toFixed(2)) };
-  }
-
-  const current = closes[closes.length - 1];
-  const prior = closes[closes.length - 2];
-  const earlier = closes[closes.length - 4] || prior;
-
-  const momentum = (current - prior) / prior;
-  const shortMove = (current - earlier) / earlier;
-
-  let call = 0;
-  let put = 0;
-
-  if (fast > slow) call += 35;
-  if (fast < slow) put += 35;
-  if (current > fast) call += 15;
-  if (current < fast) put += 15;
-  if (rsi >= 52 && rsi <= 68) call += 20;
-  if (rsi >= 32 && rsi <= 48) put += 20;
-  if (momentum > 0) call += 15;
-  if (momentum < 0) put += 15;
-  if (shortMove > 0) call += 15;
-  if (shortMove < 0) put += 15;
-
-  let signal = 'WAIT';
-  if (call >= CONFIG.minScore && call - put >= CONFIG.minScoreGap && rsi < 70) {
-    signal = 'CALL';
-  } else if (put >= CONFIG.minScore && put - call >= CONFIG.minScoreGap && rsi > 30) {
-    signal = 'PUT';
-  }
-
+function calculateBB(prices, period = 20, mult = 2) {
+  if (prices.length < period) return null;
+  const slice = prices.slice(-period);
+  const mean = slice.reduce((sum, p) => sum + p, 0) / period;
+  if (mean === 0) return null;
+  const variance = slice.reduce((sum, p) => sum + (p - mean) ** 2, 0) / period;
+  const sd = Math.sqrt(variance);
   return {
-    signal,
-    reason: signal === 'WAIT' ? 'FILTERED' : 'RULES_CONFIRMED',
-    score: Math.max(call, put),
-    rsi: Number(rsi.toFixed(2)),
-    trend: fast > slow ? 'BULLISH' : (fast < slow ? 'BEARISH' : 'NEUTRAL'),
-    candleTime: last.time,
-    entryReference: current,
-    expiryMs: CONFIG.expiryMs
+    middle: mean,
+    upper: mean + mult * sd,
+    lower: mean - mult * sd,
+    bandwidth: (4 * sd / mean) * 100
   };
 }
 
-// 🛡️ ระบบจัดการและควบคุมจังหวะสัญญาณ (Cooldown Manager)
-function createSignalManager() {
-  const lastSignals = new Map();
-  function evaluate(symbol, candles, now = Date.now()) {
-    const result = analyze(candles, now);
-    if (result.signal === 'WAIT') return result;
-    const last = lastSignals.get(symbol);
-    if (last && (last.candleTime === result.candleTime || now - last.createdAt < CONFIG.cooldownMs)) {
-      return { ...result, signal: 'WAIT', reason: 'COOLDOWN' };
-    }
-    lastSignals.set(symbol, { candleTime: result.candleTime, createdAt: now });
-    return { ...result, symbol, createdAt: now, mode: 'SIGNAL_ONLY' };
+function getTrend(prices) {
+  const fast = calculateEMA(prices, CONFIG.emaFast);
+  const slow = calculateEMA(prices, CONFIG.emaSlow);
+  const current = prices[prices.length - 1];
+  if (fast == null || slow == null || !current) {
+    return { direction: 'NEUTRAL', strength: 0 };
   }
-  return { evaluate };
+  return {
+    direction: fast > slow ? 'BULLISH' : fast < slow ? 'BEARISH' : 'NEUTRAL',
+    strength: Math.abs(fast - slow) / current * 100,
+    fast,
+    slow
+  };
 }
 
-const signalManager = createSignalManager();
+function analyzePair(symbol, now) {
+  const history = marketHistories[symbol.key];
+  const state = symbolSignalStates[symbol.key];
 
-// รายชื่อคู่เงิน OTC ทั้งหมด
-const symbols = [
-  { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
-  { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
-  { key: 'usdjpy', name: 'USD/JPY (OTC)', base: 155.00 },
-  { key: 'audusd', name: 'AUD/USD (OTC)', base: 0.6550 },
-  { key: 'nzdusd', name: 'NZD/USD (OTC)', base: 0.6050 },
-  { key: 'usdcad', name: 'USD/CAD (OTC)', base: 1.3550 },
-  { key: 'eurjpy', name: 'EUR/JPY (OTC)', base: 167.50 },
-  { key: 'gbpjpy', name: 'GBP/JPY (OTC)', base: 197.50 },
-  { key: 'eurgbp', name: 'EUR/GBP (OTC)', base: 0.8520 },
-  { key: 'audjpy', name: 'AUD/JPY (OTC)', base: 101.50 }
-];
+  const base = {
+    key: symbol.key,
+    name: symbol.name,
+    statusColor: 'red',
+    statusText: 'WAITING FOR LIVE DATA',
+    signal: 'WAIT',
+    confidence: '0.0',
+    rsi: 50,
+    trend: 'NEUTRAL',
+    isVip: false
+  };
 
-let marketHistories = {};
-symbols.forEach(s => {
-  marketHistories[s.key] = [];
-  let p = s.base;
-  let nowTime = Date.now() - (100 * 60 * 1000);
-  for (let i = 0; i < 100; i++) {
-    p += (Math.random() - 0.49) * (p * 0.0003);
-    marketHistories[s.key].push({
-      time: nowTime + (i * 60 * 1000),
-      open: p,
-      high: p * 1.0005,
-      low: p * 0.9995,
-      close: parseFloat(p.toFixed(5))
-    });
+  if (history.length < CONFIG.minHistory) {
+    return base;
   }
-});
 
-// จำลองการขยับราคาแบบเรียลไทม์สร้างแท่งเทียนจำลองที่สมจริง
-setInterval(() => {
-  const now = Date.now();
-  symbols.forEach(s => {
-    const candles = marketHistories[s.key];
-    if (candles && candles.length > 0) {
-      const lastCandle = candles[candles.length - 1];
-      const change = (Math.random() - 0.492) * (lastCandle.close * 0.00045);
-      const newClose = parseFloat((lastCandle.close + change).toFixed(5));
-      
-      if (now - lastCandle.time < 60000) {
-        lastCandle.close = newClose;
-        lastCandle.high = Math.max(lastCandle.high, newClose);
-        lastCandle.low = Math.min(lastCandle.low, newClose);
-      } else {
-        candles.push({
-          time: now,
-          open: newClose,
-          high: newClose,
-          low: newClose,
-          close: newClose
-        });
-        if (candles.length > 3000) candles.shift();
-      }
+  const last = history[history.length - 1];
+  if (now - last.timestamp > CONFIG.maxDataAgeMs) {
+    return { ...base, statusText: 'STALE DATA' };
+  }
+
+  const prices = getPrices(history);
+  const current = prices[prices.length - 1];
+  const previous = prices[prices.length - 2];
+
+  const rsi = calculateRSI(prices, CONFIG.rsiPeriod);
+  const trend = getTrend(prices);
+  const bb = calculateBB(prices, CONFIG.bbPeriod);
+
+  if (rsi == null || !bb || !Number.isFinite(current)) {
+    return base;
+  }
+
+  const returns = [];
+  for (let i = Math.max(1, prices.length - 20); i < prices.length; i++) {
+    if (prices[i - 1] !== 0) {
+      returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
     }
-  });
-}, 1000);
+  }
 
-// ประมวลผลส่งข้อมูลสแกนเนอร์ให้หน้าเว็บ
+  const volatility = returns.length
+    ? Math.sqrt(returns.reduce((sum, r) => sum + r * r, 0) / returns.length) * 100
+    : 0;
+
+  if (bb.bandwidth < 0.015 || volatility < 0.001) {
+    return {
+      ...base,
+      statusText: 'LOW VOLATILITY',
+      rsi: Number(rsi.toFixed(1)),
+      trend: trend.direction
+    };
+  }
+
+  const momentum = previous !== 0 ? (current - previous) / previous * 100 : 0;
+
+  let callScore = 0;
+  let putScore = 0;
+
+  if (trend.direction === 'BULLISH') callScore += 35;
+  if (trend.direction === 'BEARISH') putScore += 35;
+  if (rsi >= 52 && rsi <= 68) callScore += 20;
+  if (rsi <= 48 && rsi >= 32) putScore += 20;
+  if (current > trend.fast) callScore += 15;
+  if (current < trend.fast) putScore += 15;
+  if (momentum > 0) callScore += 15;
+  if (momentum < 0) putScore += 15;
+
+  let candidate = 'WAIT';
+  const topScore = Math.max(callScore, putScore);
+  const scoreGap = Math.abs(callScore - putScore);
+
+  if (callScore >= CONFIG.minScore && scoreGap >= 20) candidate = 'CALL';
+  else if (putScore >= CONFIG.minScore && scoreGap >= 20) candidate = 'PUT';
+
+  if (candidate === 'CALL' && rsi >= 70) candidate = 'WAIT';
+  if (candidate === 'PUT' && rsi <= 30) candidate = 'WAIT';
+
+  const inCooldown = now - state.lastSignalAt < CONFIG.cooldownMs;
+  let signal = 'WAIT';
+  let isVip = false;
+
+  if (state.expiresAt > now) {
+    signal = state.signal;
+  } else {
+    state.signal = 'WAIT';
+    state.expiresAt = 0;
+
+    if (!inCooldown && candidate !== 'WAIT') {
+      state.signal = candidate;
+      state.expiresAt = now + CONFIG.signalDurationMs;
+      state.lastSignalAt = now;
+      signal = candidate;
+      isVip = true;
+    }
+  }
+
+  return {
+    ...base,
+    statusColor: candidate === 'WAIT' ? 'red' : 'green',
+    statusText: signal === 'WAIT' ? 'NO TRADE' : 'SIGNAL CONFIRMED',
+    signal,
+    confidence: String(Math.round(topScore)),
+    rsi: Number(rsi.toFixed(1)),
+    trend: trend.direction,
+    isVip
+  };
+}
+
 function processEngine() {
   const now = Date.now();
-  const seconds = Math.floor((now / 1000) % 60);
-  const exactTimeLeft = parseFloat((60 - (seconds + (now % 1000) / 1000)).toFixed(1));
-  const displayTimeLeft = Math.ceil(exactTimeLeft);
-
-  let pairStatuses = [];
-
-  symbols.forEach(s => {
-    const candles = marketHistories[s.key];
-    const evaluation = signalManager.evaluate(s.key, candles, now);
-
-    let signal = evaluation.signal;
-    let score = evaluation.score || 50;
-    let rsiVal = evaluation.rsi || 50;
-    let trendStr = evaluation.trend || 'NEUTRAL';
-    let statusText = evaluation.reason === 'RULES_CONFIRMED' ? 'OTC SAFE' : (evaluation.reason || 'ACTIVE');
-
-    pairStatuses.push({
-      key: s.key,
-      name: s.name,
-      statusColor: signal === 'WAIT' ? 'green' : 'green',
-      statusText: statusText,
-      signal: signal,
-      confidence: score.toFixed(1),
-      rsi: rsiVal,
-      trend: trendStr + (trendStr === 'BULLISH' ? ' 🟢' : trendStr === 'BEARISH' ? ' 🔴' : ' ⚪'),
-      isVip: score >= 85
-    });
-  });
+  const pairs = symbols.map(s => analyzePair(s, now));
 
   return {
     type: 'scanner_update',
-    timeLeft: displayTimeLeft,
-    pairs: pairStatuses
+    timeLeft: Math.ceil((60_000 - (now % 60_000)) / 1000),
+    pairs
   };
 }
 
-// ส่งข้อมูลผ่าน WebSocket ทุกๆ 200ms
-setInterval(() => {
-  const data = processEngine();
-  wss.clients.forEach(client => {
+const broadcastTimer = setInterval(() => {
+  const data = JSON.stringify(processEngine());
+  for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(data));
+      client.send(data, err => {
+        if (err) console.error('WebSocket send failed:', err.message);
+      });
     }
-  });
-}, 200);
+  }
+}, CONFIG.evaluationMs);
 
-// รองรับ Port บน Render 100%
+wss.on('connection', socket => {
+  socket.send(JSON.stringify(processEngine()));
+  socket.on('error', err => console.error('WebSocket error:', err.message));
+});
+
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`Professional Quant OTC Engine running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Live Real-Feed Signal Engine running on port ${PORT}`);
+});
+
+function shutdown() {
+  clearInterval(broadcastTimer);
+  wss.close(() => {
+    server.close(() => process.exit(0));
+  });
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
