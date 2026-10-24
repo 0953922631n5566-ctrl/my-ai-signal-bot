@@ -1,316 +1,49 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Noghjkbot - AI Auto Scanner</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        html, body { height: 100%; background-color: #0f172a; color: #fff; overflow: hidden; }
+// ตัวอย่างฟังก์ชันรับข้อมูลจาก WebSocket แล้วมาเรนเดอร์หน้าจอ
+ws.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    
+    if (data.type === 'scanner_update') {
+        // อัปเดตเวลาถอยหลังตรงกลางจอ
+        document.getElementById('timer').innerText = data.timeLeft + 's';
         
-        body { padding: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        const container = document.getElementById('pairs-container');
+        container.innerHTML = ''; // ล้างค่าเก่าเพื่ออัปเดตเรียลไทม์
         
-        /* ขยาย Container ให้เต็มความสูงกรอบตามรูปภาพ */
-        .container { 
-            width: 100%; 
-            max-width: 450px; 
-            height: 100%; 
-            background: #1e293b; 
-            border-radius: 16px; 
-            padding: 15px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
-            display: flex; 
-            flex-direction: column; 
-        }
+        data.pairs.forEach(pair => {
+            // กำหนดสีหลอดไฟสัญญาณ
+            let lightColor = pair.signal === 'CALL' ? '#22c55e' : (pair.signal === 'PUT' ? '#ef4444' : '#eab308');
+            let glowEffect = pair.isVip ? 'box-shadow: 0 0 15px ' + lightColor + ';' : '';
 
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
-        .title { font-size: 15px; font-weight: bold; color: #38bdf8; display: flex; align-items: center; gap: 6px; }
+            // สร้างลิงก์ทางลัดไปยังแพลตฟอร์มเทรด (เช่น IQ Option หรือเว็บเทรดที่คุณใช้)
+            // คุณสามารถเปลี่ยน URL เป็นลิงก์ห้องเทรดหรือคู่เงินนั้นๆ ได้ตามต้องการ
+            const brokerUrl = `https://iqoption.com/traderoom/`; // หรือลิงก์เจาะจงคู่เงินถ้าแพลตฟอร์มรองรับ
 
-        /* ป้าย LIVE กระพริบเนียนๆ แสดงสถานะทำงาน */
-        @keyframes liveBlink {
-            0% { opacity: 1; box-shadow: 0 0 4px #22c55e; }
-            50% { opacity: 0.3; box-shadow: 0 0 0px #22c55e; }
-            100% { opacity: 1; box-shadow: 0 0 4px #22c55e; }
-        }
-        .badge-live { 
-            background: #22c55e; 
-            color: #000; 
-            font-size: 10px; 
-            padding: 2px 6px; 
-            border-radius: 4px; 
-            font-weight: bold; 
-            animation: liveBlink 1.2s infinite ease-in-out;
-        }
-        
-        /* แถบแจ้งเตือนเน็ตหลุด */
-        .offline-banner {
-            background: #ef4444;
-            color: #fff;
-            font-size: 11px;
-            text-align: center;
-            padding: 6px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            font-weight: bold;
-            display: none;
-        }
-
-        .selector-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 13px; color: #94a3b8; text-align: center; cursor: pointer; }
-        .selector-box:hover { border-color: #38bdf8; color: #fff; }
-
-        /* ปรับส่วนการ์ดหลักให้ขยายความสูงรับเต็มกรอบสีแดง */
-        #singleView { display: flex; flex-direction: column; flex-grow: 1; gap: 12px; }
-
-        .signal-card { 
-            background: #0f172a; 
-            border-radius: 12px; 
-            padding: 20px; 
-            text-align: center; 
-            border: 1px solid #334155; 
-            transition: all 0.3s ease; 
-            position: relative; 
-            flex-grow: 1; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: center; 
-            align-items: center; 
-        }
-
-        .signal-title { width: 100%; font-size: 13px; color: #94a3b8; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; position: absolute; top: 15px; padding: 0 15px; }
-        .signal-status { font-size: 48px; font-weight: bold; letter-spacing: 2px; margin: auto 0; }
-        .signal-wait { color: #94a3b8; }
-        .signal-call { color: #22c55e; text-shadow: 0 0 20px rgba(34,197,94,0.6); }
-        .signal-put { color: #ef4444; text-shadow: 0 0 20px rgba(239,68,68,0.6); }
-        .signal-sideway { color: #eab308; }
-
-        .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: auto; }
-        .metric-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px 5px; text-align: center; }
-        .metric-label { font-size: 10px; color: #94a3b8; margin-bottom: 4px; }
-        .metric-val { font-size: 15px; font-weight: bold; color: #fff; }
-
-        .pairs-list { display: flex; flex-direction: column; gap: 8px; flex-grow: 1; overflow-y: auto; }
-        .pair-item { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
-        .pair-item:hover { border-color: #38bdf8; }
-        
-        /* ไฟกระพริบวูบวาบสำหรับไม้เด็ด VIP 90%+ */
-        @keyframes vipBlinkCall {
-          0% { box-shadow: 0 0 10px #00ff88, inset 0 0 10px #00ff88; }
-          50% { box-shadow: 0 0 35px #00ff88, 0 0 50px #00ff88, inset 0 0 20px #ffffff; }
-          100% { box-shadow: 0 0 10px #00ff88, inset 0 0 10px #00ff88; }
-        }
-        @keyframes vipBlinkPut {
-          0% { box-shadow: 0 0 10px #ff3366, inset 0 0 10px #ff3366; }
-          50% { box-shadow: 0 0 35px #ff3366, 0 0 50px #ff3366, inset 0 0 20px #ffffff; }
-          100% { box-shadow: 0 0 10px #ff3366, inset 0 0 10px #ff3366; }
-        }
-
-        .signal-vip-call { animation: vipBlinkCall 0.6s infinite alternate !important; border: 2px solid #00ff88 !important; }
-        .signal-vip-put { animation: vipBlinkPut 0.6s infinite alternate !important; border: 2px solid #ff3366 !important; }
-        .hidden { display: none !important; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="title">⚡ AI AUTO SCANNER <span class="badge-live">LIVE</span></div>
-        </div>
-
-        <div class="offline-banner" id="offlineAlert">
-            ⚠️ การเชื่อมต่อหลุด กำลังพยายามเชื่อมต่อใหม่...
-        </div>
-
-        <div class="selector-box" id="selectorToggle" onclick="toggleView()">
-            🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
-        </div>
-
-        <!-- หน้าจอหลัก -->
-        <div id="singleView">
-            <div class="signal-card" id="mainCard">
-                <div class="signal-title">
-                    <span id="selectedPairName">AI Selected: EUR/USD</span>
-                    <span id="trendBadge" style="font-size:11px;">BULLISH 🟢</span>
-                </div>
-                <div class="signal-status signal-wait" id="mainSignal">WAIT</div>
-            </div>
-
-            <div class="metrics-grid">
-                <div class="metric-box">
-                    <div class="metric-label">Confidence</div>
-                    <div class="metric-val" id="valConfidence">50.0%</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">RSI (14)</div>
-                    <div class="metric-val" id="valRsi">50.0</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">แท่งถัดไปใน</div>
-                    <div class="metric-val" id="valTimeLeft">60s</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- หน้าจอเลือกคู่เงิน -->
-        <div id="listView" class="hidden">
-            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px; display: flex; justify-content: space-between;">
-                <span>เลือกคู่เงินเพื่อติดตาม</span>
-                <span style="cursor:pointer; color:#38bdf8;" onclick="toggleView()">⬅ กลับหน้าหลัก</span>
-            </div>
-            <div class="pairs-list" id="pairsContainer"></div>
-        </div>
-    </div>
-
-    <script>
-        let ws;
-        let currentSelectedKey = 'eurusd';
-        let isShowingList = false;
-        let cachedPairsData = [];
-        let hasAlerted10s = false;
-        let lastSignal = 'WAIT';
-
-        // ระบบเสียงแจ้งเตือน
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playSound(freq, duration, type = 'sine') {
-            try {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = type;
-                osc.frequency.value = freq;
-                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.start();
-                osc.stop(audioCtx.currentTime + duration);
-            } catch(e) {}
-        }
-
-        function toggleView() {
-            isShowingList = !isShowingList;
-            document.getElementById('singleView').classList.toggle('hidden', isShowingList);
-            document.getElementById('listView').classList.toggle('hidden', !isShowingList);
-            if (isShowingList) renderPairsList();
-        }
-
-        function selectPair(key) {
-            currentSelectedKey = key;
-            toggleView();
-            updateUI();
-        }
-
-        function connectWS() {
-            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-            ws = new WebSocket(protocol + window.location.host);
-
-            ws.onopen = function() {
-                document.getElementById('offlineAlert').style.display = 'none';
-            };
-
-            ws.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'scanner_update') {
-                        cachedPairsData = data.pairs;
-                        updateUI(data.timeLeft);
-                    }
-                } catch(e) {}
-            };
-
-            ws.onclose = function() {
-                document.getElementById('offlineAlert').style.display = 'block';
-                setTimeout(connectWS, 2000);
-            };
-
-            ws.onerror = function() {
-                document.getElementById('offlineAlert').style.display = 'block';
-            };
-        }
-
-        function updateUI(timeLeftVal) {
-            if (!cachedPairsData || cachedPairsData.length === 0) return;
-
-            const currentPair = cachedPairsData.find(p => p.key === currentSelectedKey) || cachedPairsData[0];
+            const card = document.createElement('div');
+            card.style = `background: #1e293b; border-radius: 12px; padding: 15px; margin-bottom: 10px; border: 1px solid #334155; ${glowEffect}`;
             
-            document.getElementById('selectedPairName').innerText = `AI Selected: ${currentPair.name}`;
-            document.getElementById('trendBadge').innerText = currentPair.trend;
-            
-            const signalEl = document.getElementById('mainSignal');
-            const cardEl = document.getElementById('mainCard');
-            
-            signalEl.className = 'signal-status';
-            cardEl.className = 'signal-card';
-
-            if (currentPair.signal === 'CALL') {
-                signalEl.innerText = 'CALL';
-                signalEl.classList.add('signal-call');
-                if (currentPair.isVip) cardEl.classList.add('signal-vip-call');
-                
-                // เสียงเตือนสั้นๆ 2 ครั้งเมื่อสัญญาณ CALL ออก
-                if (lastSignal !== 'CALL') {
-                    playSound(880, 0.1);
-                    setTimeout(() => playSound(1200, 0.15), 150);
-                    lastSignal = 'CALL';
-                }
-            } else if (currentPair.signal === 'PUT') {
-                signalEl.innerText = 'PUT';
-                signalEl.classList.add('signal-put');
-                if (currentPair.isVip) cardEl.classList.add('signal-vip-put');
-
-                // เสียงเตือนสั้นๆ 2 ครั้งเมื่อสัญญาณ PUT ออก
-                if (lastSignal !== 'PUT') {
-                    playSound(600, 0.1);
-                    setTimeout(() => playSound(400, 0.15), 150);
-                    lastSignal = 'PUT';
-                }
-            } else if (currentPair.signal === 'SIDEWAY') {
-                signalEl.innerText = 'SIDEWAY';
-                signalEl.classList.add('signal-sideway');
-                lastSignal = 'SIDEWAY';
-            } else {
-                signalEl.innerText = 'WAIT';
-                signalEl.classList.add('signal-wait');
-                lastSignal = 'WAIT';
-            }
-
-            document.getElementById('valConfidence').innerText = currentPair.confidence + '%';
-            document.getElementById('valRsi').innerText = currentPair.rsi;
-            
-            if (timeLeftVal !== undefined) {
-                document.getElementById('valTimeLeft').innerText = timeLeftVal + 's';
-
-                // 🔔 เสียงเตือนล่วงหน้าช่วง 10 วินาทีสุดท้าย เพื่อเตือนให้หันมามองหน้าจอเตรียมกด
-                if (timeLeftVal === 10 && !hasAlerted10s) {
-                    playSound(520, 0.2); // เสียงปิ๊บเตือนเตรียมตัว
-                    hasAlerted10s = true;
-                } else if (timeLeftVal > 10) {
-                    hasAlerted10s = false;
-                }
-            }
-
-            if (isShowingList) renderPairsList();
-        }
-
-        function renderPairsList() {
-            const container = document.getElementById('pairsContainer');
-            container.innerHTML = '';
-            cachedPairsData.forEach(p => {
-                const div = document.createElement('div');
-                div.className = 'pair-item';
-                div.innerHTML = `
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="font-weight:bold; font-size:14px;">${p.name}</div>
-                        <div style="font-size:11px; color:#94a3b8;">RSI: ${p.rsi} | ${p.trend}</div>
+                        <h3 style="margin: 0; color: #f8fafc; font-size: 18px;">
+                            <span style="height: 12px; width: 12px; background-color: ${lightColor}; border-radius: 50%; display: inline-block; margin-right: 8px; animation: pulse 1s infinite;"></span>
+                            ${pair.name}
+                        </h3>
+                        <p style="margin: 5px 0 0 0; color: #94a3b8; font-size: 13px;">
+                            Trend: ${pair.trend} | RSI: ${pair.rsi} | Confidence: ${pair.confidence}%
+                        </p>
                     </div>
-                    <div style="text-align:right;">
-                        <div style="font-weight:bold; font-size:13px; color: ${p.signal === 'CALL' ? '#22c55e' : (p.signal === 'PUT' ? '#ef4444' : '#94a3b8')}">${p.signal} ${p.isVip ? '🔥VIP' : ''}</div>
-                        <div style="font-size:11px; color:#38bdf8;">${p.confidence}%</div>
+                    <div>
+                        <span style="padding: 6px 12px; border-radius: 6px; font-weight: bold; background: ${lightColor}; color: white; display: inline-block; margin-right: 10px;">
+                            ${pair.signal}
+                        </span>
+                        <!-- ปุ่มทางลัดคลิกเพื่อไปเทรดคู่เงินนั้น -->
+                        <a href="${brokerUrl}" target="_blank" style="background: #3b82f6; color: white; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">
+                            🚀 ไปเทรด
+                        </a>
                     </div>
-                `;
-                div.onclick = () => selectPair(p.key);
-                container.appendChild(div);
-            });
-        }
-
-        connectWS();
-    </script>
-</body>
-</html>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+};
