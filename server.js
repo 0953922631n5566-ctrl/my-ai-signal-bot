@@ -1,7 +1,5 @@
 'use strict';
 
-require('dotenv').config();
-
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -27,7 +25,7 @@ const CONFIG = {
   cooldownMs: 30_000,
   signalDurationMs: 30_000,
   evaluationMs: 500,
-  maxDataAgeMs: 15_000 // ขยายเวลาเผื่อจังหวะเน็ตช้าเล็กน้อย
+  maxDataAgeMs: 15_000
 };
 
 // ตั้งค่าคู่เงินพร้อม Venue และ Symbol สำหรับดึงจาก otcharts.com
