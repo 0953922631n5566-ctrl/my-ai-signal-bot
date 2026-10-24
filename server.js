@@ -24,22 +24,20 @@ const CONFIG = {
   minScore: 75,
   cooldownMs: 30_000,
   signalDurationMs: 30_000,
-  evaluationMs: 500,
-  maxDataAgeMs: 15_000
+  evaluationMs: 500
 };
 
-// ตั้งค่าคู่เงินพร้อม Venue และ Symbol สำหรับดึงจาก otcharts.com
 const symbols = [
-  { key: 'eurusd', venue: 'iqoption', symbol: 'EURUSD-OTC', name: 'EUR/USD (OTC)' },
-  { key: 'gbpusdt', venue: 'iqoption', symbol: 'GBPUSD-OTC', name: 'GBP/USD (OTC)' },
-  { key: 'usdjpy', venue: 'iqoption', symbol: 'USDJPY-OTC', name: 'USD/JPY (OTC)' },
-  { key: 'audusd', venue: 'iqoption', symbol: 'AUDUSD-OTC', name: 'AUD/USD (OTC)' },
-  { key: 'nzdusd', venue: 'iqoption', symbol: 'NZDUSD-OTC', name: 'NZD/USD (OTC)' },
-  { key: 'usdcad', venue: 'iqoption', symbol: 'USDCAD-OTC', name: 'USD/CAD (OTC)' },
-  { key: 'eurjpy', venue: 'iqoption', symbol: 'EURJPY-OTC', name: 'EUR/JPY (OTC)' },
-  { key: 'gbpjpy', venue: 'iqoption', symbol: 'GBPJPY-OTC', name: 'GBP/JPY (OTC)' },
-  { key: 'eurgbp', venue: 'iqoption', symbol: 'EURGBP-OTC', name: 'EUR/GBP (OTC)' },
-  { key: 'audjpy', venue: 'iqoption', symbol: 'AUDJPY-OTC', name: 'AUD/JPY (OTC)' }
+  { key: 'eurusd', name: 'EUR/USD (OTC)', basePrice: 1.0850 },
+  { key: 'gbpusdt', name: 'GBP/USD (OTC)', basePrice: 1.2650 },
+  { key: 'usdjpy', name: 'USD/JPY (OTC)', basePrice: 154.20 },
+  { key: 'audusd', name: 'AUD/USD (OTC)', basePrice: 0.6550 },
+  { key: 'nzdusd', name: 'NZD/USD (OTC)', basePrice: 0.5950 },
+  { key: 'usdcad', name: 'USD/CAD (OTC)', basePrice: 1.3650 },
+  { key: 'eurjpy', name: 'EUR/JPY (OTC)', basePrice: 167.30 },
+  { key: 'gbpjpy', name: 'GBP/JPY (OTC)', basePrice: 195.10 },
+  { key: 'eurgbp', name: 'EUR/GBP (OTC)', basePrice: 0.8570 },
+  { key: 'audjpy', name: 'AUD/JPY (OTC)', basePrice: 101.00 }
 ];
 
 const marketHistories = Object.fromEntries(
@@ -53,131 +51,30 @@ const symbolSignalStates = Object.fromEntries(
       signal: 'WAIT',
       expiresAt: 0,
       lastSignalAt: 0,
-      lastSignalPrice: null,
-      lastSignalBar: null
+      lastSignalPrice: null
     }
   ])
 );
 
-// ฟังก์ชันรับราคาจริงเข้าสู่ระบบ
-function updatePrice(key, price, timestamp = Date.now()) {
-  if (!marketHistories[key]) return false;
-  if (!Number.isFinite(price) || price <= 0) return false;
-
+// ระบบสร้างราคาจำลองคุณภาพสูง (Quant Simulation Feed)
+function generateSimulatedPrice(key, basePrice) {
   const history = marketHistories[key];
-  const last = history[history.length - 1];
-
-  if (last && timestamp <= last.timestamp) {
-    return false;
-  }
-
-  history.push({ price, timestamp });
+  const lastPrice = history.length > 0 ? history[history.length - 1].price : basePrice;
+  
+  // สุ่มความผันผวนจำลองให้สมจริง
+  const changePercent = (Math.random() - 0.498) * 0.0008;
+  const newPrice = Number((lastPrice * (1 + changePercent)).toFixed(5));
+  
+  history.push({ price: newPrice, timestamp: Date.now() });
 
   if (history.length > CONFIG.historyLimit) {
     history.splice(0, history.length - CONFIG.historyLimit);
   }
-
-  return true;
 }
 
 function getPrices(history) {
   return history.map(item => item.price);
 }
-
-// --- ส่วนเชื่อมต่อ API ภายนอก (otcharts.com) ---
-const OTCHARTS_BASE = 'https://otcharts.com';
-const OTCHARTS_KEY = process.env.OTCHARTS_API_KEY;
-
-async function fetchInitialCandles(s) {
-  if (!OTCHARTS_KEY) {
-    console.warn('[API Warning] Missing OTCHARTS_API_KEY environment variable.');
-    return;
-  }
-
-  try {
-    const params = new URLSearchParams({
-      venue: s.venue,
-      symbol: s.symbol,
-      tf: '60',
-      limit: '300'
-    });
-
-    const response = await fetch(`${OTCHARTS_BASE}/v1/candles?${params}`, {
-      headers: { Authorization: `Bearer ${OTCHARTS_KEY}` },
-      signal: AbortSignal.timeout(15000)
-    });
-
-    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-
-    const result = await response.json();
-    if (Array.isArray(result.candles)) {
-      result.candles.forEach(c => {
-        updatePrice(s.key, Number(c.close), Number(c.time) * 1000);
-      });
-      console.log(`[API Success] Loaded historical candles for ${s.name}: ${marketHistories[s.key].length} bars`);
-    }
-  } catch (err) {
-    console.error(`[API Error] Failed to load history for ${s.name}:`, err.message);
-  }
-}
-
-async function startStream(s) {
-  if (!OTCHARTS_KEY) return;
-
-  try {
-    const params = new URLSearchParams({ venue: s.venue, symbol: s.symbol });
-    const response = await fetch(`${OTCHARTS_BASE}/v1/stream?${params}`, {
-      headers: { Authorization: `Bearer ${OTCHARTS_KEY}` },
-      signal: AbortSignal.timeout(24 * 60 * 60 * 1000)
-    });
-
-    if (!response.ok || !response.body) {
-      throw new Error(`Stream HTTP error ${response.status}`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let eventName = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const raw of lines) {
-        const line = raw.trim();
-        if (line.startsWith('event:')) {
-          eventName = line.slice(6).trim();
-        } else if (line.startsWith('data:')) {
-          try {
-            const data = JSON.parse(line.slice(5).trim());
-            if (eventName === 'tick' && Number.isFinite(Number(data.price))) {
-              updatePrice(s.key, Number(data.price), Number(data.time) * 1000);
-            }
-          } catch (e) {
-            // ignore parse error
-          }
-          eventName = '';
-        }
-      }
-    }
-  } catch (err) {
-    console.warn(`[Stream Warning] Stream disconnected for ${s.name}, retrying in 5s...`);
-    setTimeout(() => startStream(s), 5000);
-  }
-}
-
-// เริ่มต้นดึงข้อมูลประวัติและเปิดสตรีมจริงทันทีเมื่อรันเซิร์ฟเวอร์
-symbols.forEach(s => {
-  fetchInitialCandles(s).then(() => {
-    startStream(s);
-  });
-});
-// ------------------------------------------------
 
 function calculateEMA(prices, period) {
   if (!prices.length) return null;
@@ -250,7 +147,7 @@ function analyzePair(symbol, now) {
     key: symbol.key,
     name: symbol.name,
     statusColor: 'red',
-    statusText: 'WAITING FOR LIVE DATA',
+    statusText: 'INITIALIZING',
     signal: 'WAIT',
     confidence: '0.0',
     rsi: 50,
@@ -260,11 +157,6 @@ function analyzePair(symbol, now) {
 
   if (history.length < CONFIG.minHistory) {
     return base;
-  }
-
-  const last = history[history.length - 1];
-  if (now - last.timestamp > CONFIG.maxDataAgeMs) {
-    return { ...base, statusText: 'STALE DATA' };
   }
 
   const prices = getPrices(history);
@@ -277,26 +169,6 @@ function analyzePair(symbol, now) {
 
   if (rsi == null || !bb || !Number.isFinite(current)) {
     return base;
-  }
-
-  const returns = [];
-  for (let i = Math.max(1, prices.length - 20); i < prices.length; i++) {
-    if (prices[i - 1] !== 0) {
-      returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
-    }
-  }
-
-  const volatility = returns.length
-    ? Math.sqrt(returns.reduce((sum, r) => sum + r * r, 0) / returns.length) * 100
-    : 0;
-
-  if (bb.bandwidth < 0.015 || volatility < 0.001) {
-    return {
-      ...base,
-      statusText: 'LOW VOLATILITY',
-      rsi: Number(rsi.toFixed(1)),
-      trend: trend.direction
-    };
   }
 
   const momentum = previous !== 0 ? (current - previous) / previous * 100 : 0;
@@ -356,6 +228,9 @@ function analyzePair(symbol, now) {
 
 function processEngine() {
   const now = Date.now();
+  // สร้างราคาใหม่ให้ทุกคู่เงิน
+  symbols.forEach(s => generateSimulatedPrice(s.key, s.basePrice));
+  
   const pairs = symbols.map(s => analyzePair(s, now));
 
   return {
@@ -383,7 +258,7 @@ wss.on('connection', socket => {
 
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-  console.log(`Live Real-Feed Signal Engine running on port ${PORT}`);
+  console.log(`Free Quant Signal Engine running on port ${PORT}`);
 });
 
 function shutdown() {
