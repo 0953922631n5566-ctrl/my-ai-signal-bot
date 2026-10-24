@@ -9,17 +9,16 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// คู่เงิน OTC ยอดนิยมใน IQ Option
 const symbols = [
-  { key: 'eurusd', name: 'EUR/USD', base: 1.0850 },
-  { key: 'gbpusdt', name: 'GBP/USD', base: 1.3400 },
-  { key: 'usdjpy', name: 'USD/JPY', base: 155.00 },
-  { key: 'audusd', name: 'AUD/USD', base: 0.6550 },
-  { key: 'nzdusd', name: 'NZD/USD', base: 0.6050 },
-  { key: 'usdcad', name: 'USD/CAD', base: 1.3550 },
-  { key: 'eurjpy', name: 'EUR/JPY', base: 167.50 },
-  { key: 'gbpjpy', name: 'GBP/JPY', base: 197.50 },
-  { key: 'eurgbp', name: 'EUR/GBP', base: 0.8520 },
-  { key: 'audjpy', name: 'AUD/JPY', base: 101.50 }
+  { key: 'eurusd_otc', name: 'EUR/USD (OTC)', base: 1.0850 },
+  { key: 'gbpusd_otc', name: 'GBP/USD (OTC)', base: 1.3400 },
+  { key: 'usdjpy_otc', name: 'USD/JPY (OTC)', base: 155.00 },
+  { key: 'audusd_otc', name: 'AUD/USD (OTC)', base: 0.6550 },
+  { key: 'nzddusd_otc', name: 'NZD/USD (OTC)', base: 0.6050 },
+  { key: 'usdcad_otc', name: 'USD/CAD (OTC)', base: 1.3550 },
+  { key: 'eurjpy_otc', name: 'EUR/JPY (OTC)', base: 167.50 },
+  { key: 'gbpjpy_otc', name: 'GBP/JPY (OTC)', base: 197.50 }
 ];
 
 let marketHistories = {};
@@ -30,19 +29,19 @@ symbols.forEach(s => {
   symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0, confidence: '50.0', isVip: false };
   
   let p = s.base;
-  for (let i = 0; i < 40; i++) {
-    p += (Math.random() - 0.49) * (p * 0.0003);
+  for (let i = 0; i < 50; i++) {
+    p += (Math.random() - 0.495) * (p * 0.0005); // ปรับอัลกอริทึมให้สะบัดแบบ OTC
     marketHistories[s.key].push(parseFloat(p.toFixed(5)));
   }
 });
 
-// จำลองการขยับราคาตลาดเรียลไทม์
+// จำลองราคาขยับสไตล์ OTC (มีความผันผวนสูงกว่าตลาดปกติ)
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
     if (hist && hist.length > 0) {
       const last = hist[hist.length - 1];
-      const change = (Math.random() - 0.49) * (last * 0.0004);
+      const change = (Math.random() - 0.495) * (last * 0.0005);
       const nextP = parseFloat((last + change).toFixed(5));
       hist.push(nextP);
       if (hist.length > 120) hist.shift();
@@ -85,8 +84,8 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// ⚔️ ระบบประลองกำลัง AI ฝั่งเขียว vs ฝั่งแดง (Tug-of-War Engine)
-function processEngine() {
+// 🧠 ระบบ AI ประมวลผลและอ่านพฤติกรรมกราฟ OTC
+function processOTCEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
   const millis = now.getMilliseconds();
@@ -107,16 +106,16 @@ function processEngine() {
       }
     }
 
-    if (!prices || prices.length < 25) {
+    if (!prices || prices.length < 30) {
       pairStatuses.push({
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'ARENA READY',
+        statusText: 'OTC READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
-        trend: 'FIGHTING 🟢',
+        trend: 'ANALYZING 🟢',
         isVip: false
       });
       return;
@@ -130,75 +129,72 @@ function processEngine() {
     const ema6 = calculateEMA(prices, 6);
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
-    const isSideway = bb.bandwidth < 0.035;
 
-    // 🟢 คำนวณพลังฝั่งเขียว (Green Agent Score)
-    let greenPower = 50.0;
-    if (ema6 > ema21) greenPower += 20.0;
-    if (currentPrice > prevPrice) greenPower += 15.0;
-    if (prevPrice > prev2Price) greenPower += 10.0;
-    if (rsi > 40 && rsi < 65) greenPower += 10.0; // อยู่ในโซนวิ่งขึ้นสวยๆ
+    // อ่านการสะบัดตัวของไส้เทียน OTC
+    const candleChange = currentPrice - prevPrice;
+    const prevChange = prevPrice - prev2Price;
+    const isSideway = bb.bandwidth < 0.038;
 
-    // 🔴 คำนวณพลังฝั่งแดง (Red Agent Score)
-    let redPower = 50.0;
-    if (ema6 < ema21) redPower += 20.0;
-    if (currentPrice < prevPrice) redPower += 15.0;
-    if (prevPrice < prev2Price) redPower += 10.0;
-    if (rsi > 35 && rsi < 60) redPower += 10.0; // อยู่ในโซนทุบลงสวยๆ
+    // ระบบจับกับดัก OTC (OTC Trap Reversal Logic)
+    const isOTCBullTrap = candleChange < 0 && prevChange > 0 && rsi >= 67.0; // ทำท่าขึ้นเพื่อตบลง
+    const isOTCBearTrap = candleChange > 0 && prevChange < 0 && rsi <= 33.0; // ทำท่าลงเพื่อตบขึ้น
 
-    // 🔄 ตรวจจับจังหวะ "ฝั่งเขียวพยายามดึงขึ้นแต่โดนฝั่งแดงกดจนหมดทางสู้" (หรือสลับกัน)
-    const isGreenTrapped = (currentPrice < ema6) && (rsi > 68); // ทำท่าจะขึ้นแต่ overbought โดนตบ
-    const isRedTrapped = (currentPrice > ema6) && (rsi < 32);   // ทำท่าจะลงแต่ oversold โดนดีด
-
-    let finalDecision = 'WAIT';
-    let finalConfidence = 50.0;
+    let aiConfidence = 50.0;
     let isVipSignal = false;
-    let statusText = 'SAFE';
+    let statusText = 'OTC SAFE';
 
     if (isSideway) {
-      statusText = 'DANGER (SIDEWAY)';
-      finalDecision = 'SIDEWAY';
-      finalConfidence = 40.0;
+      statusText = 'DANGER (OTC SIDEWAY)';
+      aiConfidence = 40.0;
     } else {
-      // 🎯 ตัดสินใจในช่วง 3 วินาทีสุดท้ายก่อนจบแท่ง
+      const trendDiff = Math.abs(ema6 - ema21) / currentPrice * 1000;
+      aiConfidence = Math.min(62.0 + (trendDiff * 14.0), 95.0);
+
+      // 🎯 ส่งสัญญาณช่วง 3 วินาทีสุดท้ายก่อนเปลี่ยนแท่ง
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
         
-        if (isGreenTrapped || (redPower > greenPower + 15.0)) {
-          // ฝั่งเขียวหมดสภาพ หรือพลังฝั่งแดงชนะขาดลอย -> หักดิบพลิกเกมเป็น PUT ทันที!
-          finalDecision = 'PUT';
-          finalConfidence = Math.min(65.0 + (redPower * 0.3), 94.5).toFixed(1);
-          isVipSignal = parseFloat(finalConfidence) >= 85.0;
+        if (isOTCBullTrap) {
+          // สลับขั้วสวนทันที: เจอหลอกพุ่งขึ้นใน OTC -> สั่ง PUT
           state.signal = 'PUT';
           state.timer = 30.0;
+          state.confidence = '93.0';
+          state.isVip = true;
         } 
-        else if (isRedTrapped || (greenPower > redPower + 15.0)) {
-          // ฝั่งแดงหมดสภาพ หรือพลังฝั่งเขียวชนะขาดลอย -> หักดิบพลิกเกมเป็น CALL ทันที!
-          finalDecision = 'CALL';
-          finalConfidence = Math.min(65.0 + (greenPower * 0.3), 94.5).toFixed(1);
-          isVipSignal = parseFloat(finalConfidence) >= 85.0;
+        else if (isOTCBearTrap) {
+          // สลับขั้วสวนทันที: เจอหลอกทุบลงใน OTC -> สั่ง CALL
           state.signal = 'CALL';
           state.timer = 30.0;
+          state.confidence = '93.0';
+          state.isVip = true;
+        }
+        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 68) {
+          state.signal = 'CALL';
+          state.timer = 30.0;
+          state.confidence = aiConfidence.toFixed(1);
+          state.isVip = aiConfidence >= 86.0;
+        }
+        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 32) {
+          state.signal = 'PUT';
+          state.timer = 30.0;
+          state.confidence = aiConfidence.toFixed(1);
+          state.isVip = aiConfidence >= 86.0;
         }
       }
     }
 
-    let displayedSignal = state.signal !== 'WAIT' ? state.signal : finalDecision;
-    if (isSideway) displayedSignal = 'SIDEWAY';
-
-    let trendLabel = 'NEUTRAL ⚪';
-    if (greenPower > redPower) trendLabel = 'BULLISH WIN 🟢';
-    else if (redPower > greenPower) trendLabel = 'BEARISH WIN 🔴';
+    let finalSignal = state.signal;
+    if (isSideway) finalSignal = 'SIDEWAY';
 
     pairStatuses.push({
       key: s.key,
       name: s.name,
       statusColor: isSideway ? 'red' : 'green',
       statusText: statusText,
-      signal: displayedSignal,
-      confidence: finalConfidence.toFixed(1),
+      signal: finalSignal,
+      confidence: state.signal !== 'WAIT' ? state.confidence : aiConfidence.toFixed(1),
       rsi: rsi,
-      trend: trendLabel,
-      isVip: isVipSignal
+      trend: isOTCBullTrap ? 'OTC TRAP ⚠️' : (isOTCBearTrap ? 'OTC TRAP ⚠️' : (ema6 > ema21 ? 'BULLISH 🟢' : 'BEARISH 🔴')),
+      isVip: state.isVip
     });
   });
 
@@ -210,7 +206,7 @@ function processEngine() {
 }
 
 setInterval(() => {
-  const data = processEngine();
+  const data = processOTCEngine();
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(data));
@@ -219,4 +215,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`OTC Engine running on port ${PORT}`));
