@@ -9,9 +9,18 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// รายชื่อคู่เงินตลาด OTC ครบ 10 คู่
 const symbols = [
   { key: 'eurusd_otc', name: 'EUR/USD (OTC)', base: 1.0850 },
-  { key: 'gbpusd_otc', name: 'GBP/USD (OTC)', base: 1.3400 }
+  { key: 'gbpusd_otc', name: 'GBP/USD (OTC)', base: 1.3400 },
+  { key: 'usdjpy_otc', name: 'USD/JPY (OTC)', base: 155.00 },
+  { key: 'audusd_otc', name: 'AUD/USD (OTC)', base: 0.6550 },
+  { key: 'nzdusd_otc', name: 'NZD/USD (OTC)', base: 0.6050 },
+  { key: 'usdcad_otc', name: 'USD/CAD (OTC)', base: 1.3550 },
+  { key: 'eurjpy_otc', name: 'EUR/JPY (OTC)', base: 167.50 },
+  { key: 'gbpjpy_otc', name: 'GBP/JPY (OTC)', base: 197.50 },
+  { key: 'eurgbp_otc', name: 'EUR/GBP (OTC)', base: 0.8520 },
+  { key: 'audjpy_otc', name: 'AUD/JPY (OTC)', base: 101.50 }
 ];
 
 let marketHistories = {};
@@ -39,9 +48,20 @@ setInterval(() => {
   });
 }, 1000);
 
-// --- 🤖 จำลองระบบ AI หลายแผนกส่งต่อข้อมูล (Multi-Agent Pipeline) ---
+function calculateRSI(prices, period = 14) {
+  if (prices.length < period + 1) return 50.0;
+  let gains = 0, losses = 0;
+  for (let i = prices.length - period; i < prices.length - 1; i++) {
+    const diff = prices[i + 1] - prices[i];
+    if (diff >= 0) gains += diff;
+    else losses -= diff;
+  }
+  if (losses === 0) return 100;
+  const rs = (gains / period) / (losses / period);
+  return 100 - (100 / (1 + rs));
+}
 
-// แผนกที่ 1: AI คัดแยกสภาพตลาด (Router Agent)
+// 🤖 ระบบ Multi-Agent Routing Pipeline
 function routerDepartment(prices) {
   const current = prices[prices.length - 1];
   const prev = prices[prices.length - 2];
@@ -56,7 +76,6 @@ function routerDepartment(prices) {
   }
 }
 
-// แผนกที่ 2: AI ผู้เชี่ยวชาญฝั่งไซด์เวย์
 function sidewaySpecialist(prices) {
   const last = prices[prices.length - 1];
   const slice = prices.slice(-10);
@@ -68,18 +87,15 @@ function sidewaySpecialist(prices) {
   return { signal: 'WAIT', confidence: '60.0', note: 'กำลังวิ่งอยู่กลางกรอบ' };
 }
 
-// แผนกที่ 3: AI ผู้เชี่ยวชาญฝั่งเทรนด์และดักจับกับดัก (Trend & Trap Specialist)
 function trendAndTrapSpecialist(prices, trendType) {
   const current = prices[prices.length - 1];
   const prev = prices[prices.length - 2];
   const prev2 = prices[prices.length - 3] || prev;
   
-  // ตรวจสอบการสะบัดหลอก (Trap)
   const isTrap = (trendType === 'BULL' && current < prev && prev > prev2) || 
                  (trendType === 'BEAR' && current > prev && prev < prev2);
 
   if (isTrap) {
-    // เจอของแปลก/โดนตบหลอก ส่งให้ผู้เชี่ยวชาญพลิกเกมสวนทางทันที
     return {
       signal: trendType === 'BULL' ? 'PUT' : 'CALL',
       confidence: '92.0',
@@ -94,7 +110,6 @@ function trendAndTrapSpecialist(prices, trendType) {
   };
 }
 
-// ระบบประมวลผลหลักผ่านท่อส่งต่อ (Master Orchestrator)
 function processMultiAgentEngine() {
   const now = new Date();
   const exactTimeLeft = parseFloat((60 - (now.getSeconds() + now.getMilliseconds() / 1000)).toFixed(1));
@@ -113,18 +128,16 @@ function processMultiAgentEngine() {
 
     if (!prices || prices.length < 20) return;
 
-    // 1. หยิบกราฟไปถาม "แผนกคัดแยก" ก่อนว่าเป็นของใคร
+    const rsiVal = parseFloat(calculateRSI(prices).toFixed(1));
     const route = routerDepartment(prices);
     let specialistResult = { signal: 'WAIT', confidence: '50.0', note: 'Analysing' };
 
-    // 2. ส่งต่อให้แผนกเฉพาะทางตามป้ายกำกับ
     if (route.code === 'SIDEWAY') {
       specialistResult = sidewaySpecialist(prices);
     } else {
       specialistResult = trendAndTrapSpecialist(prices, route.code);
     }
 
-    // 3. ช่วง 3 วินาทีสุดท้าย ล็อกผลลัพธ์จากผู้เชี่ยวชาญ
     if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT' && specialistResult.signal !== 'WAIT') {
       state.signal = specialistResult.signal;
       state.timer = 30.0;
@@ -140,6 +153,7 @@ function processMultiAgentEngine() {
       statusText: route.dept,
       signal: finalSig,
       confidence: specialistResult.confidence,
+      rsi: rsiVal,
       trend: specialistResult.note,
       isVip: parseFloat(specialistResult.confidence) > 90.0
     });
