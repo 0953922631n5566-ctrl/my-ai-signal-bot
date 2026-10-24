@@ -28,7 +28,7 @@ let symbolSignalStates = {};
 
 symbols.forEach(s => {
   marketHistories[s.key] = [];
-  symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0, department: 'Initializing', confidence: '50.0' };
+  symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0, department: 'OTC AI READY', confidence: '50.0', note: 'ANALYZING 🟢' };
   let p = s.base;
   for (let i = 0; i < 40; i++) {
     p += (Math.random() - 0.49) * (p * 0.0003);
@@ -61,7 +61,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🤖 ระบบ Multi-Agent Routing Pipeline
+// 🤖 ระบบ Multi-Agent Routing Pipeline (เบื้องหลัง)
 function routerDepartment(prices) {
   const current = prices[prices.length - 1];
   const prev = prices[prices.length - 2];
@@ -99,14 +99,14 @@ function trendAndTrapSpecialist(prices, trendType) {
     return {
       signal: trendType === 'BULL' ? 'PUT' : 'CALL',
       confidence: '92.0',
-      note: 'ตรวจพบ Trap สวนกลับทันที'
+      note: 'ตรวจพบ Trap สวนกลับทันที ⚠️'
     };
   }
 
   return {
     signal: trendType === 'BULL' ? 'CALL' : 'PUT',
     confidence: '84.0',
-    note: 'วิ่งตามทิศทางเทรนด์ปกติ'
+    note: 'วิ่งตามทิศทางเทรนด์ปกติ 🟢'
   };
 }
 
@@ -121,9 +121,14 @@ function processMultiAgentEngine() {
     const prices = marketHistories[s.key];
     let state = symbolSignalStates[s.key];
 
+    // ตัวนับเวลาถอยหลังล็อกสัญญาณ
     if (state.timer > 0) {
       state.timer = Math.max(0, state.timer - 0.2);
-      if (state.timer === 0) state.signal = 'WAIT';
+      if (state.timer === 0) {
+        state.signal = 'WAIT';
+        state.department = 'OTC AI READY';
+        state.note = 'ANALYZING 🟢';
+      }
     }
 
     if (!prices || prices.length < 20) return;
@@ -138,24 +143,33 @@ function processMultiAgentEngine() {
       specialistResult = trendAndTrapSpecialist(prices, route.code);
     }
 
-    if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT' && specialistResult.signal !== 'WAIT') {
-      state.signal = specialistResult.signal;
-      state.timer = 30.0;
-      state.department = route.dept;
+    // ล็อกสัญญาณเฉพาะช่วง 3 วินาทีสุดท้าย และตอนที่สถานะยังเป็น WAIT เท่านั้น
+    if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
+      if (specialistResult.signal !== 'WAIT') {
+        state.signal = specialistResult.signal;
+        state.timer = 30.0; // ล็อกโชว์สัญญาณ 30 วินาที
+        state.department = route.dept;
+        state.confidence = specialistResult.confidence;
+        state.note = specialistResult.note;
+      }
     }
 
-    let finalSig = state.signal !== 'WAIT' ? state.signal : specialistResult.signal;
+    // ถ้ายังไม่ถึง 3 วินาทีสุดท้าย ให้บังคับแสดงผลเป็น WAIT รอสแตนบาย
+    let finalSig = state.signal;
+    let statusText = state.signal !== 'WAIT' ? state.department : 'OTC AI READY (WAITING)';
+    let noteText = state.signal !== 'WAIT' ? state.note : 'รอจังหวะเข้าทำ ⏳';
+    let confVal = state.signal !== 'WAIT' ? state.confidence : '50.0';
 
     pairStatuses.push({
       key: s.key,
       name: s.name,
       statusColor: route.code === 'SIDEWAY' ? 'orange' : 'green',
-      statusText: route.dept,
+      statusText: statusText,
       signal: finalSig,
-      confidence: specialistResult.confidence,
+      confidence: confVal,
       rsi: rsiVal,
-      trend: specialistResult.note,
-      isVip: parseFloat(specialistResult.confidence) > 90.0
+      trend: noteText,
+      isVip: parseFloat(confVal) > 90.0
     });
   });
 
