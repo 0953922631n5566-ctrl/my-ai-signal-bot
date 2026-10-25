@@ -9,17 +9,18 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// กำหนดคู่เงินตลาด OTC โดยเฉพาะสำหรับ IQ Option
 const symbols = [
-  { key: 'eurusd', name: 'EUR/USD', base: 1.0850 },
-  { key: 'gbpusdt', name: 'GBP/USD', base: 1.3400 },
-  { key: 'usdjpy', name: 'USD/JPY', base: 155.00 },
-  { key: 'audusd', name: 'AUD/USD', base: 0.6550 },
-  { key: 'nzdusd', name: 'NZD/USD', base: 0.6050 },
-  { key: 'usdcad', name: 'USD/CAD', base: 1.3550 },
-  { key: 'eurjpy', name: 'EUR/JPY', base: 167.50 },
-  { key: 'gbpjpy', name: 'GBP/JPY', base: 197.50 },
-  { key: 'eurgbp', name: 'EUR/GBP', base: 0.8520 },
-  { key: 'audjpy', name: 'AUD/JPY', base: 101.50 }
+  { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
+  { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
+  { key: 'usdjpy', name: 'USD/JPY (OTC)', base: 155.00 },
+  { key: 'audusd', name: 'AUD/USD (OTC)', base: 0.6550 },
+  { key: 'nzdusd', name: 'NZD/USD (OTC)', base: 0.6050 },
+  { key: 'usdcad', name: 'USD/CAD (OTC)', base: 1.3550 },
+  { key: 'eurjpy', name: 'EUR/JPY (OTC)', base: 167.50 },
+  { key: 'gbpjpy', name: 'GBP/JPY (OTC)', base: 197.50 },
+  { key: 'eurgbp', name: 'EUR/GBP (OTC)', base: 0.8520 },
+  { key: 'audjpy', name: 'AUD/JPY (OTC)', base: 101.50 }
 ];
 
 let marketHistories = {};
@@ -36,13 +37,13 @@ symbols.forEach(s => {
   }
 });
 
-// จำลองการขยับราคาตลาดเรียลไทม์
+// จำลองการขยับราคาตลาด OTC เรียลไทม์
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
     if (hist && hist.length > 0) {
       const last = hist[hist.length - 1];
-      const change = (Math.random() - 0.49) * (last * 0.0004);
+      const change = (Math.random() - 0.492) * (last * 0.00045);
       const nextP = parseFloat((last + change).toFixed(5));
       hist.push(nextP);
       if (hist.length > 120) hist.shift();
@@ -85,7 +86,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานแบบไดนามิก
+// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานสำหรับ OTC
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -112,7 +113,7 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'AI READY',
+        statusText: 'OTC AI READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
@@ -131,36 +132,28 @@ function processEngine() {
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
 
-    // วิเคราะห์พฤติกรรมแท่งเทียนปัจจุบัน (Price Action & Rejection)
     const candleDelta = currentPrice - prevPrice;
     const prevCandleDelta = prevPrice - prev2Price;
     const isSideway = bb.bandwidth < 0.035;
 
-    // AI ตรวจจับกับดักราคา (Trap Detection)
-    // ถ้าราคาพยายามพุ่งขึ้นแต่โมเมนตัมกำลังหมดและ RSI อยู่โซนซื้อเกิน -> ตรวจพบกับดักฝั่งซื้อ (Bullish Trap)
     const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
-    // ถ้าราคาพยายามทุบลงแต่โมเมนตัมเริ่มหมดและ RSI อยู่โซนขายเกิน -> ตรวจพบกับดักฝั่งขาย (Bearish Trap)
     const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
 
     let aiDecision = 'WAIT';
     let aiConfidence = 50.0;
     let isVipSignal = false;
-    let statusText = 'SAFE';
+    let statusText = 'OTC SAFE';
 
     if (isSideway) {
-      statusText = 'DANGER (SIDEWAY)';
+      statusText = 'DANGER (OTC SIDEWAY)';
       aiDecision = 'SIDEWAY';
       aiConfidence = 40.0;
     } else {
-      // คำนวณความแข็งแกร่งของเทรนด์พื้นฐาน
       const trendStrength = Math.abs(ema6 - ema21) / currentPrice * 1000;
       aiConfidence = Math.min(65.0 + (trendStrength * 15.0), 95.0);
 
-      // 🎯 ช่วง 3 วินาทีสุดท้าย AI ตัดสินใจหน้างานและพลิกเกมอัตโนมัติ
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        
         if (isBullishTrap) {
-          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าขึ้น -> อัด PUT (สับขาหลอกตลาด)
           aiDecision = 'PUT';
           aiConfidence = 92.5;
           isVipSignal = true;
@@ -168,7 +161,6 @@ function processEngine() {
           state.timer = 30.0;
         } 
         else if (isBearishTrap) {
-          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าลง -> อัด CALL (สับขาหลอกตลาด)
           aiDecision = 'CALL';
           aiConfidence = 92.5;
           isVipSignal = true;
@@ -176,14 +168,12 @@ function processEngine() {
           state.timer = 30.0;
         }
         else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 70) {
-          // เทรนด์ปกติขาขึ้นแข็งแกร่ง
           aiDecision = 'CALL';
           state.signal = 'CALL';
           state.timer = 30.0;
           isVipSignal = aiConfidence >= 85.0;
         }
         else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 30) {
-          // เทรนด์ปกติขาลงแข็งแกร่ง
           aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
@@ -192,7 +182,6 @@ function processEngine() {
       }
     }
 
-    // คงสถานะสัญญาณไว้จนกว่าจะครบ Timer 30 วินาที
     let finalSignal = state.signal !== 'WAIT' ? state.signal : aiDecision;
     if (isSideway) finalSignal = 'SIDEWAY';
 
@@ -225,5 +214,6 @@ setInterval(() => {
   });
 }, 200);
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
+// แก้ไขจุดเชื่อมต่อพอร์ตให้รองรับระบบ Cloud ของ Render 100%
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => console.log(`OTC Engine running on port ${PORT}`));
