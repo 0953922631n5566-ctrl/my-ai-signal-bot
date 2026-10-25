@@ -9,44 +9,26 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// กำหนดคู่เงินตลาด OTC สำหรับ IQ Option
 const symbols = [
-  { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
-  { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
-  { key: 'usdjpy', name: 'USD/JPY (OTC)', base: 155.00 },
-  { key: 'audusd', name: 'AUD/USD (OTC)', base: 0.6550 },
-  { key: 'nzdusd', name: 'NZD/USD (OTC)', base: 0.6050 },
-  { key: 'usdcad', name: 'USD/CAD (OTC)', base: 1.3550 },
-  { key: 'eurjpy', name: 'EUR/JPY (OTC)', base: 167.50 },
-  { key: 'gbpjpy', name: 'GBP/JPY (OTC)', base: 197.50 },
-  { key: 'eurgbp', name: 'EUR/GBP (OTC)', base: 0.8520 },
-  { key: 'audjpy', name: 'AUD/JPY (OTC)', base: 101.50 }
+  { key: 'eurusd', name: 'EUR/USD', base: 1.0850 },
+  { key: 'gbpusdt', name: 'GBP/USD', base: 1.3400 },
+  { key: 'usdjpy', name: 'USD/JPY', base: 155.00 },
+  { key: 'audusd', name: 'AUD/USD', base: 0.6550 },
+  { key: 'nzdusd', name: 'NZD/USD', base: 0.6050 },
+  { key: 'usdcad', name: 'USD/CAD', base: 1.3550 },
+  { key: 'eurjpy', name: 'EUR/JPY', base: 167.50 },
+  { key: 'gbpjpy', name: 'GBP/JPY', base: 197.50 },
+  { key: 'eurgbp', name: 'EUR/GBP', base: 0.8520 },
+  { key: 'audjpy', name: 'AUD/JPY', base: 101.50 }
 ];
 
 let marketHistories = {};
 let symbolSignalStates = {}; 
 
-// 🧠 ตั้งค่าสมองกล Machine Learning (k-NN Engine)
-const AI_CONFIG = {
-  maxSamples: 5000,
-  minSamples: 40,      // ขั้นต่ำเพื่อให้ AI เริ่มเรียนรู้และออกผลลัพธ์ได้เร็วขึ้น
-  neighbors: 50,
-  minProbability: 0.58,
-  minEdge: 0.12
-};
-
-const aiBrains = {};
-
 symbols.forEach(s => {
   marketHistories[s.key] = [];
   symbolSignalStates[s.key] = { signal: 'WAIT', timer: 0, confidence: '50.0', isVip: false };
   
-  aiBrains[s.key] = {
-    samples: [],
-    pending: null,
-    evaluated: 0
-  };
-
   let p = s.base;
   for (let i = 0; i < 40; i++) {
     p += (Math.random() - 0.49) * (p * 0.0003);
@@ -54,19 +36,16 @@ symbols.forEach(s => {
   }
 });
 
-// จำลองการขยับราคาตลาด OTC เรียลไทม์ + ส่งให้ AI เรียนรู้สดๆ
+// จำลองการขยับราคาตลาดเรียลไทม์
 setInterval(() => {
   symbols.forEach(s => {
     const hist = marketHistories[s.key];
     if (hist && hist.length > 0) {
       const last = hist[hist.length - 1];
-      const change = (Math.random() - 0.492) * (last * 0.00045);
+      const change = (Math.random() - 0.49) * (last * 0.0004);
       const nextP = parseFloat((last + change).toFixed(5));
       hist.push(nextP);
       if (hist.length > 120) hist.shift();
-
-      // ให้ AI เรียนรู้จากพฤติกรรมราคาปัจจุบันแบบเรียลไทม์
-      aiObserve(s.key, hist);
     }
   });
 }, 1000);
@@ -106,133 +85,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🧬 ฟังก์ชันสกัดฟีเจอร์เชิงเทคนิคสำหรับ AI
-function aiFeatures(prices) {
-  if (!prices || prices.length < 25) return null;
-  const n = prices.length;
-  const price = prices[n - 1];
-  const prev = prices[n - 2];
-  if (!price || !prev) return null;
-
-  const e5 = calculateEMA(prices.slice(-30), 5);
-  const e12 = calculateEMA(prices.slice(-30), 12);
-  const e21 = calculateEMA(prices.slice(-30), 21);
-  const r = calculateRSI(prices, 14);
-
-  const momentum3 = (price - prices[n - 4]) / price * 10000;
-  const momentum8 = (price - prices[n - 9]) / price * 10000;
-
-  const volatilityPrices = prices.slice(-20);
-  const mean = volatilityPrices.reduce((a, b) => a + b, 0) / volatilityPrices.length;
-  const variance = volatilityPrices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / volatilityPrices.length;
-
-  return [
-    Math.max(-20, Math.min(20, (e5 - e12) / price * 10000)),
-    Math.max(-20, Math.min(20, (e12 - e21) / price * 10000)),
-    Math.max(-25, Math.min(25, (r - 50) / 2)),
-    Math.max(-20, Math.min(20, momentum3)),
-    Math.max(-30, Math.min(30, momentum8)),
-    Math.max(0, Math.min(50, Math.sqrt(variance) / mean * 10000)),
-    Math.max(-20, Math.min(20, (price - prev) / price * 10000))
-  ];
-}
-
-function aiDistance(a, b) {
-  const scales = [10, 10, 15, 10, 15, 20, 10];
-  let total = 0;
-  for (let i = 0; i < scales.length; i++) {
-    const d = (a[i] - b[i]) / scales[i];
-    total += d * d;
-  }
-  return total;
-}
-
-function aiObserve(symbolKey, prices) {
-  const brain = aiBrains[symbolKey];
-  if (!brain || prices.length < 25) return;
-  const currentPrice = prices[prices.length - 1];
-
-  if (brain.pending && currentPrice !== brain.pending.price) {
-    const sample = {
-      x: brain.pending.x,
-      y: currentPrice > brain.pending.price ? 1 : 0
-    };
-    brain.samples.push(sample);
-    if (brain.samples.length > AI_CONFIG.maxSamples) {
-      brain.samples.shift();
-    }
-    brain.evaluated++;
-    brain.pending = null;
-  }
-
-  if (!brain.pending) {
-    const x = aiFeatures(prices);
-    if (x) {
-      brain.pending = { x, price: currentPrice };
-    }
-  }
-}
-
-function aiPredict(symbolKey, prices) {
-  const brain = aiBrains[symbolKey];
-  const x = aiFeatures(prices);
-
-  if (!brain || !x || brain.samples.length < AI_CONFIG.minSamples) {
-    return {
-      signal: 'WAIT',
-      upProbability: null,
-      downProbability: null,
-      samples: brain?.samples.length || 0
-    };
-  }
-
-  const nearest = brain.samples
-    .map(sample => ({
-      y: sample.y,
-      distance: aiDistance(x, sample.x)
-    }))
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, AI_CONFIG.neighbors);
-
-  let up = 0;
-  let down = 0;
-
-  for (const item of nearest) {
-    const weight = 1 / (0.05 + item.distance);
-    if (item.y === 1) up += weight;
-    else down += weight;
-  }
-
-  const total = up + down;
-  if (!total) {
-    return {
-      signal: 'WAIT',
-      upProbability: null,
-      downProbability: null,
-      samples: brain.samples.length
-    };
-  }
-
-  const upProbability = up / total;
-  const downProbability = down / total;
-  const edge = Math.abs(upProbability - downProbability);
-
-  let signal = 'WAIT';
-  if (upProbability >= AI_CONFIG.minProbability && edge >= AI_CONFIG.minEdge) {
-    signal = 'CALL';
-  } else if (downProbability >= AI_CONFIG.minProbability && edge >= AI_CONFIG.minEdge) {
-    signal = 'PUT';
-  }
-
-  return {
-    signal,
-    upProbability: Number((upProbability * 100).toFixed(1)),
-    downProbability: Number((downProbability * 100).toFixed(1)),
-    samples: brain.samples.length
-  };
-}
-
-// 🧠 ระบบประมวลผลหลักผสานพลัง AI (k-NN) + ดักจับ Trap & EMA ดั้งเดิม
+// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานแบบไดนามิก
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -259,7 +112,7 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'OTC HYBRID AI READY',
+        statusText: 'AI READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
@@ -278,34 +131,36 @@ function processEngine() {
     const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
 
+    // วิเคราะห์พฤติกรรมแท่งเทียนปัจจุบัน (Price Action & Rejection)
     const candleDelta = currentPrice - prevPrice;
     const prevCandleDelta = prevPrice - prev2Price;
     const isSideway = bb.bandwidth < 0.035;
 
-    // เงื่อนไขดักจับ Trap และเทรนด์ดั้งเดิมที่แม่นยำ
+    // AI ตรวจจับกับดักราคา (Trap Detection)
+    // ถ้าราคาพยายามพุ่งขึ้นแต่โมเมนตัมกำลังหมดและ RSI อยู่โซนซื้อเกิน -> ตรวจพบกับดักฝั่งซื้อ (Bullish Trap)
     const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
+    // ถ้าราคาพยายามทุบลงแต่โมเมนตัมเริ่มหมดและ RSI อยู่โซนขายเกิน -> ตรวจพบกับดักฝั่งขาย (Bearish Trap)
     const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
-
-    // เรียกสมองกล AI ทำนายร่วมด้วย
-    const aiRes = aiPredict(s.key, prices);
 
     let aiDecision = 'WAIT';
     let aiConfidence = 50.0;
     let isVipSignal = false;
-    let statusText = 'OTC HYBRID SAFE';
+    let statusText = 'SAFE';
 
     if (isSideway) {
-      statusText = 'DANGER (OTC SIDEWAY)';
+      statusText = 'DANGER (SIDEWAY)';
       aiDecision = 'SIDEWAY';
       aiConfidence = 40.0;
     } else {
-      // คำนวณความมั่นใจพื้นฐาน
+      // คำนวณความแข็งแกร่งของเทรนด์พื้นฐาน
       const trendStrength = Math.abs(ema6 - ema21) / currentPrice * 1000;
       aiConfidence = Math.min(65.0 + (trendStrength * 15.0), 95.0);
 
-      // ล็อกสัญญาณในช่วง 3 วินาทีสุดท้ายก่อนเปลี่ยนแท่งเทียน
+      // 🎯 ช่วง 3 วินาทีสุดท้าย AI ตัดสินใจหน้างานและพลิกเกมอัตโนมัติ
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
+        
         if (isBullishTrap) {
+          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าขึ้น -> อัด PUT (สับขาหลอกตลาด)
           aiDecision = 'PUT';
           aiConfidence = 92.5;
           isVipSignal = true;
@@ -313,27 +168,22 @@ function processEngine() {
           state.timer = 30.0;
         } 
         else if (isBearishTrap) {
+          // 🔄 AI สั่งพลิกเกมสวนทันที: เจอหลอกว่าลง -> อัด CALL (สับขาหลอกตลาด)
           aiDecision = 'CALL';
           aiConfidence = 92.5;
           isVipSignal = true;
           state.signal = 'CALL';
           state.timer = 30.0;
         }
-        else if (aiRes.signal !== 'WAIT') {
-          // ผสานสัญญาณจาก Machine Learning Model
-          aiDecision = aiRes.signal;
-          aiConfidence = Math.max(aiRes.upProbability, aiRes.downProbability);
-          state.signal = aiRes.signal;
-          state.timer = 30.0;
-          isVipSignal = aiConfidence >= 75.0;
-        }
         else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 70) {
+          // เทรนด์ปกติขาขึ้นแข็งแกร่ง
           aiDecision = 'CALL';
           state.signal = 'CALL';
           state.timer = 30.0;
           isVipSignal = aiConfidence >= 85.0;
         }
         else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 30) {
+          // เทรนด์ปกติขาลงแข็งแกร่ง
           aiDecision = 'PUT';
           state.signal = 'PUT';
           state.timer = 30.0;
@@ -342,6 +192,7 @@ function processEngine() {
       }
     }
 
+    // คงสถานะสัญญาณไว้จนกว่าจะครบ Timer 30 วินาที
     let finalSignal = state.signal !== 'WAIT' ? state.signal : aiDecision;
     if (isSideway) finalSignal = 'SIDEWAY';
 
@@ -374,5 +225,5 @@ setInterval(() => {
   });
 }, 200);
 
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`OTC Hybrid AI Engine running on port ${PORT}`));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Engine running on port ${PORT}`));
