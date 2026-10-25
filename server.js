@@ -17,7 +17,7 @@ const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
 const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
 const MINI_APP_URL = process.env.MINI_APP_URL || PUBLIC_URL;
 
-// DEMO ONLY: these are synthetic starting prices.
+// DEMO ONLY: prices below are synthetic, not IQ Option market prices.
 const instruments = [
   { key: "EURUSD-OTC", name: "EUR/USD OTC", price: 1.08420, digits: 5, vol: 0.000035 },
   { key: "GBPUSD-OTC", name: "GBP/USD OTC", price: 1.27180, digits: 5, vol: 0.000045 },
@@ -44,7 +44,7 @@ for (const item of instruments) {
 }
 
 function nextPrice(s) {
-  // Random walk for UI and algorithm testing, not market forecasting.
+  // Random walk used only to test the interface.
   const noise =
     Math.random() + Math.random() +
     Math.random() + Math.random() - 2;
@@ -65,18 +65,19 @@ function updateMarket() {
     s.lastTickAt = now;
     s.history.push({ time: now, price: s.price });
 
-    if (s.history.length > 180) {
-      s.history.shift();
-    }
+    if (s.history.length > 180) s.history.shift();
   }
 }
 
 function snapshot() {
+  const now = Date.now();
+
   return {
     type: "scanner_update",
     mode: "SIMULATED",
     source: "SYNTHETIC_DEMO",
-    generatedAt: Date.now(),
+    generatedAt: now,
+    serverTime: now,
     pairs: [...market.values()].map(s => ({
       key: s.key,
       name: s.name,
@@ -120,6 +121,7 @@ app.get("/api/status", (_req, res) => {
 app.get("/api/config", (_req, res) => {
   res.json({
     mode: "SIMULATED",
+    scanSeconds: 30,
     signalHoldSeconds: 40,
     warningSeconds: 10,
     finalAlertSeconds: 2,
@@ -150,13 +152,9 @@ async function telegram(method, payload) {
   return result.result;
 }
 
-// Telegram sends /start here.
-// Signals are never posted to the chat; only a launch button is sent.
 app.post("/telegram/webhook", async (req, res) => {
   if (WEBHOOK_SECRET) {
-    const supplied =
-      req.get("x-telegram-bot-api-secret-token") || "";
-
+    const supplied = req.get("x-telegram-bot-api-secret-token") || "";
     const a = Buffer.from(supplied);
     const b = Buffer.from(WEBHOOK_SECRET);
 
@@ -189,14 +187,13 @@ app.post("/telegram/webhook", async (req, res) => {
   }
 });
 
-// Call once after deploying to configure the Telegram webhook/menu.
-// Protect this endpoint with your own admin authentication before
-// exposing it in a production deployment.
+// Configure the Telegram webhook only when needed.
+// Secure or remove this endpoint after setup before production use.
 app.get("/api/telegram/setup", async (_req, res) => {
   if (!BOT_TOKEN || !PUBLIC_URL || !MINI_APP_URL) {
     return res.status(400).json({
       ok: false,
-      error: "Configure BOT_TOKEN, PUBLIC_URL and MINI_APP_URL."
+      error: "Configure TELEGRAM_BOT_TOKEN, PUBLIC_URL and MINI_APP_URL."
     });
   }
 
@@ -222,5 +219,5 @@ app.get("/api/telegram/setup", async (_req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`OTC Radar running on ${PORT} (SIMULATED MODE)`);
+  console.log(`OTC Radar running on port ${PORT} (SIMULATED MODE)`);
 });
