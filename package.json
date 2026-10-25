@@ -1,17 +1,18 @@
 
 {
-  "name": "ai-signal-miniapp",
+  "name": "otc-radar-miniapp",
   "version": "1.0.0",
-  "description": "Telegram Mini App market signal dashboard",
+  "private": true,
+  "description": "Telegram OTC Radar Mini App demo",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "ws": "^8.18.3"
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
   }
 }
