@@ -9,7 +9,7 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// กำหนดคู่เงินตลาด OTC โดยเฉพาะสำหรับ IQ Option
+// กำหนดคู่เงินตลาด OTC สำหรับ IQ Option
 const symbols = [
   { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
   { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
@@ -86,7 +86,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🧠 ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานสำหรับ OTC
+// ระบบ AI สมองกลวิเคราะห์และตัดสินใจหน้างานสำหรับ OTC
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -214,6 +214,5 @@ setInterval(() => {
   });
 }, 200);
 
-// แก้ไขจุดเชื่อมต่อพอร์ตให้รองรับระบบ Cloud ของ Render 100%
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`OTC Engine running on port ${PORT}`));
