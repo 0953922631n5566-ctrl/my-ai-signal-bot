@@ -9,7 +9,7 @@ const wss = new WebSocket.Server({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// กำหนดคู่เงินตลาด OTC โดยเฉพาะสำหรับ IQ Option
+// กำหนดคู่เงินตลาด OTC สำหรับ IQ Option
 const symbols = [
   { key: 'eurusd', name: 'EUR/USD (OTC)', base: 1.0850 },
   { key: 'gbpusdt', name: 'GBP/USD (OTC)', base: 1.3400 },
@@ -26,13 +26,13 @@ const symbols = [
 let marketHistories = {};
 let symbolSignalStates = {}; 
 
-// ตั้งค่า AI สมองกล Machine Learning
+// 🧠 ตั้งค่าสมองกล Machine Learning (k-NN Engine)
 const AI_CONFIG = {
   maxSamples: 5000,
-  minSamples: 40, // จำนวนตัวอย่างขั้นต่ำเพื่อให้ AI เริ่มทำงานเร็วขึ้น
+  minSamples: 40,      // ขั้นต่ำเพื่อให้ AI เริ่มเรียนรู้และออกผลลัพธ์ได้เร็วขึ้น
   neighbors: 50,
   minProbability: 0.58,
-  minEdge: 0.10
+  minEdge: 0.12
 };
 
 const aiBrains = {};
@@ -65,7 +65,7 @@ setInterval(() => {
       hist.push(nextP);
       if (hist.length > 120) hist.shift();
 
-      // บันทึกและเรียนรู้ออนไลน์
+      // ให้ AI เรียนรู้จากพฤติกรรมราคาปัจจุบันแบบเรียลไทม์
       aiObserve(s.key, hist);
     }
   });
@@ -106,7 +106,7 @@ function calculateRSI(prices, period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 🧠 ฟังก์ชันสกัดฟีเจอร์และสมองกล AI
+// 🧬 ฟังก์ชันสกัดฟีเจอร์เชิงเทคนิคสำหรับ AI
 function aiFeatures(prices) {
   if (!prices || prices.length < 25) return null;
   const n = prices.length;
@@ -232,7 +232,7 @@ function aiPredict(symbolKey, prices) {
   };
 }
 
-// 🧠 ระบบประมวลผลหลักผสาน AI และกฎความปลอดภัยตลาด OTC
+// 🧠 ระบบประมวลผลหลักผสานพลัง AI (k-NN) + ดักจับ Trap & EMA ดั้งเดิม
 function processEngine() {
   const now = new Date();
   const seconds = now.getSeconds();
@@ -259,7 +259,7 @@ function processEngine() {
         key: s.key,
         name: s.name,
         statusColor: 'green',
-        statusText: 'OTC AI READY',
+        statusText: 'OTC HYBRID AI READY',
         signal: state.signal,
         confidence: '50.0',
         rsi: 50.0,
@@ -269,33 +269,75 @@ function processEngine() {
       return;
     }
 
+    const currentPrice = prices[prices.length - 1];
+    const prevPrice = prices[prices.length - 2] || currentPrice;
+    const prev2Price = prices[prices.length - 3] || prevPrice;
     const rsi = parseFloat(calculateRSI(prices).toFixed(1));
+    
+    const ema6 = calculateEMA(prices, 6);
+    const ema21 = calculateEMA(prices, 21);
     const bb = calculateBB(prices);
+
+    const candleDelta = currentPrice - prevPrice;
+    const prevCandleDelta = prevPrice - prev2Price;
     const isSideway = bb.bandwidth < 0.035;
 
-    // เรียกใช้งานสมองกล AI ทำนายทิศทาง
+    // เงื่อนไขดักจับ Trap และเทรนด์ดั้งเดิมที่แม่นยำ
+    const isBullishTrap = candleDelta < 0 && prevCandleDelta > 0 && rsi > 68;
+    const isBearishTrap = candleDelta > 0 && prevCandleDelta < 0 && rsi < 32;
+
+    // เรียกสมองกล AI ทำนายร่วมด้วย
     const aiRes = aiPredict(s.key, prices);
 
-    let aiDecision = aiRes.signal;
+    let aiDecision = 'WAIT';
     let aiConfidence = 50.0;
     let isVipSignal = false;
-    let statusText = 'OTC SAFE';
-
-    if (aiRes.upProbability !== null && aiRes.downProbability !== null) {
-      aiConfidence = Math.max(aiRes.upProbability, aiRes.downProbability);
-    }
+    let statusText = 'OTC HYBRID SAFE';
 
     if (isSideway) {
       statusText = 'DANGER (OTC SIDEWAY)';
       aiDecision = 'SIDEWAY';
       aiConfidence = 40.0;
     } else {
+      // คำนวณความมั่นใจพื้นฐาน
+      const trendStrength = Math.abs(ema6 - ema21) / currentPrice * 1000;
+      aiConfidence = Math.min(65.0 + (trendStrength * 15.0), 95.0);
+
       // ล็อกสัญญาณในช่วง 3 วินาทีสุดท้ายก่อนเปลี่ยนแท่งเทียน
       if (exactTimeLeft <= 3.0 && exactTimeLeft >= 0.0 && state.signal === 'WAIT') {
-        if (aiRes.signal !== 'WAIT') {
+        if (isBullishTrap) {
+          aiDecision = 'PUT';
+          aiConfidence = 92.5;
+          isVipSignal = true;
+          state.signal = 'PUT';
+          state.timer = 30.0;
+        } 
+        else if (isBearishTrap) {
+          aiDecision = 'CALL';
+          aiConfidence = 92.5;
+          isVipSignal = true;
+          state.signal = 'CALL';
+          state.timer = 30.0;
+        }
+        else if (aiRes.signal !== 'WAIT') {
+          // ผสานสัญญาณจาก Machine Learning Model
+          aiDecision = aiRes.signal;
+          aiConfidence = Math.max(aiRes.upProbability, aiRes.downProbability);
           state.signal = aiRes.signal;
           state.timer = 30.0;
           isVipSignal = aiConfidence >= 75.0;
+        }
+        else if (ema6 > ema21 && currentPrice >= ema6 && rsi < 70) {
+          aiDecision = 'CALL';
+          state.signal = 'CALL';
+          state.timer = 30.0;
+          isVipSignal = aiConfidence >= 85.0;
+        }
+        else if (ema6 < ema21 && currentPrice <= ema6 && rsi > 30) {
+          aiDecision = 'PUT';
+          state.signal = 'PUT';
+          state.timer = 30.0;
+          isVipSignal = aiConfidence >= 85.0;
         }
       }
     }
@@ -311,7 +353,7 @@ function processEngine() {
       signal: finalSignal,
       confidence: aiConfidence.toFixed(1),
       rsi: rsi,
-      trend: finalSignal === 'CALL' ? 'BULLISH 🟢' : (finalSignal === 'PUT' ? 'BEARISH 🔴' : 'ANALYZING ⏳'),
+      trend: isBullishTrap ? 'BULLISH TRAP ⚠️' : (isBearishTrap ? 'BEARISH TRAP ⚠️' : (ema6 > ema21 ? 'BULLISH 🟢' : 'BEARISH 🔴')),
       isVip: isVipSignal
     });
   });
@@ -333,4 +375,4 @@ setInterval(() => {
 }, 200);
 
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`OTC Engine running on port ${PORT}`));
+server.listen(PORT, () => console.log(`OTC Hybrid AI Engine running on port ${PORT}`));
