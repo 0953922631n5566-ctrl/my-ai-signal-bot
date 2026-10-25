@@ -1,269 +1,456 @@
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#080d18">
-  <title>AI Signal</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 18px;
-      background: #080d18; color: #eef4ff;
-      font-family: system-ui, sans-serif;
-    }
-    .app { max-width: 560px; margin: auto; }
-    .card {
-      background: #111a2b; border: 1px solid #263550;
-      border-radius: 18px; padding: 18px; margin-bottom: 14px;
-    }
-    .muted { color: #93a4c2; font-size: 13px; }
-    .status { display: flex; align-items: center; gap: 8px; }
-    .dot { width: 9px; height: 9px; border-radius: 50%; background: #e9a23b; }
-    .dot.on { background: #36d99a; }
-    .dot.off { background: #ff596b; }
-    h1 { font-size: 25px; margin: 0 0 8px; }
-    h2 { font-size: 15px; margin: 0 0 14px; color: #b5c7e8; }
-    .price { font-size: 30px; font-weight: 750; margin: 12px 0; overflow-wrap: anywhere; }
-    .signal {
-      border-radius: 16px; padding: 22px 12px;
-      text-align: center; background: #1a263b;
-    }
-    .signal strong { display: block; font-size: 35px; }
-    .call { color: #38e0a0; }
-    .put { color: #ff697b; }
-    .wait { color: #ffd071; }
-    label { display: block; color: #b5c7e8; font-size: 13px; margin: 12px 0 6px; }
-    select, button {
-      width: 100%; border-radius: 10px; padding: 12px;
-      border: 1px solid #354663; background: #0b1322;
-      color: #fff; font: inherit;
-    }
-    button { background: #356cf6; border: 0; font-weight: 700; margin-top: 14px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .metric { background: #0b1322; padding: 12px; border-radius: 10px; }
-    .metric strong { display: block; margin-top: 5px; font-size: 17px; overflow-wrap: anywhere; }
-    .error { color: #ff9da8; font-size: 13px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#080e19">
+<title>OTC RADAR AI</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#080e19;--panel:#111c2d;--line:#263952;
+  --cyan:#4ce5ff;--green:#21edab;--red:#ff506d;
+  --amber:#ffc75a;--muted:#8da4bf;
+}
+*{box-sizing:border-box}
+body{
+ margin:0;background:radial-gradient(ellipse at top,#162c49,var(--bg) 65%);
+ color:#f1f7ff;font:14px system-ui,sans-serif;
+}
+header{display:flex;justify-content:space-between;align-items:center;
+ padding:16px 14px;gap:8px}
+.brand{font-size:20px;font-weight:900;letter-spacing:1px}
+.brand span{color:var(--cyan)}
+.sub{font-size:10px;color:var(--muted);letter-spacing:1px}
+.status{font-size:10px;border:1px solid #695325;color:var(--amber);
+ border-radius:18px;padding:7px 9px;white-space:nowrap}
+.notice{margin:0 12px 12px;padding:10px;border-radius:10px;
+ background:#382a15;border:1px solid #75541c;color:#ffdc91;font-size:11px}
+main{max-width:850px;margin:auto;padding:0 12px 25px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.panel{background:linear-gradient(145deg,#142237,#0d1624);
+ border:1px solid var(--line);border-radius:15px;padding:13px;min-width:0}
+.full{grid-column:1/-1}
+.label{font-size:10px;color:var(--muted);letter-spacing:1.2px}
+.big{font-size:26px;font-weight:900;margin:8px 0}
+.cyan{color:var(--cyan)}
+.muted{color:var(--muted)}
+.signal{min-height:190px;display:flex;flex-direction:column;
+ align-items:center;justify-content:center;position:relative;overflow:hidden}
+.signal:before{content:"";position:absolute;width:145px;height:145px;
+ border:1px solid #4ce5ff25;border-radius:50%;
+ box-shadow:0 0 0 20px #4ce5ff08,0 0 0 40px #4ce5ff05}
+.word{z-index:1;font-size:32px;font-weight:950;letter-spacing:2px}
+.signalText,.signal .label{z-index:1;text-align:center}
+.signalText{font-size:11px;color:var(--muted);margin-top:5px}
+.signal.call{border-color:#21edab99;box-shadow:inset 0 0 45px #21edab12}
+.signal.call .word{color:var(--green);text-shadow:0 0 22px #21edab66}
+.signal.put{border-color:#ff506d99;box-shadow:inset 0 0 45px #ff506d12}
+.signal.put .word{color:var(--red);text-shadow:0 0 22px #ff506d66}
+.lamp{display:inline-block;width:9px;height:9px;border-radius:50%;
+ background:#718198;margin-right:5px}
+.lamp.call{background:var(--green);box-shadow:0 0 12px var(--green)}
+.lamp.put{background:var(--red);box-shadow:0 0 12px var(--red)}
+.lamp.wait{background:var(--amber)}
+select,button{width:100%;padding:11px;border:1px solid #30445e;
+ border-radius:10px;background:#182940;color:#f1f7ff;font:inherit}
+button{cursor:pointer}
+button:active{transform:scale(.98)}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+button.primary{background:#123b4b;border-color:#237b8e}
+button.stop{background:#39202c;border-color:#743044}
+.chart{width:100%;height:100px;display:block;margin-top:8px}
+.metrics{display:flex;gap:7px;margin-top:9px}
+.metric{flex:1;background:#0a1320;border-radius:9px;padding:9px;min-width:0}
+.metric strong{display:block;font-size:16px;overflow-wrap:anywhere}
+.small{font-size:10px;color:var(--muted)}
+.pair{display:grid;grid-template-columns:1fr auto;gap:6px;
+ align-items:center;padding:11px 0;border-bottom:1px solid #23344a;cursor:pointer}
+.pair:last-child{border:0}
+.pairName{font-weight:750}
+.pairPrice{font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:4px 6px;border-radius:6px;
+ background:#172a3e;color:var(--cyan);font-size:10px}
+.meter{height:4px;background:#25354b;border-radius:5px;margin-top:7px;overflow:hidden}
+.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green))}
+.pulse{animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.4}}
+.footer{text-align:center;padding:17px 4px;color:#6f87a4;font-size:10px}
+@media(min-width:620px){
+ .grid{grid-template-columns:1fr 1fr}
+ .signal{min-height:230px}
+}
+</style>
 </head>
 <body>
-<div class="app">
-  <div class="card">
-    <h1>AI SIGNAL</h1>
-    <div class="status">
-      <span id="dot" class="dot"></span>
-      <span id="connection">กำลังเชื่อมต่อ...</span>
-    </div>
-    <p class="muted">ระบบสัญญาณอัตโนมัติ · อัปเดตทุก 2 วินาที</p>
-  </div>
+<header>
+ <div class="brand">◈ OTC <span>RADAR AI</span>
+  <div class="sub">SMART SCANNER · MINI APP</div>
+ </div>
+ <div class="status" id="connection">● CONNECTING</div>
+</header>
 
-  <div class="card">
-    <h2>ตลาดและการตั้งค่า</h2>
-    <label for="symbol">คู่เงิน</label>
-    <select id="symbol">
-      <option value="frxEURUSD">EUR/USD</option>
-      <option value="frxGBPUSD">GBP/USD</option>
-      <option value="frxUSDJPY">USD/JPY</option>
-      <option value="frxAUDUSD">AUD/USD</option>
-      <option value="frxUSDCAD">USD/CAD</option>
-    </select>
-
-    <label for="duration">ระยะเวลาออเดอร์</label>
-    <select id="duration">
-      <option value="5">5 วินาที</option>
-      <option value="10">10 วินาที</option>
-      <option value="15">15 วินาที</option>
-      <option value="30">30 วินาที</option>
-      <option value="60" selected>1 นาที</option>
-      <option value="120">2 นาที</option>
-      <option value="180">3 นาที</option>
-      <option value="240">4 นาที</option>
-      <option value="300">5 นาที</option>
-    </select>
-
-    <label for="threshold">เกณฑ์สัญญาณ</label>
-    <select id="threshold">
-      <option value="50">50</option>
-      <option value="60">60</option>
-      <option value="65" selected>65</option>
-      <option value="70">70</option>
-      <option value="80">80</option>
-      <option value="90">90</option>
-    </select>
-    <button id="apply">บันทึกการตั้งค่า</button>
-  </div>
-
-  <div class="card">
-    <h2>ราคาตลาด</h2>
-    <div id="price" class="price">--</div>
-    <div id="priceAge" class="muted">รอข้อมูลราคา</div>
-    <p id="error" class="error"></p>
-  </div>
-
-  <div class="card">
-    <h2>สัญญาณล่าสุด</h2>
-    <div class="signal">
-      <strong id="direction" class="wait">WAIT</strong>
-      <span id="reason" class="muted">กำลังรอข้อมูลตลาด</span>
-      <p>คะแนนเงื่อนไข: <b id="score">0</b>/100</p>
-    </div>
-    <p class="muted">สัญญาณเป็นการคำนวณจากตัวชี้วัด ไม่ใช่การรับประกันผลลัพธ์</p>
-  </div>
-
-  <div class="card">
-    <h2>ตัวชี้วัด</h2>
-    <div class="grid">
-      <div class="metric">EMA 6<strong id="ema6">--</strong></div>
-      <div class="metric">EMA 21<strong id="ema21">--</strong></div>
-      <div class="metric">EMA 50<strong id="ema50">--</strong></div>
-      <div class="metric">RSI<strong id="rsi">--</strong></div>
-      <div class="metric">MACD<strong id="macd">--</strong></div>
-      <div class="metric">จำนวนแท่ง<strong id="candles">0</strong></div>
-    </div>
-  </div>
-
-  <p class="muted">แหล่งราคา: Yahoo Finance live reference feed</p>
-  <p class="muted" id="updated">ยังไม่ได้รับข้อมูล</p>
+<div class="notice">
+ ⚠ DEMO ONLY — ราคาจำลอง ไม่ใช่ราคาสดของ IQ Option OTC
+ สัญญาณนี้ยังไม่มีผลทดสอบยืนยันอัตราชนะ
 </div>
+
+<main><div class="grid">
+ <section class="panel signal full" id="signalPanel">
+  <div class="label">AI SIGNAL LIGHT</div>
+  <div class="word" id="signalWord">STANDBY</div>
+  <div class="signalText" id="signalPair">กำลังรอข้อมูลจำลอง</div>
+  <div class="big" id="countdown">--</div>
+  <div class="signalText" id="signalHint">เปิดเสียงก่อนเริ่มทดสอบ</div>
+ </section>
+
+ <section class="panel">
+  <div class="label">SELECT INSTRUMENT</div>
+  <div style="margin-top:9px">
+   <select id="pairSelect"></select>
+  </div>
+  <div class="big cyan" id="price">—</div>
+  <div class="small" id="priceInfo">SIMULATED PRICE</div>
+  <svg class="chart" id="chart" viewBox="0 0 320 100"
+   preserveAspectRatio="none"></svg>
+  <div class="metrics">
+   <div class="metric"><div class="small">RSI DEMO</div><strong id="rsi">—</strong></div>
+   <div class="metric"><div class="small">TREND</div><strong id="trend">—</strong></div>
+  </div>
+ </section>
+
+ <section class="panel">
+  <div class="label">RADAR SCANNER</div>
+  <div style="font-weight:800;margin:7px 0 3px">คู่เงินที่เข้าเงื่อนไข</div>
+  <div class="small">คะแนนเป็นคะแนนเชิงเทคนิค ไม่ใช่เปอร์เซ็นต์ชนะ</div>
+  <div id="pairs"></div>
+ </section>
+
+ <section class="panel full">
+  <div class="label">ALERT CONTROL</div>
+  <div class="buttons">
+   <button class="primary" id="soundBtn">🔔 เปิดเสียง</button>
+   <button id="startBtn">▶ เริ่มรอบสแกน</button>
+   <button id="rescanBtn">⟳ สแกนใหม่</button>
+   <button class="stop" id="stopBtn">■ หยุด</button>
+  </div>
+  <div class="metrics">
+   <div class="metric"><div class="small">เตือนเฝ้าระวัง</div><strong>10s</strong></div>
+   <div class="metric"><div class="small">เตือนสุดท้าย</div><strong>2s</strong></div>
+   <div class="metric"><div class="small">ไฟค้าง</div><strong>40s</strong></div>
+  </div>
+  <p class="small">
+   เปิดเสียงและเริ่มรอบด้วยตนเอง เสียงแจ้งเตือนทำงานเมื่อหน้า Mini App
+   ยังเปิดอยู่ สัญญาณจำลองนี้ไม่ได้ส่งคำสั่งซื้อขาย
+  </p>
+ </section>
+</div>
+<div class="footer">OTC RADAR AI · SYNTHETIC DATA · NO LIVE BROKER CONNECTION</div>
+</main>
 
 <script>
 (() => {
-  const $ = id => document.getElementById(id);
-  const tg = window.Telegram && window.Telegram.WebApp;
+ "use strict";
 
-  if (tg) {
-    tg.ready();
-    tg.expand();
+ const $ = id => document.getElementById(id);
+ const tg = window.Telegram?.WebApp;
+ tg?.ready();
+ tg?.expand();
+
+ let pairs = [];
+ let selected = "";
+ let soundOn = false;
+ let audio = null;
+ let phase = "standby";
+ let phaseEnds = 0;
+ let loop = null;
+ let last10 = false;
+ let last2 = false;
+ let activeSignal = null;
+ let previousRoundKey = "";
+
+ function beep(freq = 850, duration = 0.15) {
+  if (!soundOn) return;
+
+  try {
+   audio ||= new (window.AudioContext || window.webkitAudioContext)();
+   if (audio.state === "suspended") audio.resume();
+
+   const osc = audio.createOscillator();
+   const gain = audio.createGain();
+   osc.type = "sine";
+   osc.frequency.value = freq;
+   gain.gain.setValueAtTime(0.07, audio.currentTime);
+   gain.gain.exponentialRampToValueAtTime(
+    0.001, audio.currentTime + duration
+   );
+   osc.connect(gain);
+   gain.connect(audio.destination);
+   osc.start();
+   osc.stop(audio.currentTime + duration);
+  } catch (_) {}
+ }
+
+ function analyze(pair) {
+  const prices = (pair.history || []).map(x => x.price);
+  if (prices.length < 20) {
+   return { dir: "WAIT", score: 0, rsi: 50, trend: "WARMING" };
   }
 
-  let busy = false;
-  let stopped = false;
-  let timer = null;
-  let requestController = null;
-
-  function fmt(value, digits = 5) {
-    return typeof value === "number" && Number.isFinite(value)
-      ? value.toFixed(digits) : "--";
+  const recent = prices.slice(-14);
+  let gains = 0, losses = 0;
+  for (let i = 1; i < recent.length; i++) {
+   const delta = recent[i] - recent[i - 1];
+   if (delta > 0) gains += delta;
+   else losses -= delta;
   }
 
-  async function updateStatus() {
-    if (busy || stopped) return;
-    busy = true;
+  const rsi = losses === 0 ? (gains === 0 ? 50 : 100)
+   : 100 - 100 / (1 + gains / losses);
 
-    try {
-      if (requestController) requestController.abort();
-      requestController = new AbortController();
-      const timeout = setTimeout(() => requestController.abort(), 8000);
+  const fast = prices.slice(-8).reduce((a,b)=>a+b,0) / 8;
+  const slow = prices.slice(-20).reduce((a,b)=>a+b,0) / 20;
+  const momentum = prices.at(-1) - prices.at(-4);
+  const momentumLong = prices.at(-1) - prices.at(-10);
 
-      let response;
-      try {
-        response = await fetch("/api/status?t=" + Date.now(), {
-          cache: "no-store",
-          signal: requestController.signal
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
+  const up = fast > slow && momentum > 0 && momentumLong > 0;
+  const down = fast < slow && momentum < 0 && momentumLong < 0;
 
-      if (!response.ok) throw new Error("เซิร์ฟเวอร์ตอบกลับ " + response.status);
+  let dir = "WAIT";
+  if (up && rsi >= 50 && rsi < 70) dir = "CALL";
+  if (down && rsi > 30 && rsi <= 50) dir = "PUT";
 
-      const data = await response.json();
-      const signal = data.signal || {};
-      const indicators = signal.indicators || {};
+  const alignment = Math.min(
+   100,
+   Math.round(Math.abs(fast - slow) / (Math.abs(pair.price) * 0.00004) * 45)
+   + (momentum * momentumLong > 0 ? 25 : 0)
+   + (dir !== "WAIT" ? 20 : 0)
+  );
 
-      $("symbol").value = data.symbol || "frxEURUSD";
-      $("duration").value = String(data.duration || 60);
-      $("threshold").value = String(data.threshold || 65);
+  return {
+   dir,
+   score: alignment,
+   rsi,
+   trend: fast > slow ? "BULLISH" : fast < slow ? "BEARISH" : "NEUTRAL"
+  };
+ }
 
-      $("dot").className = "dot " + (data.fresh ? "on" : data.connected ? "" : "off");
-      $("connection").textContent = !data.connected
-        ? "เซิร์ฟเวอร์กำลังเชื่อมต่อใหม่"
-        : !data.fresh ? "รอข้อมูลราคาสด" : "เชื่อมต่อแล้ว · ราคาสด";
-
-      $("price").textContent = fmt(data.price, 5);
-      $("priceAge").textContent = data.ageMs == null
-        ? "ยังไม่มีข้อมูลราคา"
-        : "อัปเดตข้อมูลล่าสุด " + Math.max(0, Math.floor(data.ageMs / 1000)) + " วินาทีที่แล้ว";
-
-      $("direction").textContent = signal.direction || "WAIT";
-      $("direction").className =
-        signal.direction === "CALL" ? "call" :
-        signal.direction === "PUT" ? "put" : "wait";
-
-      $("score").textContent = signal.score ?? 0;
-      $("reason").textContent = signal.reason || "กำลังวิเคราะห์";
-      $("ema6").textContent = fmt(indicators.ema6);
-      $("ema21").textContent = fmt(indicators.ema21);
-      $("ema50").textContent = fmt(indicators.ema50);
-      $("rsi").textContent = fmt(indicators.rsi, 2);
-      $("macd").textContent = fmt(indicators.macd, 7);
-      $("candles").textContent = data.candleCount ?? 0;
-      $("error").textContent = data.error ? "API: " + data.error : "";
-      $("updated").textContent = "อัปเดตหน้าจอ: " + new Date().toLocaleTimeString();
-
-    } catch (error) {
-      $("dot").className = "dot off";
-      $("connection").textContent = "ดึงข้อมูลไม่สำเร็จ กำลังลองใหม่";
-      $("error").textContent =
-        error.name === "AbortError" ? "การเชื่อมต่อใช้เวลานานเกินไป" : error.message;
-    } finally {
-      busy = false;
-    }
+ function drawChart(history) {
+  const svg = $("chart");
+  if (!history || history.length < 2) {
+   svg.innerHTML = "";
+   return;
   }
 
-  async function applySettings() {
-    $("apply").disabled = true;
-    $("apply").textContent = "กำลังบันทึก...";
-    try {
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({
-          symbol: $("symbol").value,
-          duration: Number($("duration").value),
-          threshold: Number($("threshold").value)
-        })
-      });
+  const values = history.slice(-60).map(x => x.price);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || "บันทึกการตั้งค่าไม่สำเร็จ");
-      }
+  const points = values.map((v, i) =>
+   `${i / (values.length - 1) * 320},${94 - (v - min) / span * 84}`
+  ).join(" ");
 
-      await updateStatus();
-    } catch (error) {
-      $("error").textContent = error.message;
-    } finally {
-      $("apply").disabled = false;
-      $("apply").textContent = "บันทึกการตั้งค่า";
-    }
-  }
+  svg.innerHTML =
+   `<polyline points="${points}" fill="none" stroke="#4ce5ff"
+    stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+ }
 
-  $("apply").addEventListener("click", applySettings);
+ function renderSelected() {
+  const pair = pairs.find(p => p.key === selected);
+  if (!pair) return;
 
-  function startPolling() {
-    if (timer) clearInterval(timer);
-    stopped = false;
-    updateStatus();
-    timer = setInterval(updateStatus, 2000);
-  }
+  const a = analyze(pair);
+  $("price").textContent = Number(pair.price).toFixed(pair.digits);
+  $("priceInfo").textContent =
+   "SIMULATED · " + new Date(pair.lastTickAt).toLocaleTimeString();
+  $("rsi").textContent = a.rsi.toFixed(1);
+  $("trend").textContent = a.trend;
+  drawChart(pair.history);
+ }
 
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-      updateStatus();
-    }
+ function renderPairs() {
+  $("pairs").innerHTML = pairs.map(p => {
+   const a = analyze(p);
+   const active = p.key === selected;
+   return `<div class="pair" data-key="${p.key}"
+    style="${active ? "border-left:2px solid #4ce5ff;padding-left:8px" : ""}">
+    <div>
+     <div class="pairName">${p.name}</div>
+     <div class="small">${a.trend} · ${a.dir}</div>
+     <div class="meter"><i style="width:${a.score}%"></i></div>
+    </div>
+    <div style="text-align:right">
+     <div class="pairPrice">${Number(p.price).toFixed(p.digits)}</div>
+     <span class="tag">${a.score} SCORE</span>
+    </div>
+   </div>`;
+  }).join("");
+
+  $("pairs").querySelectorAll(".pair").forEach(el => {
+   el.addEventListener("click", () => {
+    selected = el.dataset.key;
+    $("pairSelect").value = selected;
+    renderSelected();
+    renderPairs();
+   });
   });
+ }
 
-  window.addEventListener("pageshow", startPolling);
-  window.addEventListener("pagehide", () => {
-    if (timer) clearInterval(timer);
-    stopped = true;
-    if (requestController) requestController.abort();
-  });
+ function setSignal(dir, pair, hint) {
+  const panel = $("signalPanel");
+  panel.classList.remove("call", "put");
+  if (dir === "CALL" || dir === "PUT") {
+   panel.classList.add(dir.toLowerCase());
+  }
 
-  startPolling();
+  $("signalWord").textContent =
+   dir === "CALL" ? "▲ CALL" :
+   dir === "PUT" ? "▼ PUT" : "STANDBY";
+
+  $("signalPair").textContent = pair ? pair.name : "รอสัญญาณ";
+  $("signalHint").textContent = hint || "";
+ }
+
+ function stopLoop() {
+  if (loop) clearInterval(loop);
+  loop = null;
+  phase = "standby";
+  activeSignal = null;
+  $("countdown").textContent = "--";
+  setSignal("WAIT", null, "STANDBY · หยุดการทดสอบแล้ว");
+ }
+
+ function startRound() {
+  if (phase === "watch" || phase === "active") return;
+
+  phase = "watch";
+  phaseEnds = Date.now() + 10000;
+  last10 = false;
+  last2 = false;
+
+  $("signalPanel").classList.remove("call", "put");
+  setSignal("WAIT", null, "เตรียมเฝ้าหน้าจอ · รอบจำลอง");
+  tickPhase();
+
+  if (loop) clearInterval(loop);
+  loop = setInterval(tickPhase, 100);
+ }
+
+ function tickPhase() {
+  const left = Math.max(0, Math.ceil((phaseEnds - Date.now()) / 1000));
+
+  if (phase === "watch") {
+   $("countdown").textContent = `${left}s`;
+
+   if (left <= 10 && !last10) {
+    last10 = true;
+    beep(650, 0.22);
+    $("signalHint").textContent = "⚠ แจ้งเตือนเฝ้าระวัง · อีก 10 วินาที";
+   }
+
+   if (left <= 2 && !last2) {
+    last2 = true;
+    beep(1150, 0.13);
+    setTimeout(() => beep(1150, 0.13), 200);
+    $("signalHint").textContent = "🔔 เตือนครั้งสุดท้าย · อีก 2 วินาที";
+   }
+
+   if (left <= 0) {
+    const ranked = pairs.map(p => ({ pair:p, a:analyze(p) }))
+     .filter(x => x.a.dir !== "WAIT" && x.a.score >= 60)
+     .sort((a,b) => b.a.score - a.a.score);
+
+    if (ranked.length) {
+     const best = ranked[0];
+     activeSignal = best;
+     phase = "active";
+     phaseEnds = Date.now() + 40000;
+     previousRoundKey = best.pair.key;
+     setSignal(best.a.dir, best.pair, "DEMO SIGNAL · ไม่ใช่ราคา OTC สด");
+     beep(best.a.dir === "CALL" ? 1000 : 500, 0.3);
+    } else {
+     phase = "standby";
+     $("countdown").textContent = "--";
+     setSignal("WAIT", null, "ไม่พบเงื่อนไขที่ผ่านเกณฑ์ · ไม่มีสัญญาณ");
+    }
+   }
+  } else if (phase === "active") {
+   $("countdown").textContent = `${left}s`;
+
+   if (left <= 0) {
+    phase = "standby";
+    activeSignal = null;
+    $("countdown").textContent = "--";
+    setSignal("WAIT", null, "ครบ 40 วินาที · กลับสู่ STANDBY");
+   }
+  }
+ }
+
+ function connect() {
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${scheme}//${location.host}`);
+
+  ws.onopen = () => {
+   $("connection").textContent = "● DEMO CONNECTED";
+  };
+
+  ws.onmessage = event => {
+   const data = JSON.parse(event.data);
+   pairs = data.pairs || [];
+
+   if (!selected && pairs.length) {
+    selected = pairs[0].key;
+    $("pairSelect").innerHTML = pairs.map(p =>
+     `<option value="${p.key}">${p.name}</option>`
+    ).join("");
+    $("pairSelect").value = selected;
+   }
+
+   renderPairs();
+   renderSelected();
+  };
+
+  ws.onclose = () => {
+   $("connection").textContent = "● RECONNECTING";
+   setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+ }
+
+ $("pairSelect").addEventListener("change", e => {
+  selected = e.target.value;
+  renderSelected();
+  renderPairs();
+ });
+
+ $("soundBtn").addEventListener("click", async () => {
+  soundOn = !soundOn;
+  $("soundBtn").textContent = soundOn ? "🔕 ปิดเสียง" : "🔔 เปิดเสียง";
+
+  if (soundOn) {
+   try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    await audio.resume();
+    beep(880, 0.12);
+   } catch (_) {}
+  }
+ });
+
+ $("startBtn").addEventListener("click", startRound);
+
+ $("rescanBtn").addEventListener("click", () => {
+  renderPairs();
+  renderSelected();
+  $("signalHint").textContent = "สแกนคู่เงินจำลองแล้ว";
+ });
+
+ $("stopBtn").addEventListener("click", stopLoop);
+
+ setSignal("WAIT", null, "กำลังเชื่อมต่อข้อมูลจำลอง");
+ connect();
 })();
 </script>
 </body>
