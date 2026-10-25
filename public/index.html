@@ -2,230 +2,270 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AI Signal Mini</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>
-:root{
-  --bg:#09111e;--card:#121e30;--line:#25364d;
-  --text:#eff6ff;--muted:#94a8c3;
-  --green:#00e6a0;--red:#ff5470;--yellow:#ffc857;
-}
-*{box-sizing:border-box}
-body{
-  margin:0;padding:0;color:var(--text);
-  background:var(--bg);font-family:Arial,"Noto Sans Thai",sans-serif;
-}
-main{
-  max-width:600px;margin:auto;padding:16px;
-  padding-top:max(16px,env(safe-area-inset-top));
-  padding-bottom:max(20px,env(safe-area-inset-bottom));
-}
-header{display:flex;justify-content:space-between;align-items:center;gap:10px}
-h1{font-size:22px;margin:0}
-p{margin:7px 0}
-.muted{font-size:12px;color:var(--muted);line-height:1.6}
-.pill{border:1px solid var(--line);border-radius:30px;padding:7px 10px;font-size:11px}
-.card{
-  background:linear-gradient(145deg,#142238,#101a2a);
-  border:1px solid var(--line);border-radius:18px;
-  padding:16px;margin-top:14px;
-}
-label{display:block;color:var(--muted);font-size:12px;margin:12px 0 6px}
-select,button{
-  width:100%;border-radius:11px;padding:12px;
-  border:1px solid var(--line);background:#0a1423;color:var(--text);
-  font-size:14px;
-}
-button{background:#2468bd;border:0;font-weight:bold;margin-top:14px}
-.signal{text-align:center;padding:24px 12px}
-.direction{font-size:44px;font-weight:900;letter-spacing:1px;margin:12px 0}
-.call{color:var(--green)}.put{color:var(--red)}.wait{color:var(--yellow)}
-.price{font-size:28px;font-weight:800;margin:14px 0}
-.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.metric{background:#0a1423;border-radius:12px;padding:11px 8px;text-align:center}
-.metric b{font-size:17px;display:block;overflow-wrap:anywhere}
-.metric span{font-size:10px;color:var(--muted)}
-.bar{height:7px;background:#27374d;border-radius:20px;overflow:hidden;margin:14px 0 5px}
-.bar span{display:block;height:100%;width:0;background:var(--green)}
-.row{display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:9px 0;border-bottom:1px solid var(--line)}
-.row:last-child{border-bottom:0}
-.notice{font-size:11px;line-height:1.6;color:var(--muted)}
-@media(max-width:360px){main{padding:10px}.direction{font-size:36px}.price{font-size:24px}}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080d18">
+  <title>AI Signal</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 18px;
+      background: #080d18; color: #eef4ff;
+      font-family: system-ui, sans-serif;
+    }
+    .app { max-width: 560px; margin: auto; }
+    .card {
+      background: #111a2b; border: 1px solid #263550;
+      border-radius: 18px; padding: 18px; margin-bottom: 14px;
+    }
+    .muted { color: #93a4c2; font-size: 13px; }
+    .status { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #e9a23b; }
+    .dot.on { background: #36d99a; }
+    .dot.off { background: #ff596b; }
+    h1 { font-size: 25px; margin: 0 0 8px; }
+    h2 { font-size: 15px; margin: 0 0 14px; color: #b5c7e8; }
+    .price { font-size: 30px; font-weight: 750; margin: 12px 0; overflow-wrap: anywhere; }
+    .signal {
+      border-radius: 16px; padding: 22px 12px;
+      text-align: center; background: #1a263b;
+    }
+    .signal strong { display: block; font-size: 35px; }
+    .call { color: #38e0a0; }
+    .put { color: #ff697b; }
+    .wait { color: #ffd071; }
+    label { display: block; color: #b5c7e8; font-size: 13px; margin: 12px 0 6px; }
+    select, button {
+      width: 100%; border-radius: 10px; padding: 12px;
+      border: 1px solid #354663; background: #0b1322;
+      color: #fff; font: inherit;
+    }
+    button { background: #356cf6; border: 0; font-weight: 700; margin-top: 14px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .metric { background: #0b1322; padding: 12px; border-radius: 10px; }
+    .metric strong { display: block; margin-top: 5px; font-size: 17px; overflow-wrap: anywhere; }
+    .error { color: #ff9da8; font-size: 13px; }
+  </style>
 </head>
 <body>
-<main>
-<header>
-  <div>
-    <h1>◈ AI SIGNAL</h1>
-    <p class="muted">Market Analysis Mini App</p>
+<div class="app">
+  <div class="card">
+    <h1>AI SIGNAL</h1>
+    <div class="status">
+      <span id="dot" class="dot"></span>
+      <span id="connection">กำลังเชื่อมต่อ...</span>
+    </div>
+    <p class="muted">ระบบสัญญาณอัตโนมัติ · อัปเดตทุก 2 วินาที</p>
   </div>
-  <span class="pill" id="status">กำลังเชื่อมต่อ</span>
-</header>
 
-<section class="card">
-  <label for="symbol">เลือกคู่เงิน</label>
-  <select id="symbol">
-    <option value="frxEURUSD">EUR/USD</option>
-    <option value="frxGBPUSD">GBP/USD</option>
-    <option value="frxUSDJPY">USD/JPY</option>
-    <option value="frxAUDUSD">AUD/USD</option>
-    <option value="frxUSDCAD">USD/CAD</option>
-  </select>
+  <div class="card">
+    <h2>ตลาดและการตั้งค่า</h2>
+    <label for="symbol">คู่เงิน</label>
+    <select id="symbol">
+      <option value="frxEURUSD">EUR/USD</option>
+      <option value="frxGBPUSD">GBP/USD</option>
+      <option value="frxUSDJPY">USD/JPY</option>
+      <option value="frxAUDUSD">AUD/USD</option>
+      <option value="frxUSDCAD">USD/CAD</option>
+    </select>
 
-  <label for="duration">ระยะเวลาที่ใช้ประเมิน</label>
-  <select id="duration">
-    <option value="5">5 วินาที</option>
-    <option value="10">10 วินาที</option>
-    <option value="15">15 วินาที</option>
-    <option value="30">30 วินาที</option>
-    <option value="60" selected>1 นาที</option>
-    <option value="120">2 นาที</option>
-    <option value="180">3 นาที</option>
-    <option value="240">4 นาที</option>
-    <option value="300">5 นาที</option>
-  </select>
+    <label for="duration">ระยะเวลาออเดอร์</label>
+    <select id="duration">
+      <option value="5">5 วินาที</option>
+      <option value="10">10 วินาที</option>
+      <option value="15">15 วินาที</option>
+      <option value="30">30 วินาที</option>
+      <option value="60" selected>1 นาที</option>
+      <option value="120">2 นาที</option>
+      <option value="180">3 นาที</option>
+      <option value="240">4 นาที</option>
+      <option value="300">5 นาที</option>
+    </select>
 
-  <label for="threshold">เกณฑ์คัดกรองสัญญาณ</label>
-  <select id="threshold">
-    <option value="50">50 — คัดกรองน้อย</option>
-    <option value="65" selected>65 — ปานกลาง</option>
-    <option value="75">75 — เข้มงวด</option>
-    <option value="85">85 — เข้มงวดมาก</option>
-  </select>
-  <button id="apply">ใช้การตั้งค่า</button>
-</section>
-
-<section class="card signal">
-  <p class="muted">สัญญาณวิเคราะห์ล่าสุด</p>
-  <div id="direction" class="direction wait">WAIT</div>
-  <p id="reason" class="muted">กำลังรอข้อมูลตลาด</p>
-  <div id="price" class="price">—</div>
-  <span id="pair" class="pill">EUR/USD</span>
-  <div class="bar"><span id="bar"></span></div>
-  <p>คะแนนตามกฎวิเคราะห์ <b id="score">0</b>/100</p>
-  <p class="muted" id="updated">รอข้อมูลราคา...</p>
-</section>
-
-<section class="card">
-  <p style="font-weight:bold;margin-top:0">ตัวชี้วัดทางเทคนิค</p>
-  <div class="row"><span>EMA 6</span><b id="ema6">—</b></div>
-  <div class="row"><span>EMA 21</span><b id="ema21">—</b></div>
-  <div class="row"><span>EMA 50</span><b id="ema50">—</b></div>
-  <div class="row"><span>RSI 14</span><b id="rsi">—</b></div>
-  <div class="row"><span>MACD line</span><b id="macd">—</b></div>
-  <div class="row"><span>แท่งข้อมูลที่มี</span><b id="candles">0</b></div>
-</section>
-
-<section class="card">
-  <p style="font-weight:bold;margin-top:0">สถานะฟีดราคา</p>
-  <div class="metrics">
-    <div class="metric"><b id="connection">—</b><span>การเชื่อมต่อ</span></div>
-    <div class="metric"><b id="fresh">—</b><span>ข้อมูลสด</span></div>
-    <div class="metric"><b id="seconds">—</b><span>วินาทีที่แล้ว</span></div>
+    <label for="threshold">เกณฑ์สัญญาณ</label>
+    <select id="threshold">
+      <option value="50">50</option>
+      <option value="60">60</option>
+      <option value="65" selected>65</option>
+      <option value="70">70</option>
+      <option value="80">80</option>
+      <option value="90">90</option>
+    </select>
+    <button id="apply">บันทึกการตั้งค่า</button>
   </div>
-  <p id="source" class="notice" style="margin-top:13px">แหล่งข้อมูล: —</p>
-  <p class="notice">CALL / PUT เป็นการประเมินแนวโน้ม ไม่ใช่การรับประกันผลกำไร คะแนนไม่ใช่ความน่าจะเป็นที่ผ่านการสอบเทียบ</p>
-</section>
-</main>
+
+  <div class="card">
+    <h2>ราคาตลาด</h2>
+    <div id="price" class="price">--</div>
+    <div id="priceAge" class="muted">รอข้อมูลราคา</div>
+    <p id="error" class="error"></p>
+  </div>
+
+  <div class="card">
+    <h2>สัญญาณล่าสุด</h2>
+    <div class="signal">
+      <strong id="direction" class="wait">WAIT</strong>
+      <span id="reason" class="muted">กำลังรอข้อมูลตลาด</span>
+      <p>คะแนนเงื่อนไข: <b id="score">0</b>/100</p>
+    </div>
+    <p class="muted">สัญญาณเป็นการคำนวณจากตัวชี้วัด ไม่ใช่การรับประกันผลลัพธ์</p>
+  </div>
+
+  <div class="card">
+    <h2>ตัวชี้วัด</h2>
+    <div class="grid">
+      <div class="metric">EMA 6<strong id="ema6">--</strong></div>
+      <div class="metric">EMA 21<strong id="ema21">--</strong></div>
+      <div class="metric">EMA 50<strong id="ema50">--</strong></div>
+      <div class="metric">RSI<strong id="rsi">--</strong></div>
+      <div class="metric">MACD<strong id="macd">--</strong></div>
+      <div class="metric">จำนวนแท่ง<strong id="candles">0</strong></div>
+    </div>
+  </div>
+
+  <p class="muted">แหล่งราคา: Deriv reference feed ไม่ใช่ราคา IQ Option OTC โดยตรง</p>
+  <p class="muted" id="updated">ยังไม่ได้รับข้อมูล</p>
+</div>
 
 <script>
-const tg = window.Telegram?.WebApp;
-tg?.ready();
-tg?.expand();
+(() => {
+  const $ = id => document.getElementById(id);
+  const tg = window.Telegram && window.Telegram.WebApp;
 
-const $ = id => document.getElementById(id);
-let currentSymbol = "frxEURUSD";
-let busy = false;
-
-function showNumber(value, digits=5){
-  if(value===null || value===undefined || !Number.isFinite(Number(value))) return "—";
-  return Number(value).toFixed(digits);
-}
-
-async function applySettings(){
-  if(busy)return;
-  busy=true;
-  try{
-    const response=await fetch("/api/settings",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        symbol:$("symbol").value,
-        duration:Number($("duration").value),
-        threshold:Number($("threshold").value)
-      })
-    });
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||"ตั้งค่าไม่สำเร็จ");
-    currentSymbol=data.symbol;
-    render(data);
-  }catch(e){
-    $("reason").textContent=e.message;
-  }finally{
-    busy=false;
+  if (tg) {
+    tg.ready();
+    tg.expand();
   }
-}
-$("apply").addEventListener("click",applySettings);
 
-function render(data){
-  currentSymbol=data.symbol||currentSymbol;
-  if(document.activeElement!==$("symbol"))$("symbol").value=currentSymbol;
-  if(document.activeElement!==$("duration"))$("duration").value=String(data.duration||60);
-  if(document.activeElement!==$("threshold"))$("threshold").value=String(data.threshold||65);
+  let busy = false;
+  let stopped = false;
+  let timer = null;
+  let requestController = null;
 
-  $("status").textContent=data.connected
-    ?(data.fresh?"● LIVE":"● ข้อมูลเก่า")
-    :"○ OFFLINE";
-
-  $("connection").textContent=data.connected?"เชื่อมต่อ":"ขาด";
-  $("fresh").textContent=data.fresh?"สด":"เก่า";
-  $("seconds").textContent=data.lastTick
-    ?Math.max(0,Math.floor((Date.now()-data.lastTick)/1000)):"—";
-
-  $("pair").textContent=data.symbolName||data.symbol||"—";
-  $("price").textContent=showNumber(data.price);
-  $("candles").textContent=data.candleCount??0;
-  $("source").textContent="แหล่งข้อมูล: "+(data.source||"—");
-
-  const s=data.signal||{};
-  const direction=s.direction||"WAIT";
-  $("direction").textContent=direction;
-  $("direction").className="direction "+
-    (direction==="CALL"?"call":direction==="PUT"?"put":"wait");
-  $("reason").textContent=s.reason||"รอสัญญาณ";
-  $("score").textContent=s.score??0;
-  $("bar").style.width=Math.max(0,Math.min(100,s.score||0))+"%";
-  $("bar").style.background=direction==="CALL"?"var(--green)"
-    :direction==="PUT"?"var(--red)":"var(--yellow)";
-
-  const i=s.indicators||{};
-  $("ema6").textContent=showNumber(i.ema6);
-  $("ema21").textContent=showNumber(i.ema21);
-  $("ema50").textContent=showNumber(i.ema50);
-  $("rsi").textContent=showNumber(i.rsi,2);
-  $("macd").textContent=showNumber(i.macd,7);
-  $("updated").textContent=data.fresh
-    ?"อัปเดตล่าสุด "+new Date(data.lastTick).toLocaleTimeString("th-TH")
-    :"ระบบจะพักสัญญาณจนกว่าข้อมูลจะกลับมาสด";
-}
-
-async function refresh(){
-  try{
-    const response=await fetch("/api/status",{cache:"no-store"});
-    if(!response.ok)throw new Error("Server error");
-    render(await response.json());
-  }catch(e){
-    $("status").textContent="○ OFFLINE";
-    $("direction").textContent="WAIT";
-    $("direction").className="direction wait";
-    $("reason").textContent="เชื่อมต่อเซิร์ฟเวอร์ไม่ได้";
+  function fmt(value, digits = 5) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? value.toFixed(digits) : "--";
   }
-}
-refresh();
-setInterval(refresh,2000);
+
+  async function updateStatus() {
+    if (busy || stopped) return;
+    busy = true;
+
+    try {
+      if (requestController) requestController.abort();
+      requestController = new AbortController();
+      const timeout = setTimeout(() => requestController.abort(), 8000);
+
+      let response;
+      try {
+        response = await fetch("/api/status?t=" + Date.now(), {
+          cache: "no-store",
+          signal: requestController.signal
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!response.ok) throw new Error("เซิร์ฟเวอร์ตอบกลับ " + response.status);
+
+      const data = await response.json();
+      const signal = data.signal || {};
+      const indicators = signal.indicators || {};
+
+      $("symbol").value = data.symbol || "frxEURUSD";
+      $("duration").value = String(data.duration || 60);
+      $("threshold").value = String(data.threshold || 65);
+
+      $("dot").className = "dot " + (data.fresh ? "on" : data.connected ? "" : "off");
+      $("connection").textContent = !data.connected
+        ? "เซิร์ฟเวอร์กำลังเชื่อมต่อใหม่"
+        : !data.fresh ? "รอข้อมูลราคาสด" : "เชื่อมต่อแล้ว · ราคาสด";
+
+      $("price").textContent = data.price == null ? "--" : String(data.price);
+      $("priceAge").textContent = data.ageMs == null
+        ? "ยังไม่มีข้อมูลราคา"
+        : "อัปเดตข้อมูลล่าสุด " + Math.max(0, Math.floor(data.ageMs / 1000)) + " วินาทีที่แล้ว";
+
+      $("direction").textContent = signal.direction || "WAIT";
+      $("direction").className =
+        signal.direction === "CALL" ? "call" :
+        signal.direction === "PUT" ? "put" : "wait";
+
+      $("score").textContent = signal.score ?? 0;
+      $("reason").textContent = signal.reason || "กำลังวิเคราะห์";
+      $("ema6").textContent = fmt(indicators.ema6);
+      $("ema21").textContent = fmt(indicators.ema21);
+      $("ema50").textContent = fmt(indicators.ema50);
+      $("rsi").textContent = fmt(indicators.rsi, 2);
+      $("macd").textContent = fmt(indicators.macd, 7);
+      $("candles").textContent = data.candleCount ?? 0;
+      $("error").textContent = data.error ? "API: " + data.error : "";
+      $("updated").textContent = "อัปเดตหน้าจอ: " + new Date().toLocaleTimeString();
+
+    } catch (error) {
+      $("dot").className = "dot off";
+      $("connection").textContent = "ดึงข้อมูลไม่สำเร็จ กำลังลองใหม่";
+      $("error").textContent =
+        error.name === "AbortError" ? "การเชื่อมต่อใช้เวลานานเกินไป" : error.message;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function applySettings() {
+    $("apply").disabled = true;
+    $("apply").textContent = "กำลังบันทึก...";
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          symbol: $("symbol").value,
+          duration: Number($("duration").value),
+          threshold: Number($("threshold").value)
+        })
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "บันทึกการตั้งค่าไม่สำเร็จ");
+      }
+
+      await updateStatus();
+    } catch (error) {
+      $("error").textContent = error.message;
+    } finally {
+      $("apply").disabled = false;
+      $("apply").textContent = "บันทึกการตั้งค่า";
+    }
+  }
+
+  $("apply").addEventListener("click", applySettings);
+
+  function startPolling() {
+    if (timer) clearInterval(timer);
+    stopped = false;
+    updateStatus();
+    timer = setInterval(updateStatus, 2000);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      updateStatus();
+    }
+  });
+
+  window.addEventListener("pageshow", startPolling);
+  window.addEventListener("pagehide", () => {
+    if (timer) clearInterval(timer);
+    stopped = true;
+    if (requestController) requestController.abort();
+  });
+
+  startPolling();
+})();
 </script>
 </body>
 </html>
