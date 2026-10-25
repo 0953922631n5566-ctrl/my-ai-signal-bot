@@ -14,7 +14,7 @@
     .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
     .status-offline { background: #dc2626; color: #ffffff; }
 
-    /* ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน */
+    /* ปุ่มเมนูด้านบนสำหรับเปิดหน้ารวมสแกนเนอร์ */
     .scanner-banner { 
       background: #0f172a; 
       border-radius: 12px; 
@@ -31,7 +31,7 @@
     }
     .scanner-banner:active { transform: scale(0.98); background: #1e293b; }
 
-    /* หน้าจอหลัก: ขยายความสูงให้เต็มพื้นที่กรอบสีแดงด้านล่าง */
+    /* หน้าจอหลัก */
     #mainView { display: flex; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
     
     .signal-card { 
@@ -76,7 +76,7 @@
     .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
     .stat-value { font-size: 16px; font-weight: 900; margin-top: 4px; color: #ffffff; }
 
-    /* หน้าจอดัชนีรายการคู่เงินทั้งหมด */
+    /* หน้าจอดัชนีรายการคู่เงินทั้งหมด (แดชบอร์ดสแกนเนอร์) */
     #dashboardView { display: none; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
     .back-main-btn { background: #1e293b; color: #38bdf8; border: 1.5px solid #0284c7; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; flex-shrink: 0; }
     
@@ -85,12 +85,12 @@
     .pair-item { background: #0f172a; border-radius: 12px; padding: 12px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
     .pair-item:active { transform: scale(0.97); }
     
-    .pair-header { display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 14px; color: #ffffff; }
+    .pair-header { display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 13px; color: #ffffff; }
     
-    .badge-green { background: rgba(5, 150, 105, 0.25); color: #34d399; border: 1px solid #059669; font-size: 9px; padding: 2px 8px; border-radius: 6px; font-weight: bold; }
-    .badge-red { background: rgba(220, 38, 38, 0.25); color: #fca5a5; border: 1px solid #dc2626; font-size: 9px; padding: 2px 8px; border-radius: 6px; font-weight: bold; animation: pulseRed 1s infinite alternate; }
-
-    @keyframes pulseRed { from { opacity: 0.6; } to { opacity: 1; box-shadow: 0 0 8px #dc2626; } }
+    .badge-call { background: rgba(4, 120, 87, 0.3); color: #34d399; border: 1px solid #10b981; font-size: 9px; padding: 2px 6px; border-radius: 6px; font-weight: bold; }
+    .badge-put { background: rgba(190, 18, 60, 0.3); color: #fca5a5; border: 1px solid #f43f5e; font-size: 9px; padding: 2px 6px; border-radius: 6px; font-weight: bold; }
+    .badge-wait { background: rgba(30, 41, 59, 0.5); color: #94a3b8; border: 1px solid #334155; font-size: 9px; padding: 2px 6px; border-radius: 6px; font-weight: bold; }
+    .badge-sideway { background: rgba(127, 29, 29, 0.5); color: #fef08a; border: 1px solid #ef4444; font-size: 9px; padding: 2px 6px; border-radius: 6px; font-weight: bold; }
 
     .pair-info { font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; }
   </style>
@@ -101,17 +101,17 @@
     ⚡ AI AUTO SCANNER <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
   </div>
 
-  <!-- ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน -->
+  <!-- ปุ่มเมนูด้านบน -->
   <div class="scanner-banner" onclick="showDashboard()">
-    🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
+    🔍 แตะที่นี่เพื่อเปิดหน้าสแกนคู่เงินทั้งหมด (เลือกดูสัญญาณเด่น) ▾
   </div>
 
-  <!-- หน้าจอหลัก (เติมเต็มพื้นที่ในกรอบสีแดงด้านล่างสุด) -->
+  <!-- หน้าจอหลัก -->
   <div id="mainView">
     <div class="signal-card">
       <div class="pair-title">
-        <span>AI Selected: <strong id="marketLabel" style="color: #ffffff;">EUR/USD</strong></span>
-        <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">TRIPLE EMA ACTIVE 🟢</span>
+        <span>AI Selected: <strong id="marketLabel" style="color: #ffffff;">EUR/USD (OTC)</strong></span>
+        <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">ANALYZING 🟢</span>
       </div>
 
       <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
@@ -119,7 +119,7 @@
       <div class="stats-grid">
         <div class="stat-box">
           <div class="stat-label">Confidence</div>
-          <div class="stat-value" id="confValue" style="color: #38bdf8;">0.0%</div>
+          <div class="stat-value" id="confValue" style="color: #38bdf8;">50.0%</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">RSI (14)</div>
@@ -133,7 +133,7 @@
     </div>
   </div>
 
-  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด -->
+  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด (สแกนเนอร์รวม) -->
   <div id="dashboardView">
     <button class="back-main-btn" onclick="showMain()">← กลับหน้าจอหลัก</button>
     <div class="pair-grid-scroll">
@@ -166,7 +166,7 @@
     }
 
     let ws;
-    let currentSelectedKey = 'eurusdt';
+    let currentSelectedKey = 'eurusd'; // ตรงกับ key ของ backend
     let globalPairsData = [];
     let lastSignalState = 'WAIT';
     let warned10s = false;
@@ -180,6 +180,7 @@
     function showMain() {
       document.getElementById('dashboardView').style.display = 'none';
       document.getElementById('mainView').style.display = 'flex';
+      updateMainView();
     }
 
     function selectPairAndReturn(key) {
@@ -193,9 +194,10 @@
       container.innerHTML = '';
 
       globalPairsData.forEach(p => {
-        const isSafe = p.statusColor === 'green';
-        const badgeClass = isSafe ? 'badge-green' : 'badge-red';
-        const statusText = isSafe ? '🟢 ปลอดภัย' : '🔴 อันตราย';
+        let badgeClass = 'badge-wait';
+        if (p.signal === 'CALL') badgeClass = 'badge-call';
+        else if (p.signal === 'PUT') badgeClass = 'badge-put';
+        else if (p.signal === 'SIDEWAY') badgeClass = 'badge-sideway';
 
         const div = document.createElement('div');
         div.className = 'pair-item';
@@ -203,11 +205,11 @@
         div.innerHTML = `
           <div class="pair-header">
             <span>${p.name}</span>
-            <span class="${badgeClass}">${isSafe ? 'SAFE' : 'DANGER'}</span>
+            <span class="${badgeClass}">${p.signal}</span>
           </div>
           <div class="pair-info">
             <span>RSI: ${p.rsi}</span>
-            <span style="color: ${isSafe ? '#34d399' : '#f87171'}">${statusText}</span>
+            <span>Conf: ${p.confidence}%</span>
           </div>
         `;
         container.appendChild(div);
@@ -247,6 +249,7 @@
           }
           if (data.timeLeft > 10) warned10s = false;
 
+          // อัปเดตหน้าจอตามสิ่งที่เปิดอยู่ปัจจุบัน
           if (document.getElementById('dashboardView').style.display !== 'none') {
             updateDashboardList();
           } else {
