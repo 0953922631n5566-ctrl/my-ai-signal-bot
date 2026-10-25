@@ -14,7 +14,7 @@
     .status-online { background: #059669; color: #ffffff; border: 1px solid #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); }
     .status-offline { background: #dc2626; color: #ffffff; }
 
-    /* ปุ่มเมนูด้านบนสำหรับเปิดหน้ารวมสแกนเนอร์ */
+    /* ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน */
     .scanner-banner { 
       background: #0f172a; 
       border-radius: 12px; 
@@ -31,7 +31,7 @@
     }
     .scanner-banner:active { transform: scale(0.98); background: #1e293b; }
 
-    /* หน้าจอหลัก */
+    /* หน้าจอหลัก: ขยายความสูงให้เต็มพื้นที่กรอบสีแดงด้านล่าง */
     #mainView { display: flex; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
     
     .signal-card { 
@@ -76,7 +76,7 @@
     .stat-label { font-size: 10px; color: #64748b; font-weight: 700; }
     .stat-value { font-size: 16px; font-weight: 900; margin-top: 4px; color: #ffffff; }
 
-    /* หน้าจอดัชนีรายการคู่เงินทั้งหมด (แดชบอร์ดสแกนเนอร์) */
+    /* หน้าจอดัชนีรายการคู่เงินทั้งหมด */
     #dashboardView { display: none; flex-direction: column; flex: 1; gap: 10px; min-height: 0; }
     .back-main-btn { background: #1e293b; color: #38bdf8; border: 1.5px solid #0284c7; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 12px; cursor: pointer; align-self: flex-start; flex-shrink: 0; }
     
@@ -101,17 +101,17 @@
     ⚡ AI AUTO SCANNER <span id="netStatus" class="status-badge status-offline">OFFLINE</span>
   </div>
 
-  <!-- ปุ่มเมนูด้านบน -->
+  <!-- ปุ่มเมนูตำแหน่งกรอบสีแดงด้านบน -->
   <div class="scanner-banner" onclick="showDashboard()">
-    🔍 แตะที่นี่เพื่อเปิดหน้าสแกนคู่เงินทั้งหมด (เลือกดูสัญญาณเด่น) ▾
+    🔍 แตะที่นี่เพื่อเลือกคู่เงิน / ดูสถานะตลาดทั้งหมด ▾
   </div>
 
-  <!-- หน้าจอหลัก -->
+  <!-- หน้าจอหลัก (เติมเต็มพื้นที่ในกรอบสีแดงด้านล่างสุด) -->
   <div id="mainView">
     <div class="signal-card">
       <div class="pair-title">
         <span>AI Selected: <strong id="marketLabel" style="color: #ffffff;">EUR/USD (OTC)</strong></span>
-        <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">ANALYZING 🟢</span>
+        <span id="trendLabel" style="color: #38bdf8; font-size: 11px;">AI ML ACTIVE 🟢</span>
       </div>
 
       <div id="signalDisplay" class="signal-box WAIT">WAIT</div>
@@ -133,7 +133,7 @@
     </div>
   </div>
 
-  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด (สแกนเนอร์รวม) -->
+  <!-- หน้าจอดัชนีรายการคู่เงินทั้งหมด -->
   <div id="dashboardView">
     <button class="back-main-btn" onclick="showMain()">← กลับหน้าจอหลัก</button>
     <div class="pair-grid-scroll">
@@ -166,7 +166,7 @@
     }
 
     let ws;
-    let currentSelectedKey = 'eurusd'; // ตรงกับ key ของ backend
+    let currentSelectedKey = 'eurusd'; // ปรับให้ตรงกับ key ของ backend
     let globalPairsData = [];
     let lastSignalState = 'WAIT';
     let warned10s = false;
@@ -249,7 +249,6 @@
           }
           if (data.timeLeft > 10) warned10s = false;
 
-          // อัปเดตหน้าจอตามสิ่งที่เปิดอยู่ปัจจุบัน
           if (document.getElementById('dashboardView').style.display !== 'none') {
             updateDashboardList();
           } else {
