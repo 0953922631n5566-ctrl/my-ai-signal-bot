@@ -1,3 +1,4 @@
+
 import express from "express";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -19,6 +20,7 @@ const ALLOWLIST = (process.env.ALLOWED_TELEGRAM_USER_IDS || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
+// คู่เงิน Forex ตลาดหลัก ไม่รวม OTC
 const SYMBOLS = [
   "EUR/USD",
   "GBP/USD",
@@ -32,26 +34,66 @@ const SYMBOLS = [
   "GBP/JPY"
 ];
 
-// --- โครงสร้างตัวแปรตามที่ลูกพี่กำหนด ---
-const cache = new Map();
-const CACHE_MS = 60000;
+// ตั้งค่าการสแกน
+const CACHE_MS = 12000;
 const SCAN_INTERVAL_MS = 8000;
+const MAX_SIGNAL_AGE_MS = 180000;
+const MIN_SIGNAL_SCORE = 60;
+
+const cache = new Map();
 const scanResults = new Map();
 
 let scannerRunning = false;
+let scannerBusy = false;
+let currentScanSymbol = null;
 let lastScanTime = null;
 let scannerError = null;
-let currentScanSymbol = null;
+let lastFullScanTime = null;
 
-// --- Telegram Auth ---
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    dataKeyConfigured: Boolean(API_KEY && API_KEY !== "demo"),
+    telegramConfigured: Boolean(BOT_TOKEN && APP_URL),
+    scannerRunning,
+    time: new Date().toISOString()
+  });
+});
+
+app.get("/api/status", (_req, res) => {
+  res.json({
+    ok: true,
+    symbols: SYMBOLS,
+    timeframe: "1min",
+    mode: "signal-only",
+    autoScan: true,
+    scannerRunning,
+    scannerBusy,
+    currentScanSymbol,
+    lastScanTime,
+    lastFullScanTime,
+    scannerError,
+    dataProvider: "Twelve Data"
+  });
+});
+
+// ตรวจสอบ Telegram Mini App
 function verifyTelegram(initData) {
-  if (!BOT_TOKEN) return { ok: true, user: { name: "Guest" } };
-  if (!initData) return { ok: true, user: { name: "WebUser" } };
+  if (!BOT_TOKEN) {
+    return { ok: true, user: { name: "Guest" } };
+  }
+
+  if (!initData) {
+    return { ok: true, user: { name: "WebUser" } };
+  }
 
   try {
     const params = new URLSearchParams(initData);
     const hash = params.get("hash");
-    if (!hash) return { ok: true, user: { name: "Guest" } };
+
+    if (!hash) {
+      return { ok: false, error: "Missing Telegram signature" };
+    }
 
     params.delete("hash");
 
@@ -78,7 +120,9 @@ function verifyTelegram(initData) {
     }
 
     const authDate = Number(params.get("auth_date") || 0);
-    if (!authDate || Date.now() / 1000 - authDate > 86400) {
+    const age = Date.now() / 1000 - authDate;
+
+    if (!authDate || age < 0 || age > 86400) {
       return { ok: false, error: "Telegram session expired" };
     }
 
@@ -90,23 +134,32 @@ function verifyTelegram(initData) {
 
     return { ok: true, user };
   } catch {
-    return { ok: true, user: { name: "FallbackUser" } };
+    return { ok: false, error: "Telegram authentication failed" };
   }
 }
 
 function auth(req, res, next) {
   const initData = req.get("x-telegram-init-data") || "";
   const result = verifyTelegram(initData);
-  if (!result.ok) return res.status(401).json(result);
+
+  if (!result.ok) {
+    return res.status(401).json(result);
+  }
+
   req.telegramUser = result.user;
   next();
 }
 
-// --- Market Data & Analysis ---
+// ดึงแท่งเทียนจาก Twelve Data พร้อมแคช
 async function getCandles(symbol) {
   const cached = cache.get(symbol);
+
   if (cached && Date.now() - cached.at < CACHE_MS) {
     return cached.candles;
+  }
+
+  if (!API_KEY || API_KEY === "demo") {
+    throw new Error("กรุณาตั้งค่า TWELVEDATA_API_KEY ใน Render");
   }
 
   const url = new URL("https://api.twelvedata.com/time_series");
@@ -135,14 +188,13 @@ async function getCandles(symbol) {
       close: Number(c.close),
       volume: Number(c.volume || 0)
     }))
-    .filter(
-      (c) =>
-        Number.isFinite(c.time) &&
-        [c.open, c.high, c.low, c.close].every(Number.isFinite)
+    .filter((c) =>
+      Number.isFinite(c.time) &&
+      [c.open, c.high, c.low, c.close].every(Number.isFinite)
     )
     .sort((a, b) => a.time - b.time);
 
-  if (candles.length < 30) {
+  if (candles.length < 50) {
     throw new Error("Waiting for sufficient market history");
   }
 
@@ -151,7 +203,10 @@ async function getCandles(symbol) {
 }
 
 function ema(values, period) {
-  if (values.length < period) return Array(values.length).fill(null);
+  if (values.length < period) {
+    return Array(values.length).fill(null);
+  }
+
   const k = 2 / (period + 1);
   let value =
     values.slice(0, period).reduce((sum, n) => sum + n, 0) / period;
@@ -163,17 +218,19 @@ function ema(values, period) {
     value = values[i] * k + value * (1 - k);
     out.push(value);
   }
+
   return out;
 }
 
 function rsi(values, period = 14) {
   if (values.length <= period) return 50;
 
-  let gains = 0,
-    losses = 0;
+  let gains = 0;
+  let losses = 0;
 
   for (let i = 1; i <= period; i++) {
     const d = values[i] - values[i - 1];
+
     if (d > 0) gains += d;
     else losses -= d;
   }
@@ -183,43 +240,58 @@ function rsi(values, period = 14) {
 
   for (let i = period + 1; i < values.length; i++) {
     const d = values[i] - values[i - 1];
-    avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
+
+    avgGain =
+      (avgGain * (period - 1) + Math.max(d, 0)) / period;
+
+    avgLoss =
+      (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
   }
 
-  if (avgLoss === 0) return 100;
+  if (avgLoss === 0) {
+    return avgGain === 0 ? 50 : 100;
+  }
+
   return 100 - 100 / (1 + avgGain / avgLoss);
 }
 
+// วิเคราะห์แนวโน้มด้วย EMA และ RSI
 function analyze(allCandles) {
-  const candles = allCandles;
-  if (candles.length < 30) {
+  if (allCandles.length < 50) {
     throw new Error("Not enough candle data for analysis");
   }
 
+  const candles = allCandles;
   const closes = candles.map((c) => c.close);
   const last = closes.length - 1;
+
   const e9 = ema(closes, 9);
   const e21 = ema(closes, 21);
   const e50 = ema(closes, 50);
   const r = rsi(closes.slice(-60), 14);
+
   const current = candles[last];
   const previous = candles[last - 1] || current;
 
-  const trendUp = e9[last] > e21[last] && e21[last] > e50[last];
-  const trendDown = e9[last] < e21[last] && e21[last] < e50[last];
+  const trendUp =
+    e9[last] > e21[last] && e21[last] > e50[last];
+
+  const trendDown =
+    e9[last] < e21[last] && e21[last] < e50[last];
 
   const range = Math.max(current.high - current.low, 1e-10);
   const body = (current.close - current.open) / range;
 
   let call = 0;
   let put = 0;
+
   const reasons = [];
 
   if (trendUp) {
     call += 2;
     reasons.push("EMA Bullish Alignment");
   }
+
   if (trendDown) {
     put += 2;
     reasons.push("EMA Bearish Alignment");
@@ -229,6 +301,7 @@ function analyze(allCandles) {
     call++;
     reasons.push("RSI Bullish Momentum");
   }
+
   if (r <= 48 && r >= 32) {
     put++;
     reasons.push("RSI Bearish Momentum");
@@ -236,6 +309,7 @@ function analyze(allCandles) {
 
   if (current.close > previous.close) call++;
   if (current.close < previous.close) put++;
+
   if (body > 0.35) call++;
   if (body < -0.35) put++;
 
@@ -243,13 +317,19 @@ function analyze(allCandles) {
 
   if (trendUp && call >= 3 && call - put >= 1 && r < 70) {
     signal = "CALL";
-  }
-
-  if (trendDown && put >= 3 && put - call >= 1 && r > 30) {
+  } else if (
+    trendDown &&
+    put >= 3 &&
+    put - call >= 1 &&
+    r > 30
+  ) {
     signal = "PUT";
   }
 
-  const score = Math.min(100, Math.round((Math.max(call, put) / 5) * 100));
+  const score = Math.min(
+    100,
+    Math.round((Math.max(call, put) / 5) * 100)
+  );
 
   return {
     signal,
@@ -262,43 +342,14 @@ function analyze(allCandles) {
     ema9: e9[last],
     ema21: e21[last],
     ema50: e50[last],
-    reasons: reasons.length ? reasons : ["ตลาดยังไม่เข้าเกณฑ์ชัดเจน"],
+    reasons: reasons.length
+      ? reasons
+      : ["ตลาดยังไม่เข้าเกณฑ์ชัดเจน"],
     sampleSize: candles.length
   };
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function getBestSignal() {
-  const results = [...scanResults.values()]
-    .sort((a, b) => b.analysis.score - a.analysis.score);
-
-  const candidates = results.filter((item) =>
-    ["CALL", "PUT"].includes(item.analysis.signal) &&
-    item.analysis.score >= 60
-  );
-
-  if (!candidates.length) {
-    return {
-      symbol: null,
-      signal: "WAIT",
-      score: 0,
-      message: "ยังไม่มีคู่เงินที่ผ่านเกณฑ์"
-    };
-  }
-
-  const best = candidates[0];
-
-  return {
-    symbol: best.symbol,
-    signal: best.analysis.signal,
-    score: best.analysis.score,
-    close: best.analysis.close,
-    candleTime: best.analysis.candleTime,
-    message: "คู่เงินที่ได้คะแนนสูงสุดจากผลสแกนล่าสุด"
-  };
-}
-
+// สแกนคู่เงินหนึ่งคู่
 async function scanOneSymbol(symbol) {
   try {
     const candles = await getCandles(symbol);
@@ -308,8 +359,9 @@ async function scanOneSymbol(symbol) {
       symbol,
       analysis,
       scannedAt: Date.now(),
-      error: null,
-      stale: false
+      candleTime: analysis.candleTime,
+      stale: false,
+      error: null
     };
 
     scanResults.set(symbol, result);
@@ -320,8 +372,8 @@ async function scanOneSymbol(symbol) {
     if (old) {
       scanResults.set(symbol, {
         ...old,
-        error: error.message,
-        stale: true
+        stale: true,
+        error: error.message
       });
     } else {
       scanResults.set(symbol, {
@@ -331,38 +383,138 @@ async function scanOneSymbol(symbol) {
           score: 0,
           reasons: ["ดึงข้อมูลราคาไม่สำเร็จ"]
         },
-        scannedAt: Date.now(),
-        error: error.message,
-        stale: true
+        scannedAt: null,
+        candleTime: null,
+        stale: true,
+        error: error.message
       });
     }
 
+    scannerError = `${symbol}: ${error.message}`;
     return scanResults.get(symbol);
   }
 }
 
+// เลือกสัญญาณที่เหมาะสมที่สุดจากผลสแกน
+function getBestSignal() {
+  const now = Date.now();
+
+  const candidates = [...scanResults.values()]
+    .filter((item) => {
+      return (
+        !item.stale &&
+        item.scannedAt &&
+        now - item.scannedAt <= MAX_SIGNAL_AGE_MS &&
+        item.analysis &&
+        ["CALL", "PUT"].includes(item.analysis.signal) &&
+        item.analysis.score >= MIN_SIGNAL_SCORE
+      );
+    })
+    .sort((a, b) => {
+      // คะแนนสูงกว่ามาก่อน ถ้าเท่ากันเลือกข้อมูลที่ใหม่กว่า
+      return (
+        b.analysis.score - a.analysis.score ||
+        b.scannedAt - a.scannedAt
+      );
+    });
+
+  if (!candidates.length) {
+    return {
+      symbol: null,
+      signal: "WAIT",
+      score: 0,
+      message: "ยังไม่มีคู่เงินที่ผ่านเกณฑ์",
+      selectedAt: now
+    };
+  }
+
+  const best = candidates[0];
+
+  return {
+    symbol: best.symbol,
+    signal: best.analysis.signal,
+    score: best.analysis.score,
+    close: best.analysis.close,
+    rsi: best.analysis.rsi,
+    candleTime: best.analysis.candleTime,
+    scannedAt: best.scannedAt,
+    message: "คู่เงินที่ได้คะแนนสูงสุดจากผลสแกน",
+    selectedAt: now
+  };
+}
+
+// ทำงานสแกนอัตโนมัติวนไปเรื่อย ๆ
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 async function startAutoScanner() {
   if (scannerRunning) return;
+
   scannerRunning = true;
-  scannerError = null;
 
   while (scannerRunning) {
+    let fullCycleCompleted = true;
+
     for (const symbol of SYMBOLS) {
       if (!scannerRunning) break;
+
+      scannerBusy = true;
       currentScanSymbol = symbol;
+
       await scanOneSymbol(symbol);
       lastScanTime = Date.now();
+
+      if (scanResults.get(symbol)?.stale) {
+        fullCycleCompleted = false;
+      }
+
+      scannerBusy = false;
+
       await sleep(SCAN_INTERVAL_MS);
+    }
+
+    if (fullCycleCompleted && scannerRunning) {
+      lastFullScanTime = Date.now();
+      scannerError = null;
     }
   }
 }
 
-// --- Endpoints ที่ลูกพี่กำหนดมา ---
+// API เดิม: วิเคราะห์คู่เงินที่ระบุ
+app.get("/api/market", auth, async (req, res) => {
+  const symbol = String(req.query.symbol || "EUR/USD").toUpperCase();
+
+  if (!SYMBOLS.includes(symbol)) {
+    return res.status(400).json({
+      ok: false,
+      error: "Unsupported symbol"
+    });
+  }
+
+  try {
+    const candles = await getCandles(symbol);
+    const analysis = analyze(candles);
+
+    res.json({
+      ok: true,
+      symbol,
+      provider: "Twelve Data",
+      fetchedAt: Date.now(),
+      analysis,
+      candles: candles.slice(-60)
+    });
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error.message || "Market data unavailable"
+    });
+  }
+});
+
+// API ใหม่: ผลสแกนทั้งหมดและคู่เงินที่ระบบเลือก
 app.get("/api/scan", auth, (_req, res) => {
   const results = SYMBOLS.map((symbol) => {
-    const item = scanResults.get(symbol);
-
-    return item || {
+    return scanResults.get(symbol) || {
       symbol,
       analysis: {
         signal: "WAIT",
@@ -370,6 +522,8 @@ app.get("/api/scan", auth, (_req, res) => {
         reasons: ["กำลังรอสแกน"]
       },
       scannedAt: null,
+      candleTime: null,
+      stale: true,
       error: null
     };
   });
@@ -380,32 +534,44 @@ app.get("/api/scan", auth, (_req, res) => {
     timeframe: "1min",
     provider: "Twelve Data",
     scannerRunning,
+    scannerBusy,
     currentScanSymbol,
     lastScanTime,
+    lastFullScanTime,
     scannerError,
-    selected: getBestSignal(),
     totalSymbols: SYMBOLS.length,
     scannedSymbols: results.filter(
       (item) => item.scannedAt !== null && !item.stale
     ).length,
+    selected: getBestSignal(),
     results
   });
 });
 
+// API ใหม่: ขอให้สแกนคู่ที่ข้อมูลเก่าที่สุดทันที
 app.post("/api/scan/refresh", auth, async (_req, res) => {
+  if (scannerBusy) {
+    return res.status(409).json({
+      ok: false,
+      error: "Scanner is busy. Please try again shortly."
+    });
+  }
+
+  const symbol = [...SYMBOLS].sort((a, b) => {
+    const aTime = scanResults.get(a)?.scannedAt || 0;
+    const bTime = scanResults.get(b)?.scannedAt || 0;
+    return aTime - bTime;
+  })[0];
+
   try {
-    const symbol = [...SYMBOLS].sort((a, b) => {
-      const ta = scanResults.get(a)?.scannedAt || 0;
-      const tb = scanResults.get(b)?.scannedAt || 0;
-      return ta - tb;
-    })[0];
+    scannerBusy = true;
+    currentScanSymbol = symbol;
 
     const result = await scanOneSymbol(symbol);
-
     lastScanTime = Date.now();
 
     res.json({
-      ok: true,
+      ok: !result.stale,
       refreshed: symbol,
       result,
       selected: getBestSignal()
@@ -415,24 +581,14 @@ app.post("/api/scan/refresh", auth, async (_req, res) => {
       ok: false,
       error: error.message || "Scan failed"
     });
+  } finally {
+    scannerBusy = false;
+    currentScanSymbol = null;
   }
 });
 
-app.get("/api/status", (_req, res) => {
-  res.json({
-    ok: true,
-    symbols: SYMBOLS,
-    timeframe: "1min",
-    mode: "signal-only",
-    autoScan: true,
-    scannerRunning,
-    currentScanSymbol,
-    lastScanTime,
-    dataProvider: "Twelve Data"
-  });
-});
-
-app.get("/api/telegram/setup", async (_req, res) => {
+// ตั้งปุ่ม Mini App ใน Telegram
+app.post("/api/telegram/setup", async (_req, res) => {
   if (!BOT_TOKEN || !BOT_USERNAME || !APP_URL) {
     return res.status(400).json({
       ok: false,
@@ -457,15 +613,22 @@ app.get("/api/telegram/setup", async (_req, res) => {
     );
 
     const result = await response.json();
+
     res.status(response.ok && result.ok ? 200 : 502).json(result);
   } catch (error) {
-    res.status(502).json({ ok: false, error: error.message });
+    res.status(502).json({
+      ok: false,
+      error: error.message
+    });
   }
 });
 
 app.get("/api/telegram/link", (_req, res) => {
   if (!BOT_USERNAME) {
-    return res.status(400).json({ ok: false, error: "Bot username missing" });
+    return res.status(400).json({
+      ok: false,
+      error: "Bot username missing"
+    });
   }
 
   res.json({
@@ -478,13 +641,13 @@ app.get("*", (_req, res) => {
   res.sendFile(path.join(root, "public", "index.html"));
 });
 
-// เปิดเซิร์ฟเวอร์จุดเดียวตามที่ลูกพี่เขียนมา พร้อมดักจับ Error
 app.listen(PORT, () => {
   console.log(`Market AI Radar listening on port ${PORT}`);
 
   startAutoScanner().catch((error) => {
     scannerError = error.message;
     scannerRunning = false;
+    scannerBusy = false;
     console.error("Auto scanner stopped:", error);
   });
 });
