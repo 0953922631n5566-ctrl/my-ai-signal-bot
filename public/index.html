@@ -1,0 +1,536 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1,
+    viewport-fit=cover" />
+  <meta name="theme-color" content="#080c14" />
+  <title>AI Signal Radar</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080c14;
+      --panel: #101827;
+      --line: #263449;
+      --muted: #8190a8;
+      --green: #2bf0a2;
+      --red: #ff526d;
+      --blue: #62a9ff;
+      --yellow: #ffce70;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; width: 100%; height: 100%;
+      overflow: hidden; background: var(--bg);
+      color: #f1f5ff;
+      font-family: Inter, system-ui, sans-serif;
+    }
+    body {
+      height: 100dvh;
+      min-height: 0;
+      padding: env(safe-area-inset-top) 12px
+        env(safe-area-inset-bottom);
+    }
+    button, select { font: inherit; }
+    button {
+      cursor: pointer; color: #f1f5ff;
+      border: 1px solid var(--line);
+      border-radius: 10px; background: #172236;
+      min-height: 38px; padding: 8px 12px;
+    }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .app {
+      height: 100%; max-width: 540px; margin: auto;
+      display: flex; flex-direction: column;
+      gap: 8px; padding: 8px 0;
+    }
+    .top, .row {
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 8px;
+    }
+    .brand { font-size: 16px; font-weight: 900; letter-spacing: .8px; }
+    .sub { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; }
+    .status {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; color: var(--muted);
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--yellow);
+    }
+    .dot.on { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .dot.off { background: var(--red); }
+    .banner {
+      display: none; padding: 7px 10px; border-radius: 8px;
+      color: #ffd8de; background: #401a29;
+      border: 1px solid #713044; font-size: 11px;
+    }
+    .banner.show { display: block; }
+    .metrics {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
+    }
+    .metric, .panel {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 12px; padding: 10px;
+      min-width: 0;
+    }
+    .label { font-size: 10px; color: var(--muted); }
+    .value {
+      font-size: 14px; font-weight: 800;
+      margin-top: 5px; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pair-row { display: flex; gap: 8px; }
+    select {
+      width: 100%; min-width: 0; color: #fff;
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 10px; padding: 10px;
+    }
+    .hero {
+      flex: 1; min-height: 155px; display: flex;
+      flex-direction: column; justify-content: center;
+      align-items: center; text-align: center;
+      background:
+        radial-gradient(ellipse at center, #173247 0%, #101827 55%, #0c1220 100%);
+      border: 1px solid #2b4259; border-radius: 16px;
+      padding: 10px;
+    }
+    .radar {
+      width: 75px; height: 75px; position: relative;
+      display: grid; place-items: center; margin-bottom: 6px;
+      border: 1px solid #31546b; border-radius: 50%;
+      background: repeating-radial-gradient(circle,
+        transparent 0 13px, #244156 14px 15px);
+    }
+    .radar:before {
+      content: ""; position: absolute; inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg,
+        transparent 0 75%, #2bf0a222 100%);
+      animation: spin 3s linear infinite;
+    }
+    .radar span { z-index: 1; font-size: 24px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .signal {
+      font-size: clamp(27px, 7vw, 38px); font-weight: 950;
+      letter-spacing: 3px; line-height: 1.1;
+    }
+    .signal.CALL { color: var(--green); text-shadow: 0 0 22px #2bf0a244; }
+    .signal.PUT { color: var(--red); text-shadow: 0 0 22px #ff526d44; }
+    .signal.STANDBY { color: var(--yellow); font-size: 27px; }
+    .hero-sub { color: var(--muted); font-size: 10px; margin-top: 7px; }
+    .scoreline { margin-top: 10px; width: min(240px, 90%); }
+    .track {
+      height: 5px; background: #273246;
+      border-radius: 99px; overflow: hidden; margin-top: 5px;
+    }
+    .fill {
+      height: 100%; width: 0; background: var(--blue);
+      transition: width .25s;
+    }
+    .bottom-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    }
+    .small-value { font-size: 12px; font-weight: 750; margin-top: 4px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .primary { background: #153c39; border-color: #267c68; }
+    .active { color: var(--green); border-color: #287e66; }
+    .note {
+      text-align: center; color: var(--muted);
+      font-size: 9px; line-height: 1.4;
+    }
+    .history {
+      display: flex; justify-content: space-between;
+      gap: 6px; font-size: 10px; color: var(--muted);
+    }
+    @media (max-height: 680px) {
+      .app { gap: 5px; padding: 4px 0; }
+      .metric, .panel { padding: 7px; }
+      .hero { min-height: 120px; }
+      .radar { width: 52px; height: 52px; margin-bottom: 3px; }
+      .radar span { font-size: 19px; }
+      .signal { font-size: 27px; }
+      .signal.STANDBY { font-size: 22px; }
+      .note { font-size: 8px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div>
+      <div class="brand">◈ AI SIGNAL RADAR</div>
+      <div class="sub">REAL MARKET · 1 MINUTE</div>
+    </div>
+    <div class="status">
+      <span id="dot" class="dot"></span>
+      <span id="status">CONNECTING</span>
+    </div>
+  </header>
+
+  <div id="banner" class="banner">
+    ⚠ CONNECTION LOST — สัญญาณหยุดชั่วคราว
+  </div>
+
+  <section class="metrics">
+    <div class="metric">
+      <div class="label">SERVER</div>
+      <div class="value" id="server">OFFLINE</div>
+    </div>
+    <div class="metric">
+      <div class="label">TIMEFRAME</div>
+      <div class="value">1 MIN</div>
+    </div>
+    <div class="metric">
+      <div class="label">QUOTA</div>
+      <div class="value" id="quota">UNLIMITED*</div>
+    </div>
+  </section>
+
+  <section class="pair-row">
+    <select id="pair" aria-label="เลือกคู่เงิน">
+      <option value="frxEURUSD">EUR/USD</option>
+      <option value="frxGBPUSD">GBP/USD</option>
+      <option value="frxUSDJPY">USD/JPY</option>
+      <option value="frxAUDUSD">AUD/USD</option>
+      <option value="frxUSDCAD">USD/CAD</option>
+      <option value="frxNZDUSD">NZD/USD</option>
+      <option value="frxUSDCHF">USD/CHF</option>
+    </select>
+    <button id="sound">🔇 SOUND OFF</button>
+  </section>
+
+  <section class="hero">
+    <div class="radar"><span>◈</span></div>
+    <div id="signal" class="signal STANDBY">STANDBY</div>
+    <div id="pairName" class="hero-sub">EUR/USD · WAITING FOR DATA</div>
+    <div id="price" class="value">—</div>
+    <div class="scoreline">
+      <div class="row">
+        <span class="label">TECHNICAL SCORE</span>
+        <span id="score" class="label">0 / 100</span>
+      </div>
+      <div class="track"><div id="fill" class="fill"></div></div>
+    </div>
+    <div id="reason" class="hero-sub">รอข้อมูลตลาดจริง</div>
+  </section>
+
+  <section class="bottom-grid">
+    <div class="panel">
+      <div class="label">RSI (14)</div>
+      <div id="rsi" class="small-value">—</div>
+    </div>
+    <div class="panel">
+      <div class="label">NEXT CANDLE IN</div>
+      <div id="countdown" class="small-value">-- SEC</div>
+    </div>
+    <div class="panel">
+      <div class="label">LAST UPDATE</div>
+      <div id="updated" class="small-value">Waiting…</div>
+    </div>
+    <div class="panel">
+      <div class="label">LAST SIGNAL</div>
+      <div id="lastSignal" class="small-value">STANDBY</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <div>
+        <div class="label">CONTINUOUS SCAN</div>
+        <div id="scanStatus" class="small-value">AUTO SCAN OFF</div>
+      </div>
+      <button id="auto">▶ AUTO SCAN OFF</button>
+    </div>
+  </section>
+
+  <section class="actions">
+    <button id="scan" class="primary">SCAN NOW</button>
+    <button id="stop">STOP</button>
+    <button id="reset">STANDBY</button>
+  </section>
+
+  <div id="history" class="history">
+    <span>WAITING FOR SIGNAL</span><span>—</span>
+  </div>
+  <footer class="note">
+    *Unlimited เป็นเพียงสถานะแสดงผลตัวอย่าง ไม่ใช่ระบบสิทธิ์สมาชิกจริง<br>
+    ข้อมูลจาก Deriv ไม่ใช่ราคา IQ Option โดยตรง · ใช้เพื่อวิเคราะห์เท่านั้น
+  </footer>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const tg = window.Telegram?.WebApp;
+
+  tg?.ready();
+  tg?.expand();
+
+  let socket;
+  let market = null;
+  let autoScan = false;
+  let stopped = false;
+  let soundOn = false;
+  let audio;
+  let currentSignal = null;
+  let signalUntil = 0;
+  let seenSignalKey = "";
+  let alert10Key = "";
+  let alert2Key = "";
+  let lastConnection = false;
+
+  const pair = $("pair");
+
+  function beep(freq = 800, duration = 100) {
+    if (!soundOn) return;
+    try {
+      audio ||= new (window.AudioContext ||
+        window.webkitAudioContext)();
+      if (audio.state === "suspended") audio.resume();
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.frequency.value = freq;
+      gain.gain.value = 0.07;
+      osc.connect(gain);
+      gain.connect(audio.destination);
+      osc.start();
+      osc.stop(audio.currentTime + duration / 1000);
+    } catch {}
+  }
+
+  function setConnection(connected, fresh = connected) {
+    const good = connected && fresh;
+    $("dot").className = "dot " + (good ? "on" : "off");
+    $("status").textContent = good ? "LIVE" : "DISCONNECTED";
+    $("server").textContent = good ? "ONLINE" : "OFFLINE";
+    $("banner").classList.toggle("show", !good);
+
+    if (lastConnection && !good) beep(250, 350);
+    lastConnection = good;
+  }
+
+  function connect() {
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    socket = new WebSocket(`${protocol}//${location.host}`);
+
+    socket.onopen = () => {
+      $("status").textContent = "CONNECTED";
+    };
+
+    socket.onmessage = event => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+
+      if (msg.type === "connection") {
+        setConnection(msg.data.connected, msg.data.connected);
+      }
+      if (msg.type === "market") {
+        market = msg.data;
+        render();
+      }
+      if (msg.type === "heartbeat") {
+        setConnection(msg.data.connected, msg.data.dataFresh);
+      }
+      if (msg.type === "signal") {
+        const s = msg.data;
+        if (s.symbol === pair.value) acceptSignal(s);
+      }
+      if (msg.type === "feedError") {
+        $("reason").textContent = "FEED ERROR — WAITING";
+      }
+    };
+
+    socket.onclose = () => {
+      setConnection(false, false);
+      setTimeout(connect, 2000);
+    };
+    socket.onerror = () => setConnection(false, false);
+  }
+
+  function render() {
+    if (!market) return;
+
+    setConnection(market.connected, market.dataFresh);
+    const selected = market.pairs.find(p => p.symbol === pair.value);
+
+    if (!selected) return;
+
+    const a = selected.analysis || {};
+    const fresh = selected.receivedAt &&
+      Date.now() - selected.receivedAt < 15000;
+
+    $("pairName").textContent =
+      `${selected.pair} · ${fresh ? "LIVE PRICE" : "STALE / NO DATA"}`;
+    $("price").textContent = selected.price == null
+      ? "—" : Number(selected.price).toFixed(5);
+    $("rsi").textContent = a.rsi == null
+      ? "—" : Number(a.rsi).toFixed(2);
+    $("score").textContent = `${a.score || 0} / 100`;
+    $("fill").style.width =
+      `${Math.max(0, Math.min(100, a.score || 0))}%`;
+    $("reason").textContent = a.reason || "Waiting for setup";
+    $("updated").textContent = fresh
+      ? new Date(selected.receivedAt).toLocaleTimeString()
+      : "NO FRESH DATA";
+
+    if (!fresh || !market.dataFresh) {
+      showSignal("STANDBY");
+      $("reason").textContent = "ข้อมูลไม่สด — งดสัญญาณ";
+      return;
+    }
+
+    // New actionable signals arrive from the server only
+    // when a candle boundary is observed.
+    if (a.signal === "STANDBY") {
+      showSignal("STANDBY");
+    } else if (!currentSignal ||
+      currentSignal.candleEpoch !== a.candleEpoch) {
+      showSignal("STANDBY");
+    }
+
+    if (currentSignal && Date.now() >= signalUntil) {
+      currentSignal = null;
+      showSignal("STANDBY");
+    }
+  }
+
+  function showSignal(value) {
+    $("signal").textContent = value;
+    $("signal").className = "signal " + value;
+  }
+
+  function acceptSignal(s) {
+    if (!autoScan || stopped || !market?.dataFresh) return;
+
+    const key = `${s.symbol}:${s.candleEpoch}:${s.signal}`;
+    if (key === seenSignalKey) return;
+    seenSignalKey = key;
+
+    currentSignal = s;
+    signalUntil = Date.now() + 40000;
+    $("lastSignal").textContent = s.signal;
+    $("history").innerHTML =
+      `<span>${s.pair} · ${s.signal}</span>` +
+      `<span>SCORE ${s.score}</span>`;
+
+    if (s.symbol === pair.value) {
+      showSignal(s.signal);
+      beep(s.signal === "CALL" ? 1000 : 450, 250);
+    }
+  }
+
+  function scanSelected() {
+    if (!market?.dataFresh) {
+      $("reason").textContent = "NO LIVE DATA — SCAN BLOCKED";
+      showSignal("STANDBY");
+      return;
+    }
+
+    const selected = market.pairs.find(p => p.symbol === pair.value);
+    if (!selected) return;
+
+    const a = selected.analysis || {};
+    if (a.signal === "STANDBY") {
+      showSignal("STANDBY");
+      $("reason").textContent = a.reason || "No setup";
+      return;
+    }
+
+    // Manual scan displays analysis; it does not place orders.
+    currentSignal = {
+      ...a,
+      symbol: pair.value,
+      candleEpoch: a.candleEpoch
+    };
+    signalUntil = Date.now() + 40000;
+    showSignal(a.signal);
+    $("lastSignal").textContent = a.signal;
+    beep(a.signal === "CALL" ? 1000 : 450, 250);
+  }
+
+  $("sound").onclick = async () => {
+    soundOn = !soundOn;
+    $("sound").textContent = soundOn
+      ? "🔊 SOUND ON" : "🔇 SOUND OFF";
+    if (soundOn) {
+      beep(800, 80);
+      try { await audio?.resume(); } catch {}
+    }
+  };
+
+  $("auto").onclick = () => {
+    autoScan = !autoScan;
+    stopped = false;
+    $("auto").textContent = autoScan
+      ? "■ AUTO SCAN ON" : "▶ AUTO SCAN OFF";
+    $("auto").classList.toggle("active", autoScan);
+    $("scanStatus").textContent = autoScan
+      ? "AUTO SCAN ACTIVE" : "AUTO SCAN OFF";
+  };
+
+  $("scan").onclick = scanSelected;
+
+  $("stop").onclick = () => {
+    autoScan = false;
+    stopped = true;
+    currentSignal = null;
+    $("auto").textContent = "▶ AUTO SCAN OFF";
+    $("scanStatus").textContent = "SCAN STOPPED";
+    showSignal("STANDBY");
+  };
+
+  $("reset").onclick = () => {
+    currentSignal = null;
+    signalUntil = 0;
+    showSignal("STANDBY");
+    $("reason").textContent = "Waiting for next setup";
+  };
+
+  pair.onchange = () => {
+    currentSignal = null;
+    signalUntil = 0;
+    showSignal("STANDBY");
+    render();
+  };
+
+  function tick() {
+    const now = Date.now();
+    const remaining = 60 - Math.floor((now / 1000) % 60);
+    $("countdown").textContent = `${remaining} SEC`;
+
+    const candleKey = Math.floor(now / 60000);
+
+    if (remaining === 10 && alert10Key !== candleKey) {
+      alert10Key = candleKey;
+      beep(650, 100);
+    }
+
+    if (remaining === 2 && alert2Key !== candleKey) {
+      alert2Key = candleKey;
+      beep(950, 120);
+    }
+
+    if (currentSignal && now >= signalUntil) {
+      currentSignal = null;
+      showSignal("STANDBY");
+    }
+
+    // Refresh status even when no price message arrives.
+    if (market) {
+      const p = market.pairs.find(x => x.symbol === pair.value);
+      if (!p?.receivedAt || now - p.receivedAt > 15000) {
+        setConnection(market.connected, false);
+      }
+    }
+  }
+
+  connect();
+  setInterval(tick, 200);
+})();
+</script>
+</body>
+</html>
