@@ -1,42 +1,486 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#080c16" />
+  <title>NEURAL RADAR AI</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg:#080c16;
+      --panel:#101827;
+      --panel2:#0c1320;
+      --line:#202d40;
+      --text:#f2f6ff;
+      --muted:#8190a8;
+      --green:#31f5a1;
+      --red:#ff5578;
+      --yellow:#ffcf65;
+      --blue:#63a8ff;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh;
+      color:var(--text);
+      background:
+        radial-gradient(ellipse at 50% -10%, #172c50 0%, transparent 48%),
+        var(--bg);
+      font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+    }
+    button,select { font:inherit; }
+    .app { max-width:560px; margin:auto; padding:18px 15px 35px; }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:22px; }
+    .brand { display:flex; align-items:center; gap:11px; }
+    .logo {
+      width:44px;height:44px;border-radius:14px;display:grid;place-items:center;
+      background:linear-gradient(145deg,#214d7e,#12233d);
+      border:1px solid #3971a8;color:#9de1ff;font-size:23px;
+      box-shadow:0 0 24px #2366a82c;
+    }
+    .brand h1 { margin:0;font-size:16px;letter-spacing:1.5px;font-weight:900; }
+    .brand p { margin:4px 0 0;font-size:10px;color:var(--muted);letter-spacing:1.8px; }
+    .live { display:flex;align-items:center;gap:7px;font-size:10px;color:var(--green);letter-spacing:1px; }
+    .dot { width:7px;height:7px;background:var(--green);border-radius:50%;box-shadow:0 0 10px var(--green); }
+    .section-label { color:var(--muted);font-size:11px;letter-spacing:1.6px;font-weight:800;margin:0 0 12px; }
+    .hero {
+      position:relative;overflow:hidden;padding:20px;border-radius:24px;
+      background:linear-gradient(145deg,#14243a,#0d1523 68%);
+      border:1px solid #2a3c54;
+      box-shadow:0 18px 45px #0003;
+    }
+    .hero:after {
+      content:"";position:absolute;width:190px;height:190px;border-radius:50%;
+      right:-90px;top:-95px;border:1px solid #63a8ff22;
+      box-shadow:0 0 0 25px #63a8ff08,0 0 0 50px #63a8ff05;
+      pointer-events:none;
+    }
+    .hero-head { display:flex;justify-content:space-between;align-items:center;gap:8px;position:relative;z-index:1; }
+    .tag { font-size:10px;padding:7px 10px;border-radius:8px;background:#1c3048;color:#9fc9ff;border:1px solid #2a4767; }
+    .market { font-size:10px;color:var(--muted); }
+    .pair { margin:22px 0 4px;font-size:29px;font-weight:900;letter-spacing:-1px; }
+    .pair-sub { font-size:12px;color:var(--muted); }
+    .signal {
+      display:flex;align-items:center;justify-content:center;gap:12px;
+      margin:22px 0 15px;padding:19px 12px;border-radius:17px;
+      background:#121e2c;border:1px solid #2a3b50;
+      transition:all .2s;
+    }
+    .signal-icon { font-size:31px;line-height:1; }
+    .signal-word { font-size:31px;font-weight:1000;letter-spacing:2px;line-height:1.1; }
+    .signal-detail { font-size:10px;color:var(--muted);margin-top:6px;letter-spacing:1px; }
+    .signal.call { color:var(--green);background:#0d2a25;border-color:#1c6a51; }
+    .signal.put { color:var(--red);background:#2b1723;border-color:#773248; }
+    .signal.wait { color:var(--yellow);background:#2a2519;border-color:#65512a; }
+    .metrics { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+    .metric { padding:13px;border-radius:14px;background:#0b1421;border:1px solid #243349; }
+    .metric-label { font-size:10px;color:var(--muted); }
+    .metric-value { font-size:20px;font-weight:850;margin-top:7px; }
+    .meter { margin-top:10px;height:5px;border-radius:20px;background:#253347;overflow:hidden; }
+    .meter-fill { width:0;height:100%;background:var(--blue);border-radius:20px;transition:width .3s; }
+    .disclaimer { font-size:10px;color:#77869b;line-height:1.6;margin:13px 2px 0; }
+    .section { margin-top:24px; }
+    .section-head { display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px; }
+    .section-head .section-label { margin:0; }
+    .small-btn {
+      border:1px solid #2b3c53;background:#111c2b;color:#b9d8ff;
+      border-radius:10px;padding:8px 11px;font-size:11px;cursor:pointer;
+    }
+    .small-btn:disabled { opacity:.5; }
+    .controls { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px; }
+    .control { background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px; }
+    .control label { display:block;font-size:10px;color:var(--muted);margin-bottom:8px; }
+    select {
+      width:100%;color:var(--text);background:#0c1421;border:1px solid #26364b;
+      border-radius:9px;padding:10px 8px;outline:none;font-size:12px;
+    }
+    .pair-list { display:flex;flex-direction:column;gap:8px; }
+    .pair-row {
+      display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;
+      background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px;
+    }
+    .pair-name { font-size:13px;font-weight:800; }
+    .pair-status { margin-top:5px;font-size:10px;color:var(--muted); }
+    .pill { min-width:62px;text-align:center;font-size:10px;font-weight:900;padding:8px 9px;border-radius:9px;background:#202b3b;color:var(--yellow); }
+    .pill.call { color:var(--green);background:#103329; }
+    .pill.put { color:var(--red);background:#391d2a; }
+    .score { text-align:right;font-size:12px;font-weight:800; }
+    .score small { display:block;color:var(--muted);font-size:9px;font-weight:500;margin-top:4px; }
+    .status-card { padding:14px;border-radius:14px;background:#0d1522;border:1px solid var(--line); }
+    .status-line { display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;padding:7px 0; }
+    .status-line span:first-child { color:var(--muted); }
+    .status-line span:last-child { text-align:right;overflow-wrap:anywhere; }
+    .status-good { color:var(--green); }
+    .status-bad { color:var(--red); }
+    .footer { text-align:center;font-size:10px;color:#66758b;margin-top:24px;line-height:1.8; }
+    .empty { text-align:center;color:var(--muted);padding:25px 10px;font-size:12px; }
+    .toast { font-size:11px;color:var(--yellow);margin-top:10px;line-height:1.6; }
+    @media(max-width:360px) {
+      .app { padding:14px 10px 25px; }
+      .pair { font-size:25px; }
+      .signal-word { font-size:26px; }
+      .pair-row { gap:7px;padding:11px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">✦</div>
+      <div>
+        <h1>NEURAL RADAR</h1>
+        <p>AI MARKET SCANNER</p>
+      </div>
+    </div>
+    <div class="live"><span class="dot" id="liveDot"></span><span id="liveText">CONNECTING</span></div>
+  </header>
+
+  <section>
+    <p class="section-label">BEST AI SIGNAL</p>
+    <div class="hero">
+      <div class="hero-head">
+        <span class="tag">✦ AUTO SELECT</span>
+        <span class="market">ตลาดหลัก · REAL MARKET</span>
+      </div>
+      <div class="pair" id="bestPair">กำลังสแกน...</div>
+      <div class="pair-sub" id="bestSub">รอข้อมูลราคาจากเซิร์ฟเวอร์</div>
+
+      <div class="signal wait" id="signalBox">
+        <div class="signal-icon" id="signalIcon">◉</div>
+        <div>
+          <div class="signal-word" id="signalWord">WAIT</div>
+          <div class="signal-detail" id="signalDetail">WAITING FOR DATA</div>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-label">SIGNAL SCORE</div>
+          <div class="metric-value" id="scoreValue">--%</div>
+          <div class="meter"><div class="meter-fill" id="scoreMeter"></div></div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">TIMEFRAME</div>
+          <div class="metric-value">1 MIN</div>
+          <div class="metric-label" style="margin-top:5px">ข้อมูลแท่งเทียน 1 นาที</div>
+        </div>
+      </div>
+      <p class="disclaimer">คะแนนเป็นคะแนนจากเงื่อนไขวิเคราะห์ของระบบ ไม่ใช่โอกาสชนะที่รับประกัน โปรดตรวจสอบสัญญาณก่อนตัดสินใจ</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <p class="section-label">MARKET SCANNER</p>
+      <button class="small-btn" id="refreshBtn">↻ รีเฟรช</button>
+    </div>
+    <div class="controls">
+      <div class="control">
+        <label for="pairFilter">เลือกคู่เงิน</label>
+        <select id="pairFilter">
+          <option value="ALL">ทุกคู่เงิน</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="signalFilter">กรองสัญญาณ</label>
+        <select id="signalFilter">
+          <option value="ALL">ทั้งหมด</option>
+          <option value="CALL">CALL เท่านั้น</option>
+          <option value="PUT">PUT เท่านั้น</option>
+          <option value="WAIT">WAIT เท่านั้น</option>
+        </select>
+      </div>
+    </div>
+    <div class="pair-list" id="pairList">
+      <div class="empty">กำลังเชื่อมต่อระบบวิเคราะห์...</div>
+    </div>
+    <div class="toast" id="message" role="status"></div>
+  </section>
+
+  <section class="section">
+    <p class="section-label">SYSTEM STATUS</p>
+    <div class="status-card">
+      <div class="status-line"><span>เซิร์ฟเวอร์</span><span id="serverStatus">กำลังตรวจสอบ</span></div>
+      <div class="status-line"><span>ระบบสแกน</span><span id="scannerStatus">กำลังตรวจสอบ</span></div>
+      <div class="status-line"><span>ข้อมูลล่าสุด</span><span id="updatedAt">--</span></div>
+      <div class="status-line"><span>คู่เงินที่ได้รับข้อมูล</span><span id="pairCount">0</span></div>
+    </div>
+  </section>
+
+  <div class="footer">
+    NEURAL RADAR AI · MAIN MARKET<br />
+    ระบบช่วยวิเคราะห์เท่านั้น ไม่รับประกันผลกำไร
+  </div>
+</div>
+
 <script>
-  async function updateAutoScan() {
-    try {
-      const response = await fetch("/api/scan", {
-        cache: "no-store"
-      });
+(() => {
+  const tg = window.Telegram?.WebApp;
+  try {
+    tg?.ready();
+    tg?.expand();
+    if (tg?.setHeaderColor) tg.setHeaderColor("#080c16");
+    if (tg?.setBackgroundColor) tg.setBackgroundColor("#080c16");
+  } catch (_) {}
 
-      if (!response.ok) {
-        throw new Error("Auto scan API unavailable");
+  const $ = id => document.getElementById(id);
+  const state = { rows: [], busy: false, lastUpdate: null, failures: 0 };
+
+  function authHeaders() {
+    const headers = { "Accept": "application/json" };
+    const initData = tg?.initData;
+    if (initData) headers["x-telegram-init-data"] = initData;
+    return headers;
+  }
+
+  async function api(path) {
+    const response = await fetch(path, {
+      method: "GET",
+      headers: authHeaders(),
+      cache: "no-store"
+    });
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch { throw new Error("เซิร์ฟเวอร์ตอบกลับไม่ใช่ JSON"); }
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error("ยังไม่ได้รับอนุญาต กรุณาเปิด Mini App ผ่าน Telegram");
       }
+      throw new Error(data.error || data.message || `HTTP ${response.status}`);
+    }
+    return data;
+  }
 
-      const data = await response.json();
+  function first(obj, keys) {
+    for (const key of keys) {
+      if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
+    }
+    return undefined;
+  }
 
-      if (!data.ok) return;
+  function normalizeSignal(value) {
+    const s = String(value ?? "").trim().toUpperCase();
+    if (["CALL","BUY","UP","BULLISH","GREEN","ขึ้น"].includes(s)) return "CALL";
+    if (["PUT","SELL","DOWN","BEARISH","RED","ลง"].includes(s)) return "PUT";
+    return "WAIT";
+  }
 
-      const symbolEl = document.getElementById("selected-symbol");
-      const signalEl = document.getElementById("selected-signal");
-      const scoreEl = document.getElementById("selected-score");
+  function normalizeRow(item) {
+    if (!item || typeof item !== "object") return null;
+    const rawSignal = first(item, ["signal","direction","action","recommendation","prediction","trend"]);
+    const rawPair = first(item, ["symbol","pair","currencyPair","name","asset"]);
+    if (!rawPair) return null;
 
-      if (symbolEl) {
-        symbolEl.textContent = data.selected.symbol || "กำลังสแกน";
+    let score = Number(first(item, ["score","confidence","strength","signalScore","confidenceScore"]));
+    if (!Number.isFinite(score)) score = 0;
+    if (score > 0 && score <= 1) score *= 100;
+    score = Math.max(0, Math.min(100, Math.round(score)));
+
+    const price = first(item, ["price","close","currentPrice","lastPrice"]);
+    const updated = first(item, ["updatedAt","timestamp","time","lastUpdate"]);
+    return {
+      pair: String(rawPair).replaceAll("_", "/").replaceAll("-", "/"),
+      signal: normalizeSignal(rawSignal),
+      score,
+      price: price == null ? null : price,
+      updated,
+      raw: item
+    };
+  }
+
+  function getRows(data) {
+    const candidates = [
+      data?.results, data?.scans, data?.symbols, data?.data,
+      data?.items, data?.signals, data?.market?.results
+    ];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        const rows = candidate.map(normalizeRow).filter(Boolean);
+        if (rows.length) return rows;
       }
-
-      if (signalEl) {
-        signalEl.textContent = data.selected.signal;
-        signalEl.dataset.signal = data.selected.signal;
+    }
+    if (data && typeof data === "object") {
+      for (const [key, value] of Object.entries(data)) {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const row = normalizeRow({ symbol: key, ...value });
+          if (row) return [row];
+        }
       }
+    }
+    return [];
+  }
 
-      if (scoreEl) {
-        scoreEl.textContent = `${data.selected.score}%`;
-      }
+  function getBest(data, rows) {
+    const best = first(data, ["bestSignal","best","selectedSignal","best_signal","topSignal"]);
+    if (best && typeof best === "object") {
+      const row = normalizeRow(best);
+      if (row) return row;
+    }
+    if (typeof best === "string") {
+      const match = rows.find(r => r.pair === best || r.signal === normalizeSignal(best));
+      if (match) return match;
+    }
+    const nested = data?.data?.bestSignal;
+    if (nested && typeof nested === "object") {
+      const row = normalizeRow(nested);
+      if (row) return row;
+    }
+    return rows
+      .filter(r => r.signal !== "WAIT")
+      .sort((a,b) => b.score - a.score)[0] || null;
+  }
 
-      window.latestAutoScan = data;
+  function setConnection(connected, label) {
+    $("liveText").textContent = label;
+    $("liveDot").style.background = connected ? "var(--green)" : "var(--red)";
+    $("liveDot").style.boxShadow = connected ? "0 0 10px var(--green)" : "0 0 10px var(--red)";
+    $("serverStatus").textContent = connected ? "เชื่อมต่อแล้ว" : "เชื่อมต่อไม่ได้";
+    $("serverStatus").className = connected ? "status-good" : "status-bad";
+  }
 
-    } catch (error) {
-      console.error("Auto scan error:", error);
+  function renderBest(best) {
+    const box = $("signalBox");
+    box.className = "signal " + (best?.signal === "CALL" ? "call" : best?.signal === "PUT" ? "put" : "wait");
+
+    $("bestPair").textContent = best?.pair || "รอสัญญาณ";
+    $("bestSub").textContent = best
+      ? (best.price != null ? "ราคาล่าสุด: " + best.price : "คู่เงินที่ระบบเลือกจากข้อมูลที่ได้รับ")
+      : "ยังไม่มีสัญญาณที่ผ่านเงื่อนไข";
+
+    $("signalWord").textContent = best?.signal || "WAIT";
+    $("signalIcon").textContent = best?.signal === "CALL" ? "↗" : best?.signal === "PUT" ? "↘" : "◉";
+    $("signalDetail").textContent = best?.signal === "CALL"
+      ? "สัญญาณขาขึ้น · ตรวจสอบก่อนเข้า"
+      : best?.signal === "PUT"
+      ? "สัญญาณขาลง · ตรวจสอบก่อนเข้า"
+      : "ยังไม่พบสัญญาณชัดเจน";
+
+    $("scoreValue").textContent = best ? `${best.score}%` : "--%";
+    $("scoreMeter").style.width = `${best?.score || 0}%`;
+    $("scoreMeter").style.background = best?.signal === "CALL"
+      ? "var(--green)" : best?.signal === "PUT" ? "var(--red)" : "var(--yellow)";
+  }
+
+  function renderRows() {
+    const pairFilter = $("pairFilter").value;
+    const signalFilter = $("signalFilter").value;
+    let rows = [...state.rows];
+
+    if (pairFilter !== "ALL") rows = rows.filter(r => r.pair === pairFilter);
+    if (signalFilter !== "ALL") rows = rows.filter(r => r.signal === signalFilter);
+    rows.sort((a,b) => b.score - a.score);
+
+    const container = $("pairList");
+    if (!rows.length) {
+      container.innerHTML = '<div class="empty">ยังไม่มีข้อมูลคู่เงินที่ตรงกับตัวกรอง</div>';
+      return;
+    }
+
+    container.replaceChildren();
+    for (const row of rows) {
+      const item = document.createElement("div");
+      item.className = "pair-row";
+
+      const info = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "pair-name";
+      name.textContent = row.pair;
+      const detail = document.createElement("div");
+      detail.className = "pair-status";
+      detail.textContent = row.price != null ? `ราคา ${row.price}` : "ตลาดหลัก · 1 นาที";
+      info.append(name, detail);
+
+      const pill = document.createElement("div");
+      pill.className = "pill " + row.signal.toLowerCase();
+      pill.textContent = row.signal;
+
+      const score = document.createElement("div");
+      score.className = "score";
+      score.textContent = `${row.score}%`;
+      const small = document.createElement("small");
+      small.textContent = "SCORE";
+      score.appendChild(small);
+
+      item.append(info, pill, score);
+      container.appendChild(item);
     }
   }
 
-  updateAutoScan();
-  setInterval(updateAutoScan, 5000);
+  function updatePairFilter() {
+    const select = $("pairFilter");
+    const current = select.value;
+    const pairs = [...new Set(state.rows.map(r => r.pair))].sort();
+    select.replaceChildren(new Option("ทุกคู่เงิน", "ALL"));
+    for (const pair of pairs) select.add(new Option(pair, pair));
+    select.value = pairs.includes(current) ? current : "ALL";
+  }
+
+  async function refresh() {
+    if (state.busy) return;
+    state.busy = true;
+    $("refreshBtn").disabled = true;
+    $("message").textContent = "";
+
+    try {
+      const [scanResult, statusResult] = await Promise.allSettled([
+        api("/api/scan"),
+        api("/api/status")
+      ]);
+
+      if (scanResult.status === "rejected") throw scanResult.reason;
+
+      const data = scanResult.value;
+      const rows = getRows(data);
+      state.rows = rows;
+      state.lastUpdate = new Date();
+      state.failures = 0;
+
+      updatePairFilter();
+      renderRows();
+      renderBest(getBest(data, rows));
+
+      setConnection(true, "SYSTEM ONLINE");
+      $("updatedAt").textContent = state.lastUpdate.toLocaleTimeString("th-TH");
+      $("pairCount").textContent = `${rows.length} คู่`;
+      $("scannerStatus").textContent =
+        statusResult.status === "fulfilled"
+          ? (statusResult.value.scannerRunning === true ||
+             statusResult.value.scanner?.running === true
+             ? "กำลังสแกน" : "รับสถานะแล้ว")
+          : "รับข้อมูลสแกนแล้ว";
+
+      $("scannerStatus").className = "status-good";
+
+      if (!rows.length) {
+        $("message").textContent = "เชื่อมต่อได้ แต่ยังไม่พบรายการคู่เงินในรูปแบบข้อมูลที่หน้าจอรองรับ โปรดตรวจสอบโครงสร้างผลลัพธ์ /api/scan";
+      } else {
+        $("message").textContent = `ได้รับข้อมูล ${rows.length} คู่เงิน · อัปเดตอัตโนมัติทุก 5 วินาที`;
+      }
+    } catch (error) {
+      state.failures++;
+      setConnection(false, "CONNECTION ERROR");
+      $("scannerStatus").textContent = "ตรวจสอบการเชื่อมต่อ";
+      $("scannerStatus").className = "status-bad";
+      $("message").textContent = error?.message || "เชื่อมต่อไม่สำเร็จ";
+      if (!state.rows.length) {
+        $("pairList").innerHTML = '<div class="empty">รอการเชื่อมต่อเซิร์ฟเวอร์ กรุณาเปิดผ่าน Telegram Mini App</div>';
+      }
+    } finally {
+      state.busy = false;
+      $("refreshBtn").disabled = false;
+    }
+  }
+
+  $("refreshBtn").addEventListener("click", refresh);
+  $("pairFilter").addEventListener("change", renderRows);
+  $("signalFilter").addEventListener("change", renderRows);
+
+  refresh();
+  setInterval(refresh, 5000);
+})();
 </script>
+</body>
+</html>
