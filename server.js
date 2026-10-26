@@ -32,22 +32,25 @@ const SYMBOLS = [
   "GBP/JPY"
 ];
 
+// --- ตั้งค่า Cache และ Auto Scanner ---
 const cache = new Map();
-const CACHE_MS = 12000;
-
-// --- ตัวแปรและระบบ Auto Scanner ---
+const CACHE_MS = 60000;          // แคช 60 วินาที ลดภาระ API
+const SCAN_INTERVAL_MS = 8000;   // รอบสแกนอัตโนมัติทุก 8 วินาทีต่อคู่
 const scanResults = new Map();
-let scannerRunning = false;
-let currentScanSymbol = "";
-let lastScanTime = 0;
-const SCAN_INTERVAL_MS = 6000; // หน่วงเวลา 6 วินาทีต่อคู่ เพื่อป้องกันชน Rate Limit ของ Twelve Data
 
+let scannerRunning = false;
+let lastScanTime = null;
+let scannerError = null;
+let currentScanSymbol = null;
+
+// --- API Endpoints ---
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     dataKeyConfigured: Boolean(API_KEY && API_KEY !== "demo"),
     telegramConfigured: Boolean(BOT_TOKEN && APP_URL),
     scannerRunning,
+    scannerError,
     time: new Date().toISOString()
   });
 });
@@ -57,31 +60,77 @@ app.get("/api/status", (_req, res) => {
     ok: true,
     symbols: SYMBOLS,
     timeframe: "1min",
-    mode: "auto-scanner",
+    mode: "auto-scan",
+    autoScan: true,
+    scannerRunning,
+    currentScanSymbol,
+    lastScanTime,
     dataProvider: "Twelve Data"
   });
 });
 
-// Endpoint ดึงผลสแกนทั้งหมดสำหรับหน้าเว็บ Mini App
-app.get("/api/scanner/results", (_req, res) => {
-  const results = [...scanResults.entries()].map(([symbol, data]) => ({
-    symbol,
-    analysis: data.analysis,
-    scannedAt: data.scannedAt,
-    error: data.error || null,
-    stale: data.stale || false
-  }));
+// Endpoint สำหรับดึงผลสแกนทั้งหมด
+app.get("/api/scan", auth, (_req, res) => {
+  const results = SYMBOLS.map((symbol) => {
+    const item = scanResults.get(symbol);
+
+    return item || {
+      symbol,
+      analysis: {
+        signal: "WAIT",
+        score: 0,
+        reasons: ["กำลังรอสแกน"]
+      },
+      scannedAt: null,
+      error: null
+    };
+  });
 
   res.json({
     ok: true,
-    running: scannerRunning,
-    currentSymbol: currentScanSymbol,
+    mode: "auto-scan",
+    timeframe: "1min",
+    provider: "Twelve Data",
+    scannerRunning,
+    currentScanSymbol,
     lastScanTime,
-    results,
-    bestSignal: getBestSignal()
+    scannerError,
+    selected: getBestSignal(),
+    totalSymbols: SYMBOLS.length,
+    scannedSymbols: results.filter(
+      (item) => item.scannedAt !== null && !item.stale
+    ).length,
+    results
   });
 });
 
+// Endpoint สำหรับกดรีเฟรชผลสแกนด้วยตัวเอง
+app.post("/api/scan/refresh", auth, async (_req, res) => {
+  try {
+    const symbol = [...SYMBOLS].sort((a, b) => {
+      const ta = scanResults.get(a)?.scannedAt || 0;
+      const tb = scanResults.get(b)?.scannedAt || 0;
+      return ta - tb;
+    })[0];
+
+    const result = await scanOneSymbol(symbol);
+    lastScanTime = Date.now();
+
+    res.json({
+      ok: true,
+      refreshed: symbol,
+      result,
+      selected: getBestSignal()
+    });
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error.message || "Scan failed"
+    });
+  }
+});
+
+// --- Telegram Auth ---
 function verifyTelegram(initData) {
   if (!BOT_TOKEN) return { ok: true, user: { name: "Guest" } };
   if (!initData) return { ok: true, user: { name: "WebUser" } };
@@ -140,6 +189,7 @@ function auth(req, res, next) {
   next();
 }
 
+// --- Market Data & Analysis ---
 async function getCandles(symbol) {
   const cached = cache.get(symbol);
   if (cached && Date.now() - cached.at < CACHE_MS) {
@@ -381,6 +431,7 @@ async function scanOneSymbol(symbol) {
 async function startAutoScanner() {
   if (scannerRunning) return;
   scannerRunning = true;
+  scannerError = null;
 
   while (scannerRunning) {
     for (const symbol of SYMBOLS) {
@@ -393,6 +444,7 @@ async function startAutoScanner() {
   }
 }
 
+// --- Market Endpoint ---
 app.get("/api/market", auth, async (req, res) => {
   const symbol = String(req.query.symbol || "EUR/USD").toUpperCase();
 
@@ -400,7 +452,6 @@ app.get("/api/market", auth, async (req, res) => {
     return res.status(400).json({ ok: false, error: "Unsupported symbol" });
   }
 
-  // ดึงข้อมูลจากผลสแกนอัตโนมัติที่มีอยู่แล้วได้ทันที (เร็วขึ้นมาก)
   const cachedResult = scanResults.get(symbol);
   if (cachedResult && !cachedResult.stale) {
     return res.json({
@@ -479,8 +530,13 @@ app.get("*", (_req, res) => {
   res.sendFile(path.join(root, "public", "index.html"));
 });
 
+// เปิดเซิร์ฟเวอร์เพียงจุดเดียว พร้อมระบบดักจับ Error
 app.listen(PORT, () => {
   console.log(`Market AI Radar listening on port ${PORT}`);
-  // เริ่มต้นระบบสแกนอัตโนมัติทันทีที่เซิร์ฟเวอร์เปิด
-  startAutoScanner();
+
+  startAutoScanner().catch((error) => {
+    scannerError = error.message;
+    scannerRunning = false;
+    console.error("Auto scanner stopped:", error);
+  });
 });
