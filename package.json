@@ -1,15 +1,15 @@
 
 {
-  "name": "neural-radar-ai",
+  "name": "otc-ai-signal-radar",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
+  "description": "OTC AI Signal Radar - Simulation Demo",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "dependencies": {
     "express": "^4.21.2"
