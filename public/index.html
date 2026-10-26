@@ -1,73 +1,42 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Market AI Radar</title>
-    <!-- โหลด Telegram Web App Script และ Tailwind CSS -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            background-color: #0b0f19;
-            color: #ffffff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
-    </style>
-</head>
-<body class="p-4">
-    <div class="max-w-md mx-auto space-y-4">
-        <!-- Header -->
-        <header class="flex justify-between items-center border-b border-gray-800 pb-3">
-            <h1 class="text-lg font-bold tracking-wider text-cyan-400">◈ MARKET AI RADAR</h1>
-        </header>
+<script>
+  async function updateAutoScan() {
+    try {
+      const response = await fetch("/api/scan", {
+        cache: "no-store"
+      });
 
-        <!-- Main Display Card -->
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg text-center space-y-3">
-            <div class="text-sm text-gray-400 font-medium" id="selected-symbol">กำลังเชื่อมต่อระบบสแกน...</div>
-            <div id="selected-signal" class="text-5xl font-extrabold tracking-widest text-yellow-400" data-signal="WAIT">WAIT</div>
-            <div class="text-sm text-gray-400">
-                ความมั่นใจ: <span id="selected-score" class="font-bold text-white">0%</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Script สำหรับดึงข้อมูลจาก Auto Scanner มาแสดงผลแบบเรียลไทม์ -->
-    <script>
-      async function updateAutoScan() {
-        try {
-          const response = await fetch("/api/scan", { cache: "no-store" });
-          if (!response.ok) {
-            throw new Error("Auto scan API unavailable");
-          }
-          const data = await response.json();
-          if (!data.ok) return;
-
-          const symbolEl = document.getElementById("selected-symbol");
-          const signalEl = document.getElementById("selected-signal");
-          const scoreEl = document.getElementById("selected-score");
-
-          if (symbolEl) {
-            symbolEl.textContent = data.selected.symbol || "กำลังสแกนหาคู่เงิน...";
-          }
-          if (signalEl) {
-            signalEl.textContent = data.selected.signal;
-            signalEl.dataset.signal = data.selected.signal;
-          }
-          if (scoreEl) {
-            scoreEl.textContent = `${data.selected.score}%`;
-          }
-
-          // เก็บข้อมูลไว้ใช้งานเพิ่มเติมบนหน้าเว็บ
-          window.latestAutoScan = data;
-        } catch (error) {
-          console.error("Auto scan error:", error);
-        }
+      if (!response.ok) {
+        throw new Error("Auto scan API unavailable");
       }
 
-      // เรียกใช้งานทันทีและวนลูปอัปเดตทุกๆ 5 วินาที
-      updateAutoScan();
-      setInterval(updateAutoScan, 5000);
-    </script>
-</body>
-</html>
+      const data = await response.json();
+
+      if (!data.ok) return;
+
+      const symbolEl = document.getElementById("selected-symbol");
+      const signalEl = document.getElementById("selected-signal");
+      const scoreEl = document.getElementById("selected-score");
+
+      if (symbolEl) {
+        symbolEl.textContent = data.selected.symbol || "กำลังสแกน";
+      }
+
+      if (signalEl) {
+        signalEl.textContent = data.selected.signal;
+        signalEl.dataset.signal = data.selected.signal;
+      }
+
+      if (scoreEl) {
+        scoreEl.textContent = `${data.selected.score}%`;
+      }
+
+      window.latestAutoScan = data;
+
+    } catch (error) {
+      console.error("Auto scan error:", error);
+    }
+  }
+
+  updateAutoScan();
+  setInterval(updateAutoScan, 5000);
+</script>
