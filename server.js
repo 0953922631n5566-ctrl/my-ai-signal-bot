@@ -271,7 +271,7 @@ function analyze(allCandles) {
     ema9: e9[last],
     ema21: e21[last],
     ema50: e50[last],
-    reasons: reasons.join(" · ") || "ตลาดยังไม่เข้าเกณฑ์ชัดเจน",
+    reasons: reasons.length ? reasons : ["ตลาดยังไม่เข้าเกณฑ์ชัดเจน"],
     sampleSize: candles.length
   };
 }
