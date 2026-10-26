@@ -5,94 +5,46 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const app = express();
-const root = path.dirname(fileURLToPath(import.meta.url));
-
-app.use(express.json({ limit: "32kb" }));
-app.use(express.static(path.join(root, "public")));
-
-const PORT = process.env.PORT || 10000;
-const API_KEY = process.env.TWELVEDATA_API_KEY || "demo";
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.PORT || 10000);
+const API_KEY = process.env.TWELVEDATA_API_KEY || "";
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || "").replace(/^@/, "");
-const APP_URL = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
-const ALLOWLIST = (process.env.ALLOWED_TELEGRAM_USER_IDS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+const DEFAULT_SYMBOL = process.env.DEFAULT_SYMBOL || "EUR/USD";
+const CACHE_MS = Number(process.env.CACHE_MS || 110000);
+const MAX_AGE_MS = Number(process.env.MAX_DATA_AGE_MS || 180000);
 
-// คู่เงิน Forex ตลาดหลัก ไม่รวม OTC
 const SYMBOLS = [
-  "EUR/USD",
-  "GBP/USD",
-  "USD/JPY",
-  "AUD/USD",
-  "USD/CAD",
-  "USD/CHF",
-  "NZD/USD",
-  "EUR/GBP",
-  "EUR/JPY",
-  "GBP/JPY"
+  "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD",
+  "USD/CHF", "NZD/USD", "EUR/GBP", "EUR/JPY", "GBP/JPY"
 ];
 
-// ตั้งค่าการสแกน
-const CACHE_MS = 12000;
-const SCAN_INTERVAL_MS = 8000;
-const MAX_SIGNAL_AGE_MS = 180000;
-const MIN_SIGNAL_SCORE = 60;
-
+const allowedIds = new Set(
+  (process.env.ALLOWED_TELEGRAM_USER_IDS || "")
+    .split(",").map(v => v.trim()).filter(Boolean)
+);
 const cache = new Map();
-const scanResults = new Map();
 
-let scannerRunning = false;
-let scannerBusy = false;
-let currentScanSymbol = null;
-let lastScanTime = null;
-let scannerError = null;
-let lastFullScanTime = null;
+app.use(express.json());
+app.use(express.static(path.join(ROOT, "public")));
 
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
-    dataKeyConfigured: Boolean(API_KEY && API_KEY !== "demo"),
-    telegramConfigured: Boolean(BOT_TOKEN && APP_URL),
-    scannerRunning,
-    time: new Date().toISOString()
-  });
-});
-
-app.get("/api/status", (_req, res) => {
-  res.json({
-    ok: true,
-    symbols: SYMBOLS,
-    timeframe: "1min",
-    mode: "signal-only",
-    autoScan: true,
-    scannerRunning,
-    scannerBusy,
-    currentScanSymbol,
-    lastScanTime,
-    lastFullScanTime,
-    scannerError,
-    dataProvider: "Twelve Data"
-  });
-});
-
-// ตรวจสอบ Telegram Mini App
 function verifyTelegram(initData) {
-  if (!BOT_TOKEN) {
-    return { ok: true, user: { name: "Guest" } };
-  }
+  // ถ้าไม่ตั้ง BOT_TOKEN จะใช้โหมดทดสอบโดยไม่ตรวจ Telegram
+  if (!BOT_TOKEN) return { ok: true, userId: null };
 
-  if (!initData) {
-    return { ok: true, user: { name: "WebUser" } };
-  }
+  if (!initData) return { ok: false, error: "กรุณาเปิดผ่าน Telegram Mini App" };
 
   try {
     const params = new URLSearchParams(initData);
     const hash = params.get("hash");
+    const authDate = Number(params.get("auth_date"));
 
-    if (!hash) {
-      return { ok: false, error: "Missing Telegram signature" };
+    if (!hash || !Number.isFinite(authDate)) {
+      return { ok: false, error: "ข้อมูล Telegram ไม่ถูกต้อง" };
+    }
+
+    const age = Date.now() / 1000 - authDate;
+    if (age > 86400 || age < -60) {
+      return { ok: false, error: "ข้อมูล Telegram หมดอายุ กรุณาเปิด Mini App ใหม่" };
     }
 
     params.delete("hash");
@@ -107,59 +59,118 @@ function verifyTelegram(initData) {
       .update(BOT_TOKEN)
       .digest();
 
-    const expected = crypto
+    const calculated = crypto
       .createHmac("sha256", secret)
       .update(checkString)
       .digest("hex");
 
-    const a = Buffer.from(expected, "hex");
+    const a = Buffer.from(calculated, "hex");
     const b = Buffer.from(hash, "hex");
 
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      return { ok: false, error: "Invalid Telegram signature" };
+      return { ok: false, error: "ตรวจสอบ Telegram ไม่ผ่าน" };
     }
 
-    const authDate = Number(params.get("auth_date") || 0);
-    const age = Date.now() / 1000 - authDate;
+    let userId = null;
+    try {
+      userId = String(JSON.parse(params.get("user") || "{}").id || "");
+    } catch {}
 
-    if (!authDate || age < 0 || age > 86400) {
-      return { ok: false, error: "Telegram session expired" };
+    if (allowedIds.size && !allowedIds.has(userId)) {
+      return { ok: false, error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" };
     }
 
-    const user = JSON.parse(params.get("user") || "{}");
-
-    if (ALLOWLIST.length && !ALLOWLIST.includes(String(user.id))) {
-      return { ok: false, error: "User not allowed" };
-    }
-
-    return { ok: true, user };
+    return { ok: true, userId };
   } catch {
-    return { ok: false, error: "Telegram authentication failed" };
+    return { ok: false, error: "ไม่สามารถตรวจสอบ Telegram ได้" };
   }
 }
 
-function auth(req, res, next) {
-  const initData = req.get("x-telegram-init-data") || "";
-  const result = verifyTelegram(initData);
-
-  if (!result.ok) {
-    return res.status(401).json(result);
-  }
-
-  req.telegramUser = result.user;
+function protect(req, res, next) {
+  const auth = verifyTelegram(req.get("x-telegram-init-data") || "");
+  if (!auth.ok) return res.status(401).json({ ok: false, error: auth.error });
+  req.telegramUser = auth;
   next();
 }
 
-// ดึงแท่งเทียนจาก Twelve Data พร้อมแคช
-async function getCandles(symbol) {
-  const cached = cache.get(symbol);
+function ema(values, period) {
+  if (values.length < period) return null;
+  const k = 2 / (period + 1);
+  let result = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < values.length; i++) {
+    result = values[i] * k + result * (1 - k);
+  }
+  return result;
+}
 
-  if (cached && Date.now() - cached.at < CACHE_MS) {
-    return cached.candles;
+function rsi(values, period = 14) {
+  if (values.length <= period) return null;
+  let gains = 0, losses = 0;
+  for (let i = values.length - period; i < values.length; i++) {
+    const diff = values[i] - values[i - 1];
+    if (diff > 0) gains += diff;
+    else losses -= diff;
+  }
+  if (losses === 0) return 100;
+  const rs = gains / Math.max(losses, 0.000000001);
+  return 100 - 100 / (1 + rs);
+}
+
+function analyze(values) {
+  // Twelve Data returns newest candle first; reverse for analysis.
+  const candles = [...values].reverse();
+  const closes = candles.map(c => Number(c.close));
+  if (closes.length < 55 || closes.some(v => !Number.isFinite(v))) {
+    return { signal: "WAIT", score: 0, reason: "ข้อมูลแท่งเทียนไม่เพียงพอ" };
   }
 
-  if (!API_KEY || API_KEY === "demo") {
-    throw new Error("กรุณาตั้งค่า TWELVEDATA_API_KEY ใน Render");
+  const e9 = ema(closes, 9);
+  const e21 = ema(closes, 21);
+  const e50 = ema(closes, 50);
+  const r = rsi(closes, 14);
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+
+  let bull = 0, bear = 0;
+  if (e9 > e21) bull++; else if (e9 < e21) bear++;
+  if (e21 > e50) bull++; else if (e21 < e50) bear++;
+  if (closes.at(-1) > e9) bull++; else if (closes.at(-1) < e9) bear++;
+  if (r >= 52 && r < 70) bull++;
+  else if (r <= 48 && r > 30) bear++;
+  if (Number(last.close) > Number(last.open)) bull++;
+  else if (Number(last.close) < Number(last.open)) bear++;
+  if (Number(last.close) > Number(prev.close)) bull++;
+  else if (Number(last.close) < Number(prev.close)) bear++;
+
+  let signal = "WAIT";
+  if (bull >= 4 && bull > bear) signal = "CALL";
+  if (bear >= 4 && bear > bull) signal = "PUT";
+
+  const score = signal === "WAIT"
+    ? Math.min(59, 40 + Math.abs(bull - bear) * 5)
+    : Math.min(85, 55 + Math.abs(bull - bear) * 5);
+
+  return {
+    signal,
+    score,
+    price: closes.at(-1),
+    candleTime: last.datetime,
+    rsi: Number(r.toFixed(2)),
+    ema9: Number(e9.toFixed(6)),
+    ema21: Number(e21.toFixed(6)),
+    ema50: Number(e50.toFixed(6)),
+    reason: signal === "WAIT"
+      ? "เงื่อนไขยังไม่สอดคล้องกัน"
+      : `EMA + RSI + momentum (${bull}:${bear})`
+  };
+}
+
+async function getMarket(symbol, force = false) {
+  const old = cache.get(symbol);
+  if (!force && old && Date.now() - old.fetchedAt < CACHE_MS) return old;
+
+  if (!API_KEY || API_KEY.toLowerCase() === "demo") {
+    throw new Error("ยังไม่ได้ตั้งค่า TWELVEDATA_API_KEY ใน Render");
   }
 
   const url = new URL("https://api.twelvedata.com/time_series");
@@ -169,485 +180,120 @@ async function getCandles(symbol) {
   url.searchParams.set("timezone", "UTC");
   url.searchParams.set("apikey", API_KEY);
 
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(12000)
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const data = await response.json();
+
+  if (!response.ok || data.status === "error" || !Array.isArray(data.values)) {
+    throw new Error(data.message || `Twelve Data HTTP ${response.status}`);
+  }
+
+  const latest = data.values[0];
+  const candleMs = Date.parse(String(latest.datetime).replace(" ", "T") + "Z");
+  const result = {
+    symbol,
+    fetchedAt: Date.now(),
+    latestAgeMs: Number.isFinite(candleMs) ? Math.max(0, Date.now() - candleMs) : null,
+    values: data.values,
+    analysis: analyze(data.values)
+  };
+
+  cache.set(symbol, result);
+  return result;
+}
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "neural-radar-ai",
+    time: new Date().toISOString(),
+    marketApiConfigured: Boolean(API_KEY),
+    telegramAuthEnabled: Boolean(BOT_TOKEN)
   });
+});
 
-  const json = await response.json();
+app.get("/api/status", protect, (_req, res) => {
+  res.json({
+    ok: true,
+    scannerRunning: true,
+    cachedPairs: cache.size,
+    symbols: SYMBOLS,
+    time: new Date().toISOString()
+  });
+});
 
-  if (!response.ok || json.status === "error" || !Array.isArray(json.values)) {
-    throw new Error(json.message || "Market data unavailable from Twelve Data");
-  }
+app.get("/api/symbols", protect, (_req, res) => {
+  res.json({ ok: true, symbols: SYMBOLS });
+});
 
-  const candles = json.values
-    .map((c) => ({
-      time: Date.parse(c.datetime.replace(" ", "T") + "Z"),
-      open: Number(c.open),
-      high: Number(c.high),
-      low: Number(c.low),
-      close: Number(c.close),
-      volume: Number(c.volume || 0)
-    }))
-    .filter((c) =>
-      Number.isFinite(c.time) &&
-      [c.open, c.high, c.low, c.close].every(Number.isFinite)
-    )
-    .sort((a, b) => a.time - b.time);
-
-  if (candles.length < 50) {
-    throw new Error("Waiting for sufficient market history");
-  }
-
-  cache.set(symbol, { at: Date.now(), candles });
-  return candles;
-}
-
-function ema(values, period) {
-  if (values.length < period) {
-    return Array(values.length).fill(null);
-  }
-
-  const k = 2 / (period + 1);
-  let value =
-    values.slice(0, period).reduce((sum, n) => sum + n, 0) / period;
-
-  const out = Array(period - 1).fill(null);
-  out.push(value);
-
-  for (let i = period; i < values.length; i++) {
-    value = values[i] * k + value * (1 - k);
-    out.push(value);
-  }
-
-  return out;
-}
-
-function rsi(values, period = 14) {
-  if (values.length <= period) return 50;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const d = values[i] - values[i - 1];
-
-    if (d > 0) gains += d;
-    else losses -= d;
-  }
-
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-
-  for (let i = period + 1; i < values.length; i++) {
-    const d = values[i] - values[i - 1];
-
-    avgGain =
-      (avgGain * (period - 1) + Math.max(d, 0)) / period;
-
-    avgLoss =
-      (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
-  }
-
-  if (avgLoss === 0) {
-    return avgGain === 0 ? 50 : 100;
-  }
-
-  return 100 - 100 / (1 + avgGain / avgLoss);
-}
-
-// วิเคราะห์แนวโน้มด้วย EMA และ RSI
-function analyze(allCandles) {
-  if (allCandles.length < 50) {
-    throw new Error("Not enough candle data for analysis");
-  }
-
-  const candles = allCandles;
-  const closes = candles.map((c) => c.close);
-  const last = closes.length - 1;
-
-  const e9 = ema(closes, 9);
-  const e21 = ema(closes, 21);
-  const e50 = ema(closes, 50);
-  const r = rsi(closes.slice(-60), 14);
-
-  const current = candles[last];
-  const previous = candles[last - 1] || current;
-
-  const trendUp =
-    e9[last] > e21[last] && e21[last] > e50[last];
-
-  const trendDown =
-    e9[last] < e21[last] && e21[last] < e50[last];
-
-  const range = Math.max(current.high - current.low, 1e-10);
-  const body = (current.close - current.open) / range;
-
-  let call = 0;
-  let put = 0;
-
-  const reasons = [];
-
-  if (trendUp) {
-    call += 2;
-    reasons.push("EMA Bullish Alignment");
-  }
-
-  if (trendDown) {
-    put += 2;
-    reasons.push("EMA Bearish Alignment");
-  }
-
-  if (r >= 52 && r <= 68) {
-    call++;
-    reasons.push("RSI Bullish Momentum");
-  }
-
-  if (r <= 48 && r >= 32) {
-    put++;
-    reasons.push("RSI Bearish Momentum");
-  }
-
-  if (current.close > previous.close) call++;
-  if (current.close < previous.close) put++;
-
-  if (body > 0.35) call++;
-  if (body < -0.35) put++;
-
-  let signal = "WAIT";
-
-  if (trendUp && call >= 3 && call - put >= 1 && r < 70) {
-    signal = "CALL";
-  } else if (
-    trendDown &&
-    put >= 3 &&
-    put - call >= 1 &&
-    r > 30
-  ) {
-    signal = "PUT";
-  }
-
-  const score = Math.min(
-    100,
-    Math.round((Math.max(call, put) / 5) * 100)
-  );
-
-  return {
-    signal,
-    score,
-    callScore: call,
-    putScore: put,
-    rsi: Number(r.toFixed(1)),
-    close: current.close,
-    candleTime: current.time,
-    ema9: e9[last],
-    ema21: e21[last],
-    ema50: e50[last],
-    reasons: reasons.length
-      ? reasons
-      : ["ตลาดยังไม่เข้าเกณฑ์ชัดเจน"],
-    sampleSize: candles.length
-  };
-}
-
-// สแกนคู่เงินหนึ่งคู่
-async function scanOneSymbol(symbol) {
-  try {
-    const candles = await getCandles(symbol);
-    const analysis = analyze(candles);
-
-    const result = {
-      symbol,
-      analysis,
-      scannedAt: Date.now(),
-      candleTime: analysis.candleTime,
-      stale: false,
-      error: null
-    };
-
-    scanResults.set(symbol, result);
-    return result;
-  } catch (error) {
-    const old = scanResults.get(symbol);
-
-    if (old) {
-      scanResults.set(symbol, {
-        ...old,
-        stale: true,
-        error: error.message
-      });
-    } else {
-      scanResults.set(symbol, {
-        symbol,
-        analysis: {
-          signal: "WAIT",
-          score: 0,
-          reasons: ["ดึงข้อมูลราคาไม่สำเร็จ"]
-        },
-        scannedAt: null,
-        candleTime: null,
-        stale: true,
-        error: error.message
-      });
-    }
-
-    scannerError = `${symbol}: ${error.message}`;
-    return scanResults.get(symbol);
-  }
-}
-
-// เลือกสัญญาณที่เหมาะสมที่สุดจากผลสแกน
-function getBestSignal() {
-  const now = Date.now();
-
-  const candidates = [...scanResults.values()]
-    .filter((item) => {
-      return (
-        !item.stale &&
-        item.scannedAt &&
-        now - item.scannedAt <= MAX_SIGNAL_AGE_MS &&
-        item.analysis &&
-        ["CALL", "PUT"].includes(item.analysis.signal) &&
-        item.analysis.score >= MIN_SIGNAL_SCORE
-      );
-    })
-    .sort((a, b) => {
-      // คะแนนสูงกว่ามาก่อน ถ้าเท่ากันเลือกข้อมูลที่ใหม่กว่า
-      return (
-        b.analysis.score - a.analysis.score ||
-        b.scannedAt - a.scannedAt
-      );
-    });
-
-  if (!candidates.length) {
-    return {
-      symbol: null,
-      signal: "WAIT",
-      score: 0,
-      message: "ยังไม่มีคู่เงินที่ผ่านเกณฑ์",
-      selectedAt: now
-    };
-  }
-
-  const best = candidates[0];
-
-  return {
-    symbol: best.symbol,
-    signal: best.analysis.signal,
-    score: best.analysis.score,
-    close: best.analysis.close,
-    rsi: best.analysis.rsi,
-    candleTime: best.analysis.candleTime,
-    scannedAt: best.scannedAt,
-    message: "คู่เงินที่ได้คะแนนสูงสุดจากผลสแกน",
-    selectedAt: now
-  };
-}
-
-// ทำงานสแกนอัตโนมัติวนไปเรื่อย ๆ
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-async function startAutoScanner() {
-  if (scannerRunning) return;
-
-  scannerRunning = true;
-
-  while (scannerRunning) {
-    let fullCycleCompleted = true;
-
-    for (const symbol of SYMBOLS) {
-      if (!scannerRunning) break;
-
-      scannerBusy = true;
-      currentScanSymbol = symbol;
-
-      await scanOneSymbol(symbol);
-      lastScanTime = Date.now();
-
-      if (scanResults.get(symbol)?.stale) {
-        fullCycleCompleted = false;
-      }
-
-      scannerBusy = false;
-
-      await sleep(SCAN_INTERVAL_MS);
-    }
-
-    if (fullCycleCompleted && scannerRunning) {
-      lastFullScanTime = Date.now();
-      scannerError = null;
-    }
-  }
-}
-
-// API เดิม: วิเคราะห์คู่เงินที่ระบุ
-app.get("/api/market", auth, async (req, res) => {
-  const symbol = String(req.query.symbol || "EUR/USD").toUpperCase();
-
+app.get("/api/scan", protect, async (req, res) => {
+  const symbol = String(req.query.symbol || DEFAULT_SYMBOL).toUpperCase();
   if (!SYMBOLS.includes(symbol)) {
-    return res.status(400).json({
-      ok: false,
-      error: "Unsupported symbol"
-    });
+    return res.status(400).json({ ok: false, error: "ไม่รองรับคู่เงินนี้" });
   }
 
   try {
-    const candles = await getCandles(symbol);
-    const analysis = analyze(candles);
+    const result = await getMarket(symbol, req.query.refresh === "1");
+    const stale = result.latestAgeMs !== null && result.latestAgeMs > MAX_AGE_MS;
+    const a = stale
+      ? { signal: "WAIT", score: 0, reason: "ข้อมูลราคาเก่าเกินเกณฑ์" }
+      : result.analysis;
 
     res.json({
       ok: true,
       symbol,
-      provider: "Twelve Data",
-      fetchedAt: Date.now(),
-      analysis,
-      candles: candles.slice(-60)
+      pair: symbol,
+      signal: a.signal,
+      score: a.score,
+      price: a.price ?? result.analysis.price,
+      candleTime: result.analysis.candleTime,
+      fetchedAt: new Date(result.fetchedAt).toISOString(),
+      dataAgeMs: result.latestAgeMs,
+      stale,
+      reason: a.reason,
+      indicators: {
+        rsi: result.analysis.rsi,
+        ema9: result.analysis.ema9,
+        ema21: result.analysis.ema21,
+        ema50: result.analysis.ema50
+      }
     });
   } catch (error) {
-    res.status(502).json({
-      ok: false,
-      error: error.message || "Market data unavailable"
-    });
+    res.status(502).json({ ok: false, error: error.message || "ดึงข้อมูลตลาดไม่สำเร็จ" });
   }
 });
 
-// API ใหม่: ผลสแกนทั้งหมดและคู่เงินที่ระบบเลือก
-app.get("/api/scan", auth, (_req, res) => {
-  const results = SYMBOLS.map((symbol) => {
-    return scanResults.get(symbol) || {
-      symbol,
-      analysis: {
-        signal: "WAIT",
-        score: 0,
-        reasons: ["กำลังรอสแกน"]
-      },
-      scannedAt: null,
-      candleTime: null,
-      stale: true,
-      error: null
+app.get("/api/scan/all", protect, (_req, res) => {
+  const results = SYMBOLS.map(symbol => {
+    const c = cache.get(symbol);
+    if (!c) return {
+      symbol, pair: symbol, signal: "WAIT", score: 0,
+      stale: true, reason: "ยังไม่มีข้อมูลแคช"
+    };
+
+    const stale = c.latestAgeMs !== null && c.latestAgeMs > MAX_AGE_MS;
+    return {
+      symbol, pair: symbol,
+      signal: stale ? "WAIT" : c.analysis.signal,
+      score: stale ? 0 : c.analysis.score,
+      price: c.analysis.price,
+      stale,
+      fetchedAt: new Date(c.fetchedAt).toISOString(),
+      reason: stale ? "ข้อมูลราคาเก่า" : c.analysis.reason
     };
   });
 
-  res.json({
-    ok: true,
-    mode: "auto-scan",
-    timeframe: "1min",
-    provider: "Twelve Data",
-    scannerRunning,
-    scannerBusy,
-    currentScanSymbol,
-    lastScanTime,
-    lastFullScanTime,
-    scannerError,
-    totalSymbols: SYMBOLS.length,
-    scannedSymbols: results.filter(
-      (item) => item.scannedAt !== null && !item.stale
-    ).length,
-    selected: getBestSignal(),
-    results
-  });
-});
+  const bestSignal = results
+    .filter(x => !x.stale && x.signal !== "WAIT")
+    .sort((a, b) => b.score - a.score)[0] || null;
 
-// API ใหม่: ขอให้สแกนคู่ที่ข้อมูลเก่าที่สุดทันที
-app.post("/api/scan/refresh", auth, async (_req, res) => {
-  if (scannerBusy) {
-    return res.status(409).json({
-      ok: false,
-      error: "Scanner is busy. Please try again shortly."
-    });
-  }
-
-  const symbol = [...SYMBOLS].sort((a, b) => {
-    const aTime = scanResults.get(a)?.scannedAt || 0;
-    const bTime = scanResults.get(b)?.scannedAt || 0;
-    return aTime - bTime;
-  })[0];
-
-  try {
-    scannerBusy = true;
-    currentScanSymbol = symbol;
-
-    const result = await scanOneSymbol(symbol);
-    lastScanTime = Date.now();
-
-    res.json({
-      ok: !result.stale,
-      refreshed: symbol,
-      result,
-      selected: getBestSignal()
-    });
-  } catch (error) {
-    res.status(502).json({
-      ok: false,
-      error: error.message || "Scan failed"
-    });
-  } finally {
-    scannerBusy = false;
-    currentScanSymbol = null;
-  }
-});
-
-// ตั้งปุ่ม Mini App ใน Telegram
-app.post("/api/telegram/setup", async (_req, res) => {
-  if (!BOT_TOKEN || !BOT_USERNAME || !APP_URL) {
-    return res.status(400).json({
-      ok: false,
-      error: "Configure bot token, username and app URL first"
-    });
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.telegram.org/bot${BOT_TOKEN}/setChatMenuButton`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          menu_button: {
-            type: "web_app",
-            text: "Open AI Radar",
-            web_app: { url: APP_URL }
-          }
-        })
-      }
-    );
-
-    const result = await response.json();
-
-    res.status(response.ok && result.ok ? 200 : 502).json(result);
-  } catch (error) {
-    res.status(502).json({
-      ok: false,
-      error: error.message
-    });
-  }
-});
-
-app.get("/api/telegram/link", (_req, res) => {
-  if (!BOT_USERNAME) {
-    return res.status(400).json({
-      ok: false,
-      error: "Bot username missing"
-    });
-  }
-
-  res.json({
-    ok: true,
-    url: `https://t.me/${BOT_USERNAME}?startapp=radar`
-  });
+  res.json({ ok: true, results, bestSignal });
 });
 
 app.get("*", (_req, res) => {
-  res.sendFile(path.join(root, "public", "index.html"));
+  res.sendFile(path.join(ROOT, "public", "index.html"));
 });
 
-app.listen(PORT, () => {
-  console.log(`Market AI Radar listening on port ${PORT}`);
-
-  startAutoScanner().catch((error) => {
-    scannerError = error.message;
-    scannerRunning = false;
-    scannerBusy = false;
-    console.error("Auto scanner stopped:", error);
-  });
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Neural Radar AI listening on port ${PORT}`);
+  console.log(`Twelve Data key configured: ${Boolean(API_KEY)}`);
 });
