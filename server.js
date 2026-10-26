@@ -35,11 +35,19 @@ const SYMBOLS = [
 const cache = new Map();
 const CACHE_MS = 12000;
 
+// --- ตัวแปรและระบบ Auto Scanner ---
+const scanResults = new Map();
+let scannerRunning = false;
+let currentScanSymbol = "";
+let lastScanTime = 0;
+const SCAN_INTERVAL_MS = 6000; // หน่วงเวลา 6 วินาทีต่อคู่ เพื่อป้องกันชน Rate Limit ของ Twelve Data
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     dataKeyConfigured: Boolean(API_KEY && API_KEY !== "demo"),
     telegramConfigured: Boolean(BOT_TOKEN && APP_URL),
+    scannerRunning,
     time: new Date().toISOString()
   });
 });
@@ -49,8 +57,28 @@ app.get("/api/status", (_req, res) => {
     ok: true,
     symbols: SYMBOLS,
     timeframe: "1min",
-    mode: "signal-only",
+    mode: "auto-scanner",
     dataProvider: "Twelve Data"
+  });
+});
+
+// Endpoint ดึงผลสแกนทั้งหมดสำหรับหน้าเว็บ Mini App
+app.get("/api/scanner/results", (_req, res) => {
+  const results = [...scanResults.entries()].map(([symbol, data]) => ({
+    symbol,
+    analysis: data.analysis,
+    scannedAt: data.scannedAt,
+    error: data.error || null,
+    stale: data.stale || false
+  }));
+
+  res.json({
+    ok: true,
+    running: scannerRunning,
+    currentSymbol: currentScanSymbol,
+    lastScanTime,
+    results,
+    bestSignal: getBestSignal()
   });
 });
 
@@ -276,11 +304,113 @@ function analyze(allCandles) {
   };
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function getBestSignal() {
+  const results = [...scanResults.values()]
+    .sort((a, b) => b.analysis.score - a.analysis.score);
+
+  const candidates = results.filter((item) =>
+    ["CALL", "PUT"].includes(item.analysis.signal) &&
+    item.analysis.score >= 60
+  );
+
+  if (!candidates.length) {
+    return {
+      symbol: null,
+      signal: "WAIT",
+      score: 0,
+      message: "ยังไม่มีคู่เงินที่ผ่านเกณฑ์"
+    };
+  }
+
+  const best = candidates[0];
+
+  return {
+    symbol: best.symbol,
+    signal: best.analysis.signal,
+    score: best.analysis.score,
+    close: best.analysis.close,
+    candleTime: best.analysis.candleTime,
+    message: "คู่เงินที่ได้คะแนนสูงสุดจากผลสแกนล่าสุด"
+  };
+}
+
+async function scanOneSymbol(symbol) {
+  try {
+    const candles = await getCandles(symbol);
+    const analysis = analyze(candles);
+
+    const result = {
+      symbol,
+      analysis,
+      scannedAt: Date.now(),
+      error: null,
+      stale: false
+    };
+
+    scanResults.set(symbol, result);
+    return result;
+  } catch (error) {
+    const old = scanResults.get(symbol);
+
+    if (old) {
+      scanResults.set(symbol, {
+        ...old,
+        error: error.message,
+        stale: true
+      });
+    } else {
+      scanResults.set(symbol, {
+        symbol,
+        analysis: {
+          signal: "WAIT",
+          score: 0,
+          reasons: ["ดึงข้อมูลราคาไม่สำเร็จ"]
+        },
+        scannedAt: Date.now(),
+        error: error.message,
+        stale: true
+      });
+    }
+
+    return scanResults.get(symbol);
+  }
+}
+
+async function startAutoScanner() {
+  if (scannerRunning) return;
+  scannerRunning = true;
+
+  while (scannerRunning) {
+    for (const symbol of SYMBOLS) {
+      if (!scannerRunning) break;
+      currentScanSymbol = symbol;
+      await scanOneSymbol(symbol);
+      lastScanTime = Date.now();
+      await sleep(SCAN_INTERVAL_MS);
+    }
+  }
+}
+
 app.get("/api/market", auth, async (req, res) => {
   const symbol = String(req.query.symbol || "EUR/USD").toUpperCase();
 
   if (!SYMBOLS.includes(symbol)) {
     return res.status(400).json({ ok: false, error: "Unsupported symbol" });
+  }
+
+  // ดึงข้อมูลจากผลสแกนอัตโนมัติที่มีอยู่แล้วได้ทันที (เร็วขึ้นมาก)
+  const cachedResult = scanResults.get(symbol);
+  if (cachedResult && !cachedResult.stale) {
+    return res.json({
+      ok: true,
+      symbol,
+      provider: "Twelve Data",
+      fetchedAt: cachedResult.scannedAt,
+      analysis: cachedResult.analysis,
+      candles: []
+    });
   }
 
   try {
@@ -351,4 +481,6 @@ app.get("*", (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Market AI Radar listening on port ${PORT}`);
+  // เริ่มต้นระบบสแกนอัตโนมัติทันทีที่เซิร์ฟเวอร์เปิด
+  startAutoScanner();
 });
