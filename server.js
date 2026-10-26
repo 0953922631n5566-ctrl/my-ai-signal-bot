@@ -1,366 +1,342 @@
-const express = require("express");
-const WebSocket = require("ws");
+
+import express from "express";
+import crypto from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const app = express();
+const root = path.dirname(fileURLToPath(import.meta.url));
+
+app.use(express.json({ limit: "32kb" }));
+app.use(express.static(path.join(root, "public")));
+
 const PORT = process.env.PORT || 10000;
-const APP_ID = process.env.DERIV_APP_ID || "1089";
+const API_KEY = process.env.TWELVEDATA_API_KEY || "";
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || "").replace(/^@/, "");
+const APP_URL = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
+const ALLOWLIST = (process.env.ALLOWED_TELEGRAM_USER_IDS || "")
+  .split(",").map(s => s.trim()).filter(Boolean);
 
-app.use(express.static("public"));
-app.use(express.json());
+const SYMBOLS = [
+  "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD",
+  "USD/CHF", "NZD/USD", "EUR/GBP", "EUR/JPY", "GBP/JPY"
+];
 
-const SYMBOLS = {
-  frxEURUSD: "EUR/USD",
-  frxGBPUSD: "GBP/USD",
-  frxUSDJPY: "USD/JPY",
-  frxAUDUSD: "AUD/USD",
-  frxUSDCAD: "USD/CAD"
-};
+const cache = new Map();
+const CACHE_MS = 12000;
 
-let socket = null;
-let connected = false;
-let reconnectTimer = null;
-let reconnectDelay = 1000;
-let nextReqId = 1;
-let lastError = null;
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    dataKeyConfigured: Boolean(API_KEY),
+    telegramConfigured: Boolean(BOT_TOKEN && APP_URL),
+    time: new Date().toISOString()
+  });
+});
 
-let selectedSymbol = "frxEURUSD";
-let duration = 60;
-let threshold = 65;
+app.get("/api/status", (_req, res) => {
+  res.json({
+    ok: true,
+    symbols: SYMBOLS,
+    timeframe: "1min",
+    mode: "signal-only",
+    dataProvider: "Twelve Data"
+  });
+});
 
-const prices = {};
-const lastTickBySymbol = {};
-const candlesBySymbol = {};
-const historyRequests = new Map();
-const tickSubscriptions = new Set();
+function verifyTelegram(initData) {
+  if (!BOT_TOKEN) return { ok: false, error: "Bot token not configured" };
+  if (!initData) return { ok: false, error: "Open through Telegram Mini App" };
 
-for (const symbol of Object.keys(SYMBOLS)) {
-  candlesBySymbol[symbol] = [];
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return { ok: false, error: "Missing Telegram signature" };
+
+    params.delete("hash");
+
+    const checkString = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+
+    const secret = crypto.createHmac("sha256", "WebAppData")
+      .update(BOT_TOKEN).digest();
+
+    const expected = crypto.createHmac("sha256", secret)
+      .update(checkString).digest("hex");
+
+    const a = Buffer.from(expected, "hex");
+    const b = Buffer.from(hash, "hex");
+
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return { ok: false, error: "Invalid Telegram signature" };
+    }
+
+    const authDate = Number(params.get("auth_date") || 0);
+    if (!authDate || Date.now() / 1000 - authDate > 86400) {
+      return { ok: false, error: "Telegram session expired" };
+    }
+
+    const user = JSON.parse(params.get("user") || "{}");
+
+    if (ALLOWLIST.length && !ALLOWLIST.includes(String(user.id))) {
+      return { ok: false, error: "User not allowed" };
+    }
+
+    return { ok: true, user };
+  } catch {
+    return { ok: false, error: "Telegram authentication failed" };
+  }
 }
 
-function send(data) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return null;
-  const req_id = nextReqId++;
-  socket.send(JSON.stringify({ ...data, req_id }));
-  return req_id;
+function auth(req, res, next) {
+  const result = verifyTelegram(req.get("x-telegram-init-data") || "");
+  if (!result.ok) return res.status(401).json(result);
+  req.telegramUser = result.user;
+  next();
+}
+
+async function getCandles(symbol) {
+  if (!API_KEY) throw new Error("Missing TWELVEDATA_API_KEY");
+
+  const cached = cache.get(symbol);
+  if (cached && Date.now() - cached.at < CACHE_MS) {
+    return cached.candles;
+  }
+
+  const url = new URL("https://api.twelvedata.com/time_series");
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("interval", "1min");
+  url.searchParams.set("outputsize", "120");
+  url.searchParams.set("timezone", "UTC");
+  url.searchParams.set("apikey", API_KEY);
+
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(12000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Market provider HTTP ${response.status}`);
+  }
+
+  const json = await response.json();
+
+  if (!Array.isArray(json.values)) {
+    throw new Error(json.message || "No market candles returned");
+  }
+
+  const candles = json.values.map(c => ({
+    time: Date.parse(c.datetime.replace(" ", "T") + "Z"),
+    open: Number(c.open),
+    high: Number(c.high),
+    low: Number(c.low),
+    close: Number(c.close),
+    volume: Number(c.volume || 0)
+  }))
+  .filter(c => Number.isFinite(c.time) &&
+    [c.open, c.high, c.low, c.close].every(Number.isFinite))
+  .sort((a, b) => a.time - b.time);
+
+  if (candles.length < 60) {
+    throw new Error("Waiting for sufficient market history");
+  }
+
+  cache.set(symbol, { at: Date.now(), candles });
+  return candles;
 }
 
 function ema(values, period) {
-  if (values.length < period) return null;
   const k = 2 / (period + 1);
-  let value = values.slice(0, period).reduce((sum, n) => sum + n, 0) / period;
+  let value = values.slice(0, period)
+    .reduce((sum, n) => sum + n, 0) / period;
+
+  const out = Array(period - 1).fill(null);
+  out.push(value);
+
   for (let i = period; i < values.length; i++) {
     value = values[i] * k + value * (1 - k);
+    out.push(value);
   }
-  return value;
+  return out;
 }
 
 function rsi(values, period = 14) {
-  if (values.length <= period) return null;
-  let gains = 0;
-  let losses = 0;
-  for (let i = values.length - period; i < values.length; i++) {
-    const change = values[i] - values[i - 1];
-    if (change > 0) gains += change;
-    else losses -= change;
+  if (values.length <= period) return 50;
+
+  let gains = 0, losses = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const d = values[i] - values[i - 1];
+    if (d > 0) gains += d;
+    else losses -= d;
   }
-  if (losses === 0) return gains === 0 ? 50 : 100;
-  return 100 - 100 / (1 + gains / losses);
+
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+
+  for (let i = period + 1; i < values.length; i++) {
+    const d = values[i] - values[i - 1];
+    avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
+  }
+
+  if (avgLoss === 0) return 100;
+  return 100 - 100 / (1 + avgGain / avgLoss);
 }
 
-function addCandle(symbol, candle) {
-  const list = candlesBySymbol[symbol];
-  const time = Number(candle.time);
-  if (!Number.isFinite(time)) return;
+function analyze(allCandles) {
+  // Only analyze candles that should have finished.
+  const now = Date.now();
+  const candles = allCandles.filter(c => c.time + 60000 <= now);
 
-  const index = list.findIndex(c => c.time === time);
-  if (index >= 0) {
-    list[index] = { ...list[index], ...candle };
-  } else {
-    list.push(candle);
-  }
-
-  list.sort((a, b) => a.time - b.time);
-  if (list.length > 500) {
-    list.splice(0, list.length - 500);
-  }
-}
-
-function addTick(symbol, quote, epoch) {
-  if (!SYMBOLS[symbol]) return;
-  if (!Number.isFinite(quote) || !Number.isFinite(epoch)) return;
-
-  prices[symbol] = quote;
-  lastTickBySymbol[symbol] = Date.now();
-
-  const time = Math.floor(epoch / 60) * 60000;
-  const list = candlesBySymbol[symbol];
-  let candle = list[list.length - 1];
-
-  if (!candle || candle.time !== time) {
-    candle = { time, open: quote, high: quote, low: quote, close: quote };
-    addCandle(symbol, candle);
-  } else {
-    candle.high = Math.max(candle.high, quote);
-    candle.low = Math.min(candle.low, quote);
-    candle.close = quote;
-  }
-}
-
-function analyse(symbol) {
-  const candles = candlesBySymbol[symbol] || [];
-  const age = Date.now() - (lastTickBySymbol[symbol] || 0);
-
-  if (!connected || age > 15000) {
-    return {
-      direction: "WAIT",
-      score: 0,
-      reason: "กำลังรอฟีดข้อมูลราคาสด..."
-    };
-  }
-
-  if (candles.length < 35) {
-    return {
-      direction: "WAIT",
-      score: 0,
-      reason: `กำลังรวบรวมแท่งเทียน (${candles.length}/35)`
-    };
+  if (candles.length < 50) {
+    throw new Error("Not enough closed candles");
   }
 
   const closes = candles.map(c => c.close);
-  const last = candles[candles.length - 1];
-  const prev = candles[candles.length - 2];
-
-  const e6 = ema(closes, 6);
+  const last = closes.length - 1;
+  const e9 = ema(closes, 9);
   const e21 = ema(closes, 21);
   const e50 = ema(closes, 50);
-  const r = rsi(closes);
+  const r = rsi(closes.slice(-60), 14);
+  const current = candles[last];
+  const previous = candles[last - 1];
 
-  let up = 0;
-  let down = 0;
+  const trendUp = e9[last] > e21[last] && e21[last] > e50[last];
+  const trendDown = e9[last] < e21[last] && e21[last] < e50[last];
+
+  const range = Math.max(current.high - current.low, 1e-10);
+  const body = (current.close - current.open) / range;
+
+  let call = 0;
+  let put = 0;
   const reasons = [];
 
-  if (e6 > e21) {
-    up += 2;
-    reasons.push("EMA6 > EMA21");
-  } else if (e6 < e21) {
-    down += 2;
-    reasons.push("EMA6 < EMA21");
+  if (trendUp) {
+    call += 2;
+    reasons.push("EMA bullish alignment");
+  }
+  if (trendDown) {
+    put += 2;
+    reasons.push("EMA bearish alignment");
   }
 
-  if (e50 !== null) {
-    if (last.close > e50) up++;
-    else if (last.close < e50) down++;
+  if (r >= 52 && r <= 68) {
+    call++;
+    reasons.push("RSI bullish momentum");
+  }
+  if (r <= 48 && r >= 32) {
+    put++;
+    reasons.push("RSI bearish momentum");
   }
 
-  if (r !== null) {
-    if (r >= 52 && r <= 68) up++;
-    if (r >= 32 && r <= 48) down++;
+  if (current.close > previous.close) call++;
+  if (current.close < previous.close) put++;
+  if (body > 0.35) call++;
+  if (body < -0.35) put++;
+
+  let signal = "WAIT";
+
+  if (trendUp && call >= 3 && call - put >= 2 && r < 70) {
+    signal = "CALL";
   }
 
-  const range = last.high - last.low;
-  const body = last.close - last.open;
-
-  if (range > 0 && Math.abs(body) / range > 0.55) {
-    if (body > 0) up++;
-    else down++;
-  }
-
-  if (last.close > prev.close) up++;
-  else if (last.close < prev.close) down++;
-
-  const macd = ema(closes, 12) - ema(closes, 26);
-  const previousCloses = closes.slice(0, -1);
-  const prevMacd = ema(previousCloses, 12) - ema(previousCloses, 26);
-
-  if (macd > 0 && macd >= prevMacd) up += 2;
-  else if (macd < 0 && macd <= prevMacd) down += 2;
-
-  const score = Math.min(100, Math.round((Math.max(up, down) / 8) * 100));
-  let direction = "WAIT";
-
-  if (up >= 5 && up - down >= 2 && score >= threshold) {
-    direction = "CALL";
-  } else if (down >= 5 && down - up >= 2 && score >= threshold) {
-    direction = "PUT";
+  if (trendDown && put >= 3 && put - call >= 2 && r > 30) {
+    signal = "PUT";
   }
 
   return {
-    direction,
-    score,
-    reason: reasons.join(" · ") || "ตลาดยังไม่เข้าเกณฑ์ชัดเจน",
-    indicators: {
-      ema6: e6,
-      ema21: e21,
-      ema50: e50,
-      rsi: r,
-      macd,
-      upScore: up,
-      downScore: down
-    },
-    candleTime: last.time
+    signal,
+    callScore: call,
+    putScore: put,
+    rsi: Number(r.toFixed(1)),
+    close: current.close,
+    candleTime: current.time,
+    ema9: e9[last],
+    ema21: e21[last],
+    ema50: e50[last],
+    reasons,
+    sampleSize: candles.length,
+    note: "Technical signal only; not a calibrated win probability"
   };
 }
 
-function snapshot() {
-  const symbol = selectedSymbol;
-  const lastTick = lastTickBySymbol[symbol] || 0;
-  const age = lastTick ? Date.now() - lastTick : null;
+app.get("/api/market", auth, async (req, res) => {
+  const symbol = String(req.query.symbol || "EUR/USD").toUpperCase();
 
-  return {
-    connected,
-    fresh: connected && age !== null && age <= 15000,
-    error: lastError,
-    symbol,
-    symbolName: SYMBOLS[symbol],
-    duration,
-    threshold,
-    price: prices[symbol] ?? null,
-    lastTick,
-    ageMs: age,
-    candleCount: candlesBySymbol[symbol].length,
-    source: "Deriv Live Feed",
-    signal: analyse(symbol)
-  };
-}
-
-app.get("/api/health", (_, res) => {
-  res.json({ ok: true, connected, time: new Date().toISOString() });
-});
-
-app.get("/api/status", (_, res) => {
-  res.set("Cache-Control", "no-store");
-  res.json(snapshot());
-});
-
-app.post("/api/settings", (req, res) => {
-  const { symbol, duration: d, threshold: t } = req.body || {};
-
-  if (symbol !== undefined && !SYMBOLS[symbol]) {
-    return res.status(400).json({ error: "คู่เงินไม่ถูกต้อง" });
+  if (!SYMBOLS.includes(symbol)) {
+    return res.status(400).json({ ok: false, error: "Unsupported symbol" });
   }
-  if (d !== undefined && (!Number.isInteger(d) || d < 5 || d > 300)) {
-    return res.status(400).json({ error: "เวลาเทรดต้อง 5–300 วินาที" });
-  }
-  if (t !== undefined && (!Number.isInteger(t) || t < 40 || t > 90)) {
-    return res.status(400).json({ error: "ค่าเกณฑ์ต้อง 40–90" });
-  }
-
-  if (symbol) selectedSymbol = symbol;
-  if (d !== undefined) duration = d;
-  if (t !== undefined) threshold = t;
-
-  res.set("Cache-Control", "no-store");
-  res.json(snapshot());
-});
-
-function subscribeMarket(symbol) {
-  const reqId = send({
-    ticks_history: symbol,
-    end: "latest",
-    count: 100,
-    style: "candles",
-    granularity: 60
-  });
-
-  if (reqId !== null) {
-    historyRequests.set(reqId, symbol);
-  }
-
-  if (!tickSubscriptions.has(symbol)) {
-    const tickReqId = send({ ticks: symbol, subscribe: 1 });
-    if (tickReqId !== null) tickSubscriptions.add(symbol);
-  }
-}
-
-function connect() {
-  clearTimeout(reconnectTimer);
-  connected = false;
-  tickSubscriptions.clear();
-  historyRequests.clear();
 
   try {
-    socket = new WebSocket(
-      `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(APP_ID)}`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-      }
-    );
+    const candles = await getCandles(symbol);
+    const analysis = analyze(candles);
+
+    res.json({
+      ok: true,
+      symbol,
+      provider: "Twelve Data",
+      fetchedAt: Date.now(),
+      analysis,
+      candles: candles.slice(-60)
+    });
   } catch (error) {
-    lastError = error.message;
-    scheduleReconnect();
-    return;
+    res.status(502).json({
+      ok: false,
+      error: error.message || "Market data unavailable"
+    });
+  }
+});
+
+// Configure the bot's menu button without posting messages to any chat.
+app.post("/api/telegram/setup", async (_req, res) => {
+  if (!BOT_TOKEN || !BOT_USERNAME || !APP_URL) {
+    return res.status(400).json({
+      ok: false,
+      error: "Configure bot token, username and app URL first"
+    });
   }
 
-  socket.on("open", () => {
-    connected = true;
-    reconnectDelay = 1000;
-    lastError = null;
-    send({ active_symbols: "brief" });
-  });
-
-  socket.on("message", raw => {
-    let msg;
-    try {
-      msg = JSON.parse(raw.toString());
-    } catch {
-      return;
-    }
-
-    if (msg.error) {
-      lastError = msg.error.message || "Deriv API Error";
-      return;
-    }
-
-    if (msg.msg_type === "active_symbols") {
-      const available = new Set((msg.active_symbols || []).map(item => item.symbol));
-      for (const symbol of Object.keys(SYMBOLS)) {
-        if (available.has(symbol)) subscribeMarket(symbol);
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/setChatMenuButton`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          menu_button: {
+            type: "web_app",
+            text: "Open AI Radar",
+            web_app: { url: APP_URL }
+          }
+        })
       }
-    }
+    );
 
-    if (msg.msg_type === "candles" && Array.isArray(msg.candles)) {
-      const symbol = historyRequests.get(msg.req_id);
-      if (!symbol || !SYMBOLS[symbol]) return;
+    const result = await response.json();
+    res.status(response.ok && result.ok ? 200 : 502).json(result);
+  } catch (error) {
+    res.status(502).json({ ok: false, error: error.message });
+  }
+});
 
-      for (const c of msg.candles) {
-        addCandle(symbol, {
-          time: Number(c.epoch) * 1000,
-          open: Number(c.open),
-          high: Number(c.high),
-          low: Number(c.low),
-          close: Number(c.close)
-        });
-      }
-      historyRequests.delete(msg.req_id);
-    }
+app.get("/api/telegram/link", (_req, res) => {
+  if (!BOT_USERNAME) {
+    return res.status(400).json({ ok: false, error: "Bot username missing" });
+  }
 
-    if (msg.msg_type === "tick" && msg.tick) {
-      addTick(msg.tick.symbol, Number(msg.tick.quote), Number(msg.tick.epoch));
-    }
+  res.json({
+    ok: true,
+    url: `https://t.me/${BOT_USERNAME}?startapp=radar`
   });
+});
 
-  socket.on("error", error => {
-    lastError = error.message || "WebSocket error";
-  });
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(root, "public", "index.html"));
+});
 
-  socket.on("close", () => {
-    connected = false;
-    tickSubscriptions.clear();
-    scheduleReconnect();
-  });
-}
-
-function scheduleReconnect() {
-  clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(() => {
-    connect();
-  }, reconnectDelay);
-  reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-}
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`AI Signal Pro Server running on port ${PORT}`);
-  connect();
+app.listen(PORT, () => {
+  console.log(`Market AI Radar listening on port ${PORT}`);
 });
