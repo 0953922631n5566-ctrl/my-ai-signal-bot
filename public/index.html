@@ -3,376 +3,406 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#080c16">
-<title>NEURAL RADAR AI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#080d1b">
+<title>OTC AI RADAR PRO</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-:root{--bg:#080c16;--panel:#111b2b;--line:#28374d;--muted:#91a0b5;--white:#f3f7ff;--green:#32f5a4;--red:#ff5579;--yellow:#ffd166;--blue:#6cb6ff}
+:root{
+  --bg:#080d1b;--panel:#111a2d;--line:#293b58;
+  --cyan:#42e5ff;--green:#35efa0;--red:#ff5275;
+  --muted:#8ea2c4;--gold:#ffd278;
+}
 *{box-sizing:border-box}
-body{margin:0;background:radial-gradient(ellipse at 50% -15%,#20395e,transparent 55%),var(--bg);color:var(--white);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-.app{max-width:560px;margin:auto;padding:17px 14px 30px}
-.top,.row{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.top{margin-bottom:22px}
-.brand{display:flex;align-items:center;gap:11px}
-.logo{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:#193754;border:1px solid #3b719c;color:#b6e7ff;font-size:23px}
-.brand b{font-size:15px;letter-spacing:1px}
-.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:1.5px;margin-top:3px}
-.live{font-size:10px;color:var(--green)}
-.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px}
-.label{font-size:11px;color:var(--muted);letter-spacing:1.5px;font-weight:800;margin:0 0 11px}
-.panel{padding:17px;border-radius:22px;border:1px solid #2a3d56;background:linear-gradient(145deg,#17283e,#0e1624);box-shadow:0 15px 40px #0003}
-.chip{font-size:10px;color:#b9dcff;background:#1b3048;border:1px solid #2e4e70;padding:7px 9px;border-radius:9px}
-.muted{font-size:11px;color:var(--muted)}
-.pair{font-size:28px;font-weight:900;margin:20px 0 3px}
-.price{font-size:12px;color:var(--muted)}
-.countdown{margin:17px 0;padding:15px;border-radius:16px;background:#0b1420;border:1px solid #26364c;text-align:center}
-.count-label{font-size:10px;color:var(--muted);letter-spacing:1.4px}
-.clock{font-size:44px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:2px;margin:2px 0}
-.clock.hot{color:var(--yellow);text-shadow:0 0 20px #ffd16633}
-.bar{height:4px;background:#28374b;border-radius:5px;overflow:hidden}
-.bar div{height:100%;width:0;background:var(--blue)}
-.signal{min-height:116px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:16px;border-radius:17px;border:1px solid #35445a;background:#101c2b;color:var(--yellow)}
-.signal.call{color:var(--green);border-color:#247457;background:#0d2b25}
-.signal.put{color:var(--red);border-color:#77354a;background:#2b1723}
-.sigword{font-size:32px;font-weight:1000;letter-spacing:2px}
-.sigdetail{font-size:11px;color:var(--muted);margin-top:5px}
-.statline{display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-top:12px;color:var(--muted)}
-.statline b{text-align:right;color:var(--white)}
-.settings{display:grid;grid-template-columns:1fr auto;gap:9px;margin-top:13px}
-select,button{font:inherit}
-select{width:100%;background:#0b1421;color:var(--white);border:1px solid var(--line);border-radius:11px;padding:11px}
-button{cursor:pointer;border:1px solid #2b496a;background:#152941;color:#d9eaff;border-radius:11px;padding:10px 12px;font-size:11px}
-button:disabled{opacity:.5}
-.section{margin-top:24px}
-.pairrows{display:flex;flex-direction:column;gap:8px}
-.pairrow{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:13px;background:var(--panel);border:1px solid var(--line);border-radius:13px}
-.pairrow strong{font-size:12px}
-.pairrow small{display:block;color:var(--muted);font-size:10px;margin-top:4px}
-.pill{min-width:58px;text-align:center;border-radius:8px;padding:7px;font-size:10px;font-weight:900;background:#282b2c;color:var(--yellow)}
-.pill.call{color:var(--green);background:#10372b}
-.pill.put{color:var(--red);background:#401e2a}
-.score{font-size:12px;font-weight:800;text-align:right}
-.status{background:#0c1420;border:1px solid var(--line);padding:13px;border-radius:13px}
-.status div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;font-size:11px}
-.status span{color:var(--muted)}
-.status b{text-align:right;overflow-wrap:anywhere}
-.message{font-size:11px;color:var(--yellow);line-height:1.6;margin-top:10px;overflow-wrap:anywhere}
-.foot{text-align:center;font-size:10px;color:#6e7e95;line-height:1.7;margin-top:22px}
-@media(max-width:360px){.app{padding:12px 10px}.clock{font-size:37px}.pair{font-size:24px}}
+body{
+  margin:0;background:radial-gradient(ellipse at top,#17294b,var(--bg) 65%);
+  color:#f5f8ff;font-family:system-ui,sans-serif;min-height:100vh
+}
+main{max-width:760px;margin:auto;padding:16px 13px 30px}
+header{display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:900;font-size:20px;letter-spacing:1px}
+.logo span{color:var(--cyan)}
+.badge{font-size:10px;color:var(--gold);border:1px solid #66532d;padding:6px 9px;border-radius:30px}
+.sub{font-size:11px;color:var(--muted);margin:8px 0 16px}
+.panel{background:linear-gradient(145deg,#142039,#0d1425);border:1px solid var(--line);border-radius:17px;padding:14px;margin:12px 0}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:7px}
+select,button{width:100%;padding:12px;border:1px solid #344968;border-radius:10px;background:#17243c;color:white;font-size:14px}
+button{font-weight:750;cursor:pointer}
+button.primary{background:linear-gradient(90deg,#087db7,#5747df);border:0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.price{font-size:clamp(25px,7vw,39px);font-weight:900;overflow-wrap:anywhere}
+.muted{color:var(--muted)}.small{font-size:11px}
+.green{color:var(--green)}.red{color:var(--red)}
+.radar{text-align:center;position:relative;overflow:hidden}
+.radar:before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 27px,#42e5ff0b 28px),repeating-linear-gradient(90deg,transparent 0 27px,#42e5ff0b 28px)}
+.radar>*{position:relative}
+.ring{height:160px;width:160px;border:1px solid #42e5ff70;border-radius:50%;margin:13px auto;display:grid;place-items:center;position:relative;box-shadow:inset 0 0 28px #42e5ff12,0 0 25px #42e5ff10}
+.ring:before,.ring:after{content:"";position:absolute;inset:15px;border:1px solid #42e5ff40;border-radius:50%}
+.ring:after{inset:32px}
+.scan{position:absolute;inset:0;border-radius:50%;background:conic-gradient(transparent 0 72%,#42e5ff40 94%,transparent);animation:spin 3.5s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.count{font-size:43px;font-weight:900;line-height:1.1}
+.lamps{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lampbox{background:#090f1e;border:1px solid var(--line);padding:15px 8px;border-radius:13px;text-align:center}
+.dot{width:12px;height:12px;display:inline-block;background:#43516a;border-radius:50%;margin-right:7px}
+.dot.on.call{background:var(--green);box-shadow:0 0 16px var(--green)}
+.dot.on.put{background:var(--red);box-shadow:0 0 16px var(--red)}
+.lampbox strong{display:block;font-size:22px;margin-top:8px}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.metric{padding:10px 7px;border:1px solid #253551;background:#0b1221;border-radius:10px;min-width:0}
+.metric span{display:block;font-size:10px;color:var(--muted)}
+.metric b{display:block;font-size:15px;margin-top:5px;overflow-wrap:anywhere}
+.bar{height:5px;border-radius:20px;background:#26354f;margin-top:10px;overflow:hidden}
+.bar div{height:100%;width:50%;background:linear-gradient(90deg,var(--cyan),#7858ff)}
+.notice{font-size:11px;line-height:1.6;color:#e6d6a7;border:1px solid #64512d;background:#352a174a;border-radius:12px;padding:11px;margin-top:15px}
+.status{text-align:center;font-size:12px;color:var(--muted);margin-top:10px}
+.history{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #25334b;font-size:12px}
+.history:last-child{border:0}
+footer{text-align:center;color:#7485a4;font-size:10px;margin-top:17px}
+@media(min-width:600px){.twocol{display:grid;grid-template-columns:1fr 1fr;gap:12px}.twocol>.panel{margin:0}}
 </style>
 </head>
 <body>
-<main class="app">
-<header class="top">
-  <div class="brand"><div class="logo">✦</div><div><b>NEURAL RADAR</b><small>AI MARKET SIGNALS</small></div></div>
-  <div class="live"><span class="dot" id="dot"></span><span id="live">CONNECTING</span></div>
+<main>
+<header>
+  <div class="logo">◈ OTC <span>AI RADAR</span></div>
+  <div class="badge">● DEMO MODE</div>
 </header>
+<div class="sub">PRO SIGNAL ENGINE • SIMULATED DATA ONLY</div>
 
-<p class="label">MARKET RADAR · 1 MINUTE</p>
 <section class="panel">
-  <div class="row"><span class="chip">NON-OTC · FOREX</span><span class="muted">Market data</span></div>
-  <div class="pair" id="pairTitle">EUR/USD</div>
-  <div class="price" id="price">กำลังโหลดราคา...</div>
-
-  <div class="countdown">
-    <div class="count-label">เวลาจนจบแท่ง 1 นาที</div>
-    <div class="clock" id="clock">01:00</div>
-    <div class="bar"><div id="barFill"></div></div>
-    <div class="muted" id="timerHint" style="margin-top:9px">เปิดเสียงโดยแตะปุ่มด้านล่าง</div>
+  <div class="grid">
+    <div>
+      <label for="symbol">เลือกคู่เงิน</label>
+      <select id="symbol">
+        <option>EUR/USD OTC</option>
+        <option>GBP/USD OTC</option>
+        <option>USD/JPY OTC</option>
+        <option>AUD/USD OTC</option>
+        <option>EUR/GBP OTC</option>
+        <option>USD/CHF OTC</option>
+      </select>
+    </div>
+    <div>
+      <label>กรอบเวลา</label>
+      <select disabled><option>1 นาที</option></select>
+    </div>
   </div>
-
-  <div class="signal" id="signal">
-    <div class="sigword" id="signalWord">STANDBY</div>
-    <div class="sigdetail" id="signalDetail">รอข้อมูลวิเคราะห์</div>
-  </div>
-
-  <div class="statline"><span>คะแนนเงื่อนไข</span><b id="score">--</b></div>
-  <div class="statline"><span>สถานะข้อมูล</span><b id="dataState">กำลังเชื่อมต่อ</b></div>
-
-  <div class="settings">
-    <select id="symbol" aria-label="เลือกคู่เงิน"></select>
-    <button id="soundBtn">เปิดเสียง</button>
-  </div>
-  <div class="message" id="message" role="status"></div>
+  <button id="sound" class="primary" style="margin-top:12px">
+    🔊 เปิดเสียงแจ้งเตือน
+  </button>
 </section>
 
-<section class="section">
-  <div class="row"><p class="label">คู่เงินที่มีข้อมูลในแคช</p><button id="refresh">รีเฟรช</button></div>
-  <div class="pairrows" id="rows"><div class="muted">ยังไม่มีข้อมูล</div></div>
-</section>
-
-<section class="section">
-  <p class="label">SYSTEM STATUS</p>
-  <div class="status">
-    <div><span>เซิร์ฟเวอร์</span><b id="server">กำลังตรวจสอบ</b></div>
-    <div><span>แหล่งข้อมูล</span><b>Twelve Data</b></div>
-    <div><span>อัปเดตล่าสุด</span><b id="updated">--</b></div>
-    <div><span>เสียงเตือน</span><b id="alertStatus">ยังไม่เปิด</b></div>
+<div class="twocol">
+<section class="panel">
+  <label>ราคาจำลองล่าสุด</label>
+  <div class="price" id="price">กำลังโหลด…</div>
+  <div class="small muted" id="pair">EUR/USD OTC</div>
+  <div class="bar"><div id="confidenceBar"></div></div>
+  <div class="small muted" style="margin-top:7px">
+    คะแนนความสอดคล้องของตัวชี้วัด
   </div>
 </section>
-<div class="foot">สัญญาณช่วยวิเคราะห์เท่านั้น ไม่รับประกันผลกำไร<br>ราคา Forex อาจแตกต่างจาก IQ Option OTC</div>
+
+<section class="panel radar">
+  <label>RADAR • CANDLE TIMER</label>
+  <div class="ring">
+    <div class="scan"></div>
+    <div>
+      <div class="count" id="count">60</div>
+      <div class="small muted">SECONDS</div>
+    </div>
+  </div>
+  <div class="status" id="phase">STANDBY</div>
+</section>
+</div>
+
+<section class="panel">
+  <label>สัญญาณ CALL / PUT</label>
+  <div class="lamps">
+    <div class="lampbox">
+      <span class="dot call" id="callDot"></span>
+      <span>CALL</span>
+      <strong id="callText">STANDBY</strong>
+      <span class="small muted">คาดการณ์ขึ้น</span>
+    </div>
+    <div class="lampbox">
+      <span class="dot put" id="putDot"></span>
+      <span>PUT</span>
+      <strong id="putText">STANDBY</strong>
+      <span class="small muted">คาดการณ์ลง</span>
+    </div>
+  </div>
+  <div class="status" id="message">รอวิเคราะห์ข้อมูลจำลอง</div>
+</section>
+
+<div class="twocol">
+<section class="panel">
+  <label>INDICATORS</label>
+  <div class="metrics">
+    <div class="metric"><span>RSI 14</span><b id="rsi">—</b></div>
+    <div class="metric"><span>EMA 9</span><b id="ema9">—</b></div>
+    <div class="metric"><span>EMA 21</span><b id="ema21">—</b></div>
+  </div>
+  <div class="status" id="momentum">Momentum: —</div>
+  <div class="status" id="score">Score: —</div>
+</section>
+
+<section class="panel">
+  <label>PAPER TRADING STATS</label>
+  <div class="metrics">
+    <div class="metric"><span>ชนะ</span><b class="green" id="wins">0</b></div>
+    <div class="metric"><span>แพ้</span><b class="red" id="losses">0</b></div>
+    <div class="metric"><span>รวม</span><b id="total">0</b></div>
+  </div>
+  <div class="status">สถิติสำหรับการทดสอบเท่านั้น</div>
+</section>
+</div>
+
+<section class="panel">
+  <label>ประวัติสัญญาณ</label>
+  <div id="history" class="small muted">ยังไม่มีสัญญาณ</div>
+</section>
+
+<div class="notice">
+  ⚠️ DEMO ONLY: ระบบนี้สร้างราคาสังเคราะห์ ไม่ได้ดึงราคา OTC จริง
+  และไม่ได้เชื่อมต่อหรือส่งคำสั่งซื้อขายไปยัง IQ Option
+  คะแนนความสอดคล้องไม่ใช่ความน่าจะเป็นที่จะชนะ
+</div>
+<footer>OTC AI SIGNAL RADAR • SIMULATION ENGINE</footer>
 </main>
 
 <script>
 (() => {
   const tg = window.Telegram?.WebApp;
-  try {
-    tg?.ready();
-    tg?.expand();
-    tg?.setHeaderColor?.("#080c16");
-    tg?.setBackgroundColor?.("#080c16");
-  } catch {}
+  try { tg?.ready(); tg?.expand(); } catch {}
 
   const $ = id => document.getElementById(id);
-  const symbols = [
-    "EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD",
-    "USD/CHF","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY"
-  ];
+  let soundEnabled = false;
+  let stream = null;
+  let latest = null;
+  let last10 = '';
+  let last2 = '';
+  let lastSignalRequest = '';
+  let orderUntil = 0;
+  let activeSignal = null;
+  let audioContext = null;
 
-  const state = {
-    symbol:"EUR/USD", data:null, rows:[],
-    audio:null, sound:false,
-    warned10:null, warned2:null,
-    holdUntil:0, heldSignal:"WAIT",
-    busy:false, lastFetch:0
+  function beep(freq = 850, duration = 0.15) {
+    if (!soundEnabled) return;
+    try {
+      audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+      if (audioContext.state === 'suspended') audioContext.resume();
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = 0.06;
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start();
+      osc.stop(audioContext.currentTime + duration);
+    } catch {}
+  }
+
+  $('sound').onclick = async () => {
+    soundEnabled = !soundEnabled;
+    $('sound').textContent = soundEnabled
+      ? '🔔 ปิดเสียงแจ้งเตือน'
+      : '🔊 เปิดเสียงแจ้งเตือน';
+    if (soundEnabled) beep(1000, 0.12);
   };
 
-  function headers() {
-    const h = {"Accept":"application/json"};
-    if (tg?.initData) h["x-telegram-init-data"] = tg.initData;
-    return h;
+  function formatPrice(value) {
+    if (value == null) return '—';
+    return Number(value).toFixed(
+      $('symbol').value.includes('JPY') ? 3 : 5
+    );
   }
 
-  async function api(url) {
-    const response = await fetch(url, {
-      headers:headers(), cache:"no-store"
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP ${response.status}`);
-    }
-    return data;
+  function lamps(signal) {
+    $('callDot').classList.toggle('on', signal === 'CALL');
+    $('putDot').classList.toggle('on', signal === 'PUT');
+
+    $('callText').textContent =
+      signal === 'CALL' ? 'ACTIVE' : 'STANDBY';
+    $('putText').textContent =
+      signal === 'PUT' ? 'ACTIVE' : 'STANDBY';
+
+    $('callText').className = signal === 'CALL' ? 'green' : '';
+    $('putText').className = signal === 'PUT' ? 'red' : '';
   }
 
-  function setLive(ok) {
-    $("live").textContent = ok ? "ONLINE" : "OFFLINE";
-    $("dot").style.background = ok ? "var(--green)" : "var(--red)";
-    $("server").textContent = ok ? "เชื่อมต่อแล้ว" : "เชื่อมต่อไม่ได้";
-    $("server").style.color = ok ? "var(--green)" : "var(--red)";
-  }
-
-  function showSignal(signal, detail) {
-    $("signal").className = "signal " +
-      (signal === "CALL" ? "call" : signal === "PUT" ? "put" : "");
-    $("signalWord").textContent = signal;
-    $("signalDetail").textContent = detail || "";
-  }
-
-  function tone(frequency=850, duration=.15) {
-    if (!state.sound || !state.audio) return;
-    try {
-      const ctx = state.audio;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = frequency;
-      gain.gain.setValueAtTime(.001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(.14, ctx.currentTime + .02);
-      gain.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + duration);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + duration + .03);
-    } catch {}
-  }
-
-  async function enableSound() {
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) throw new Error("อุปกรณ์นี้ไม่รองรับเสียง");
-      state.audio = new AudioContextClass();
-      await state.audio.resume();
-      state.sound = true;
-      $("soundBtn").textContent = "เสียงเปิดแล้ว ✓";
-      $("alertStatus").textContent = "เปิดแล้ว";
-      $("message").textContent = "เปิดเสียงแล้ว กรุณาเปิด Mini App ค้างไว้เพื่อรับเสียงเตือน";
-      tone(660,.12);
-    } catch (error) {
-      $("message").textContent = error.message || "เปิดเสียงไม่สำเร็จ";
-    }
-  }
-
-  function drawRows() {
-    const host = $("rows");
-    host.replaceChildren();
-    if (!state.rows.length) {
-      host.textContent = "ยังไม่มีข้อมูลแคชจากคู่เงินอื่น";
-      host.className = "muted";
+  function showHistory(items) {
+    if (!items?.length) {
+      $('history').textContent = 'ยังไม่มีสัญญาณ';
       return;
     }
-    host.className = "pairrows";
-    for (const row of state.rows) {
-      const item = document.createElement("div");
-      item.className = "pairrow";
 
-      const info = document.createElement("div");
-      const name = document.createElement("strong");
-      name.textContent = row.symbol || row.pair;
-      const sub = document.createElement("small");
-      sub.textContent = row.stale ? "ข้อมูลเก่า/ยังไม่มีข้อมูล" : (row.reason || "มีข้อมูลในแคช");
-      info.append(name, sub);
+    $('history').replaceChildren();
 
-      const pill = document.createElement("div");
-      pill.className = "pill " + String(row.signal || "WAIT").toLowerCase();
-      pill.textContent = row.signal || "WAIT";
+    items.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'history';
 
-      const score = document.createElement("div");
-      score.className = "score";
-      score.textContent = `${row.score || 0}%`;
+      const left = document.createElement('span');
+      left.textContent =
+        new Date(item.time).toLocaleTimeString('th-TH') +
+        ' • ' + item.symbol;
 
-      item.append(info, pill, score);
-      host.append(item);
+      const right = document.createElement('b');
+      right.textContent = item.signal;
+      right.className = item.signal === 'CALL' ? 'green' : 'red';
+
+      row.append(left, right);
+      $('history').appendChild(row);
+    });
+  }
+
+  function render(data) {
+    if (!data?.ok) return;
+    latest = data;
+
+    $('price').textContent = formatPrice(data.price);
+    $('pair').textContent = data.symbol + ' • SIMULATED';
+    $('count').textContent = data.candleRemaining;
+
+    const indicators = data.analysis.indicators;
+    $('rsi').textContent = indicators.rsi == null
+      ? '—' : indicators.rsi.toFixed(1);
+    $('ema9').textContent = formatPrice(indicators.ema9);
+    $('ema21').textContent = formatPrice(indicators.ema21);
+    $('momentum').textContent =
+      'Momentum: ' + indicators.momentum.toFixed(3);
+    $('score').textContent = 'Score: ' + data.analysis.score;
+    $('confidenceBar').style.width =
+      data.analysis.confidence + '%';
+
+    $('wins').textContent = data.stats.wins;
+    $('losses').textContent = data.stats.losses;
+    $('total').textContent = data.stats.total;
+
+    showHistory(data.history);
+
+    if (Date.now() < orderUntil && activeSignal) {
+      lamps(activeSignal);
+      $('phase').textContent =
+        'ORDER ACTIVE • ' +
+        Math.ceil((orderUntil - Date.now()) / 1000) + 's';
+    } else {
+      activeSignal = null;
+      lamps(null);
     }
   }
 
-  async function loadCachedRows() {
+  async function requestSignal(symbol, candleStart) {
+    const key = symbol + ':' + candleStart;
+    if (lastSignalRequest === key) return;
+    lastSignalRequest = key;
+
     try {
-      const result = await api("/api/scan/all");
-      state.rows = result.results || [];
-      drawRows();
-    } catch {}
-  }
+      const response = await fetch('/api/signal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol })
+      });
 
-  async function loadSelected(force=false) {
-    if (state.busy) return;
-    state.busy = true;
-    $("refresh").disabled = true;
+      const data = await response.json();
 
-    try {
-      const url = "/api/scan?symbol=" +
-        encodeURIComponent(state.symbol) + (force ? "&refresh=1" : "");
-      const data = await api(url);
-      state.data = data;
-      state.lastFetch = Date.now();
+      if (data.accepted) {
+        activeSignal = data.signal;
+        orderUntil = data.expiresAt;
+        lamps(activeSignal);
 
-      setLive(true);
-      $("pairTitle").textContent = data.symbol || state.symbol;
-      $("price").textContent = "ราคาอ้างอิง: " +
-        (data.price == null ? "--" : Number(data.price).toString());
-      $("score").textContent = `${data.score ?? 0}%`;
-      $("updated").textContent = new Date(data.fetchedAt || Date.now()).toLocaleTimeString("th-TH");
+        $('message').textContent =
+          'สัญญาณจำลอง ' + data.signal +
+          ' • แสดง 40 วินาที • คะแนน ' +
+          data.analysis.confidence;
 
-      const stale = Boolean(data.stale);
-      $("dataState").textContent = stale ? "ข้อมูลเก่า · งดสัญญาณ" : "ได้รับข้อมูล";
-      $("dataState").style.color = stale ? "var(--yellow)" : "var(--green)";
-      $("message").textContent = data.reason || "";
-
-      state.heldSignal = !stale && ["CALL","PUT"].includes(data.signal)
-        ? data.signal : "WAIT";
-
-      await loadCachedRows();
-    } catch (error) {
-      setLive(false);
-      $("dataState").textContent = "ยังไม่ได้รับข้อมูล";
-      $("message").textContent = error.message +
-        " · ตรวจสอบ API Key, Telegram และ Render Logs";
-      state.heldSignal = "WAIT";
-      showSignal("WAIT","ไม่มีข้อมูลยืนยัน งดสัญญาณ");
-    } finally {
-      state.busy = false;
-      $("refresh").disabled = false;
-    }
-  }
-
-  function tick() {
-    const now = Date.now();
-    const millis = now % 1000;
-    const remaining = 60 - (now / 1000 % 60);
-    const seconds = Math.max(0, Math.ceil(remaining));
-    const candleId = Math.floor(now / 60000);
-
-    $("clock").textContent = `00:${String(seconds).padStart(2,"0")}`;
-    $("clock").classList.toggle("hot", seconds <= 10);
-    $("barFill").style.width = `${(60 - remaining) / 60 * 100}%`;
-
-    if (seconds === 10 && state.warned10 !== candleId) {
-      state.warned10 = candleId;
-      tone(660,.2);
-      $("timerHint").textContent = "เหลือ 10 วินาที · เตรียมเฝ้าระวัง";
-    }
-
-    if (seconds <= 2 && seconds >= 1 && state.warned2 !== candleId) {
-      state.warned2 = candleId;
-      tone(1050,.13);
-      setTimeout(() => tone(1350,.16),170);
-
-      const fresh = state.data && !state.data.stale &&
-        Date.now() - Date.parse(state.data.fetchedAt) < 180000;
-
-      const preview = fresh ? state.heldSignal : "WAIT";
-      showSignal(preview, preview === "WAIT"
-        ? "เหลือ 2 วินาที · ยังไม่มีสัญญาณยืนยัน"
-        : "เหลือ 2 วินาที · ตรวจสอบสัญญาณสำหรับแท่งถัดไป");
-
-      $("timerHint").textContent = "เหลือ 2 วินาที · ตรวจสอบก่อนตัดสินใจ";
-    }
-
-    // เมื่อเริ่มนาทีใหม่ ให้ค้างสัญญาณ 40 วินาที
-    // โดยใช้เฉพาะข้อมูลที่ยังสดและมี CALL/PUT ชัดเจน
-    if (remaining < .15 && state.holdUntil <= now) {
-      const fresh = state.data && !state.data.stale &&
-        Date.now() - Date.parse(state.data.fetchedAt) < 180000;
-
-      state.heldSignal = fresh && ["CALL","PUT"].includes(state.data.signal)
-        ? state.data.signal : "WAIT";
-      state.holdUntil = now + 40000;
-
-      if (state.heldSignal !== "WAIT") {
-        showSignal(state.heldSignal, "สัญญาณค้าง 40 วินาที · โปรดตรวจสอบราคา");
-        tone(state.heldSignal === "CALL" ? 880 : 440,.22);
+        beep(data.signal === 'CALL' ? 1100 : 450, 0.25);
       } else {
-        showSignal("WAIT","ข้อมูลไม่สดหรือเงื่อนไขไม่ชัดเจน");
+        $('message').textContent =
+          data.reason === 'NO_CLEAR_SIGNAL'
+            ? 'WAIT • สัญญาณยังไม่ชัดเจน'
+            : 'กำลังรอรอบถัดไป';
       }
-    }
 
-    if (state.holdUntil > now) {
-      showSignal(state.heldSignal,
-        `แสดงสัญญาณอีก ${Math.ceil((state.holdUntil-now)/1000)} วินาที`);
-    } else if (state.holdUntil !== 0 && state.holdUntil <= now) {
-      state.holdUntil = 0;
-      showSignal("STANDBY","รอรอบถัดไป");
-      $("timerHint").textContent = "Standby · รอสัญญาณรอบใหม่";
-    } else if (seconds > 2) {
-      showSignal("STANDBY","รอจังหวะก่อนจบแท่ง");
+      render(data);
+    } catch {
+      $('message').textContent = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้';
     }
   }
 
-  $("symbol").addEventListener("change", () => {
-    state.symbol = $("symbol").value;
-    state.data = null;
-    state.holdUntil = 0;
-    state.heldSignal = "WAIT";
-    $("pairTitle").textContent = state.symbol;
-    showSignal("WAIT","กำลังโหลดคู่เงินที่เลือก");
-    loadSelected(true);
+  function connect() {
+    if (stream) stream.close();
+
+    const symbol = $('symbol').value;
+    stream = new EventSource(
+      '/api/stream?symbol=' + encodeURIComponent(symbol)
+    );
+
+    stream.onmessage = event => {
+      try {
+        const data = JSON.parse(event.data);
+        render(data);
+      } catch {}
+    };
+
+    stream.onerror = () => {
+      $('phase').textContent = 'กำลังเชื่อมต่อใหม่…';
+    };
+  }
+
+  $('symbol').addEventListener('change', () => {
+    last10 = '';
+    last2 = '';
+    lastSignalRequest = '';
+    activeSignal = null;
+    orderUntil = 0;
+    lamps(null);
+    $('message').textContent = 'เปลี่ยนคู่เงินแล้ว • รอสัญญาณ';
+    connect();
   });
 
-  $("soundBtn").addEventListener("click", enableSound);
-  $("refresh").addEventListener("click", () => loadSelected(true));
-
-  for (const symbol of symbols) {
-    $("symbol").add(new Option(symbol,symbol));
-  }
-  $("symbol").value = state.symbol;
-
-  loadSelected();
-  tick();
-  setInterval(tick,100);
-  // ป้องกันการเรียก API ถี่เกินไปในแผนฟรี
+  // นับถอยหลังบนหน้าจอและเตือนตามเวลาที่เซิร์ฟเวอร์รายงาน
   setInterval(() => {
-    if (Date.now() - state.lastFetch >= 65000) loadSelected();
-  },5000);
+    if (!latest) return;
+
+    const elapsed = Math.floor(
+      (Date.now() - latest.serverTime) / 1000
+    );
+
+    const remaining = Math.max(
+      0, latest.candleRemaining - elapsed
+    );
+
+    $('count').textContent = remaining;
+
+    if (remaining <= 10 && remaining > 2) {
+      $('phase').textContent = 'เตรียมจบแท่ง • เฝ้าระวัง';
+    }
+
+    if (remaining === 10 && last10 !== latest.candleStart) {
+      last10 = latest.candleStart;
+      beep(650, 0.2);
+    }
+
+    if (remaining === 2 && last2 !== latest.candleStart) {
+      last2 = latest.candleStart;
+      beep(950, 0.15);
+      setTimeout(() => beep(1200, 0.2), 200);
+      $('phase').textContent = 'เหลือ 2 วินาที • ประเมินสัญญาณ';
+      requestSignal(latest.symbol, latest.candleStart);
+    }
+
+    if (Date.now() >= orderUntil && activeSignal) {
+      activeSignal = null;
+      lamps(null);
+      $('phase').textContent = 'STANDBY • รอรอบใหม่';
+    }
+  }, 200);
+
+  connect();
 })();
 </script>
 </body>
