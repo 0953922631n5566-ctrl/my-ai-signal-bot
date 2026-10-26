@@ -1,17 +1,14 @@
 
 {
-  "name": "ai-real-time-signal",
+  "name": "ai-signal-radar",
   "version": "1.0.0",
-  "description": "Forex Non-OTC real-time signal Telegram Mini App",
+  "description": "AI Signal Radar using Twelve Data REST API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
   "dependencies": {
-    "express": "^5.1.0",
-    "ws": "^8.18.3"
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
   }
 }
