@@ -4,697 +4,296 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<meta name="theme-color" content="#080e19">
-<title>OTC RADAR AI</title>
+<meta name="theme-color" content="#080d1b">
+<title>Market AI Radar</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root {
-  --bg:#080e19; --panel:#111c2d; --line:#263952;
-  --cyan:#4ce5ff; --green:#21edab; --red:#ff506d;
-  --amber:#ffc75a; --muted:#8da4bf;
+  color-scheme: dark;
+  --bg:#080d1b; --panel:#111d31; --line:#293c56;
+  --cyan:#40e0d0; --green:#22e6a8; --red:#ff5477;
+  --yellow:#ffc857; --muted:#8fa3bd;
 }
 * { box-sizing:border-box }
 body {
-  margin:0;
-  background:radial-gradient(ellipse at top,#162c49,var(--bg) 65%);
-  color:#f1f7ff;font:14px system-ui,sans-serif;
+  margin:0; color:#edf5ff; background:
+  radial-gradient(ellipse at top,#18375b,transparent 48%),var(--bg);
+  font:15px system-ui,sans-serif;
 }
-header {
-  display:flex;justify-content:space-between;align-items:center;
-  padding:16px 14px;gap:8px;
-}
-.brand { font-size:20px;font-weight:900;letter-spacing:1px }
+main { max-width:620px; margin:auto; padding:18px 14px 30px }
+header { display:flex; justify-content:space-between; align-items:center;
+  margin-bottom:16px }
+.brand { font-weight:900; font-size:19px }
 .brand span { color:var(--cyan) }
-.sub { font-size:10px;color:var(--muted);letter-spacing:1px }
-.status {
-  font-size:10px;border:1px solid #695325;color:var(--amber);
-  border-radius:18px;padding:7px 9px;white-space:nowrap;
-}
-.notice {
-  margin:0 12px 12px;padding:10px;border-radius:10px;
-  background:#382a15;border:1px solid #75541c;
-  color:#ffdc91;font-size:11px;line-height:1.6;
-}
-main { max-width:850px;margin:auto;padding:0 12px 25px }
-.grid { display:grid;grid-template-columns:1fr 1fr;gap:10px }
-.panel {
-  background:linear-gradient(145deg,#142237,#0d1624);
-  border:1px solid var(--line);border-radius:15px;
-  padding:13px;min-width:0;
-}
-.full { grid-column:1/-1 }
-.label { font-size:10px;color:var(--muted);letter-spacing:1.2px }
-.big { font-size:26px;font-weight:900;margin:8px 0 }
-.cyan { color:var(--cyan) }
-.muted { color:var(--muted) }
-.signal {
-  min-height:190px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
-  position:relative;overflow:hidden;
-}
-.signal:before {
-  content:"";position:absolute;width:145px;height:145px;
-  border:1px solid #4ce5ff25;border-radius:50%;
-  box-shadow:0 0 0 20px #4ce5ff08,0 0 0 40px #4ce5ff05;
-}
-.word { z-index:1;font-size:32px;font-weight:950;letter-spacing:2px }
-.signalText,.signal .label { z-index:1;text-align:center }
-.signalText { font-size:11px;color:var(--muted);margin-top:5px }
-.signal.call { border-color:#21edab99;box-shadow:inset 0 0 45px #21edab12 }
-.signal.call .word { color:var(--green);text-shadow:0 0 22px #21edab66 }
-.signal.put { border-color:#ff506d99;box-shadow:inset 0 0 45px #ff506d12 }
-.signal.put .word { color:var(--red);text-shadow:0 0 22px #ff506d66 }
-.lamp {
-  display:inline-block;width:9px;height:9px;border-radius:50%;
-  background:#718198;margin-right:5px;
-}
-.lamp.call { background:var(--green);box-shadow:0 0 12px var(--green) }
-.lamp.put { background:var(--red);box-shadow:0 0 12px var(--red) }
-select,button {
-  width:100%;padding:11px;border:1px solid #30445e;
-  border-radius:10px;background:#182940;color:#f1f7ff;font:inherit;
-}
-button { cursor:pointer }
-button:active { transform:scale(.98) }
-button:disabled { opacity:.5;cursor:not-allowed }
-.buttons { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px }
-button.primary { background:#123b4b;border-color:#237b8e }
-button.stop { background:#39202c;border-color:#743044 }
-.chart { width:100%;height:100px;display:block;margin-top:8px }
-.metrics { display:flex;gap:7px;margin-top:9px }
-.metric {
-  flex:1;background:#0a1320;border-radius:9px;
-  padding:9px;min-width:0;
-}
-.metric strong { display:block;font-size:16px;overflow-wrap:anywhere }
-.small { font-size:10px;color:var(--muted);line-height:1.6 }
-.pair {
-  display:grid;grid-template-columns:1fr auto;gap:6px;
-  align-items:center;padding:11px 0;border-bottom:1px solid #23344a;
-}
-.pair:last-child { border:0 }
-.pairName { font-weight:750 }
-.pairPrice { font-variant-numeric:tabular-nums }
-.tag {
-  display:inline-block;padding:4px 6px;border-radius:6px;
-  background:#172a3e;color:var(--cyan);font-size:10px;
-}
-.meter { height:4px;background:#25354b;border-radius:5px;margin-top:7px;overflow:hidden }
-.meter i { display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green)) }
-.choice { display:flex;gap:8px;align-items:center;margin-top:12px;line-height:1.5 }
-.choice input { accent-color:var(--cyan);width:17px;height:17px }
-.pulse { animation:pulse 1s infinite }
-@keyframes pulse { 50% { opacity:.4 } }
-.footer { text-align:center;padding:17px 4px;color:#6f87a4;font-size:10px }
-@media(max-width:380px) {
-  .grid { grid-template-columns:1fr }
-  .full { grid-column:1 }
-  .signal { min-height:175px }
-}
-@media(min-width:620px) {
-  .grid { grid-template-columns:1fr 1fr }
-  .signal { min-height:230px }
-}
+.badge { color:var(--yellow); font-size:11px }
+.panel { background:var(--panel); border:1px solid var(--line);
+  border-radius:17px; padding:15px; margin-bottom:12px }
+.label { color:var(--muted); font-size:11px; letter-spacing:1px }
+select,button { background:#0a1425; color:white; border:1px solid var(--line);
+  border-radius:11px; padding:12px; font:inherit }
+select { width:100%; margin-top:8px }
+.radar { height:190px; margin:13px 0; border-radius:15px;
+  position:relative; display:grid; place-items:center; overflow:hidden;
+  background:radial-gradient(circle,#103449,#091524 75%);
+  border:1px solid #1d4659 }
+.ring { position:absolute; width:65px; height:65px; border:1px solid #40e0d066;
+  border-radius:50%; animation:pulse 3s infinite }
+.ring:nth-child(2) { width:120px;height:120px;animation-delay:.5s }
+.ring:nth-child(3) { width:175px;height:175px;animation-delay:1s }
+@keyframes pulse { 0%{opacity:.7;transform:scale(.8)}
+  100%{opacity:.05;transform:scale(1.15)} }
+.core { z-index:1;text-align:center }
+.core b { display:block;color:var(--cyan);font-size:25px;letter-spacing:2px }
+.core small { color:var(--muted) }
+.metrics { display:grid;grid-template-columns:repeat(3,1fr);gap:7px }
+.metric { background:#0a1425;border:1px solid var(--line);
+  border-radius:10px;padding:10px;min-width:0 }
+.metric small { color:var(--muted);font-size:10px;display:block }
+.metric b { display:block;font-size:15px;margin-top:5px;overflow-wrap:anywhere }
+.row { display:flex;align-items:center;justify-content:space-between;gap:10px }
+.timer { font-size:31px;color:var(--cyan);font-weight:900;
+  font-variant-numeric:tabular-nums }
+.signal { margin-top:12px;text-align:center;padding:17px 8px;
+  border:1px solid var(--line);border-radius:15px;background:#0a1425 }
+.word { font-size:36px;font-weight:900;letter-spacing:2px }
+.wait .word { color:var(--yellow) }
+.call { background:#092a28;border-color:#177b63 }
+.call .word { color:var(--green) }
+.put { background:#2b1020;border-color:#8b3450 }
+.put .word { color:var(--red) }
+.sub,.reason { font-size:12px;line-height:1.6;color:var(--muted);margin-top:6px }
+.actions { display:flex;gap:8px;margin-top:12px }
+.actions button { flex:1;cursor:pointer }
+.primary { background:#103a48 }
+.footer { text-align:center;color:#7388a3;font-size:11px;line-height:1.6;padding:12px }
 </style>
 </head>
 <body>
+<main>
 <header>
-  <div class="brand">◈ OTC <span>RADAR AI</span>
-    <div class="sub">SMART SCANNER · MINI APP</div>
-  </div>
-  <div class="status" id="connection">● CONNECTING</div>
+  <div class="brand">◈ MARKET <span>AI RADAR</span></div>
+  <div class="badge" id="connection">● CONNECTING</div>
 </header>
 
-<div class="notice">
-  ⚠ DEMO ONLY — ราคาจำลอง ไม่ใช่ราคาสดของ IQ Option OTC
-  สัญญาณนี้ยังไม่มีผลทดสอบยืนยันอัตราชนะ
-</div>
+<section class="panel">
+  <div class="label">คู่เงินตลาดหลัก · NON-OTC</div>
+  <select id="symbol">
+    <option>EUR/USD</option><option>GBP/USD</option>
+    <option>USD/JPY</option><option>AUD/USD</option>
+    <option>USD/CAD</option><option>USD/CHF</option>
+    <option>NZD/USD</option><option>EUR/GBP</option>
+    <option>EUR/JPY</option><option>GBP/JPY</option>
+  </select>
 
-<main>
-<div class="grid">
-
-  <section class="panel signal full" id="signalPanel">
-    <div class="label">AI SIGNAL LIGHT</div>
-    <div class="word" id="signalWord">STANDBY</div>
-    <div class="signalText" id="signalPair">กำลังเชื่อมต่อข้อมูล</div>
-    <div class="big" id="countdown">--</div>
-    <div class="signalText" id="signalHint">เปิดเสียงได้ก่อนเริ่มสแกน</div>
-  </section>
-
-  <section class="panel">
-    <div class="label">SELECT INSTRUMENT</div>
-    <div style="margin-top:9px">
-      <select id="pairSelect">
-        <option value="">กำลังโหลดคู่เงิน...</option>
-      </select>
+  <div class="radar">
+    <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+    <div class="core">
+      <b id="radar">SCANNING</b>
+      <small id="radarSub">กำลังเชื่อมต่อข้อมูลราคา</small>
     </div>
+  </div>
 
-    <label class="choice">
-      <input type="checkbox" id="multiScan">
-      <span>สแกนทุกคู่ที่เลือกไว้ในรายการ</span>
-    </label>
+  <div class="metrics">
+    <div class="metric"><small>LAST CLOSE</small><b id="price">—</b></div>
+    <div class="metric"><small>RSI (14)</small><b id="rsi">—</b></div>
+    <div class="metric"><small>TIMEFRAME</small><b>1 MIN</b></div>
+  </div>
+</section>
 
-    <div class="big cyan" id="price">—</div>
-    <div class="small" id="priceInfo">SIMULATED PRICE</div>
-    <svg class="chart" id="chart" viewBox="0 0 320 100"
-      preserveAspectRatio="none"></svg>
-
-    <div class="metrics">
-      <div class="metric">
-        <div class="small">RSI DEMO</div>
-        <strong id="rsi">—</strong>
-      </div>
-      <div class="metric">
-        <div class="small">TREND</div>
-        <strong id="trend">—</strong>
-      </div>
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="label">COUNTDOWN TO NEXT MINUTE</div>
+      <div class="sub" id="phase">Standby</div>
     </div>
-  </section>
+    <div class="timer" id="timer">60s</div>
+  </div>
 
-  <section class="panel">
-    <div class="label">RADAR SCANNER</div>
-    <div style="font-weight:800;margin:7px 0 3px">เลือกคู่เงินสำหรับสแกน</div>
-    <div class="small">ติ๊กเลือกคู่เงินที่ต้องการ ระบบจะสแกนเฉพาะคู่ที่เลือกเมื่อเปิดโหมดหลายคู่</div>
-    <div id="pairs"></div>
-  </section>
+  <div class="signal wait" id="signal">
+    <div class="label">NEXT CANDLE SIGNAL</div>
+    <div class="word" id="word">WAIT</div>
+    <div class="sub" id="signalSub">รอข้อมูลตลาดที่ยืนยันได้</div>
+    <div class="sub" id="hold"></div>
+  </div>
 
-  <section class="panel full">
-    <div class="label">ALERT CONTROL</div>
+  <div class="actions">
+    <button class="primary" id="sound">🔊 เปิดเสียงเตือน</button>
+    <button id="refresh">↻ สแกนใหม่</button>
+  </div>
+</section>
 
-    <div class="buttons">
-      <button class="primary" id="soundBtn">🔔 เปิดเสียง</button>
-      <button id="startBtn">▶ เริ่มอัตโนมัติ</button>
-      <button id="rescanBtn">⟳ สแกนใหม่</button>
-      <button class="stop" id="stopBtn">■ หยุด</button>
-    </div>
-
-    <div class="metrics">
-      <div class="metric">
-        <div class="small">รอบเฝ้าดู</div>
-        <strong>30s</strong>
-      </div>
-      <div class="metric">
-        <div class="small">เตือนก่อนจบ</div>
-        <strong>10s / 2s</strong>
-      </div>
-      <div class="metric">
-        <div class="small">ไฟสัญญาณ</div>
-        <strong>40s</strong>
-      </div>
-    </div>
-
-    <p class="small">
-      กดเริ่มอัตโนมัติเพียงครั้งเดียว ระบบจะวนรอบสแกนต่อเนื่อง
-      เสียงทำงานขณะหน้า Mini App เปิดอยู่และอุปกรณ์อนุญาตให้เล่นเสียง
-      สัญญาณเป็นการสาธิต ไม่ส่งคำสั่งซื้อขาย
-    </p>
-    <div class="small" id="clockInfo">เวลาเซิร์ฟเวอร์: กำลังรอข้อมูล</div>
-  </section>
-</div>
+<section class="panel">
+  <div class="label">TECHNICAL ANALYSIS</div>
+  <div class="reason" id="reason">กำลังรอข้อมูลแท่งเทียนที่ปิดแล้ว</div>
+  <div class="sub" id="updated">ยังไม่มีข้อมูล</div>
+</section>
 
 <div class="footer">
-  OTC RADAR AI · SYNTHETIC DATA · NO LIVE BROKER CONNECTION
+  สัญญาณใช้เพื่อประกอบการตัดสินใจเท่านั้น คะแนนทางเทคนิคไม่ใช่
+  ความน่าจะเป็นที่รับประกันผล ระบบไม่ส่งคำสั่งซื้อขายอัตโนมัติ
 </div>
 </main>
 
 <script>
-(() => {
-"use strict";
-
-const $ = id => document.getElementById(id);
 const tg = window.Telegram?.WebApp;
 tg?.ready();
 tg?.expand();
 
-let pairs = [];
-let selected = "";
-let selectedKeys = new Set();
-let soundOn = false;
-let audio = null;
-let phase = "standby";
-let phaseEnds = 0;
-let loop = null;
-let reconnectTimer = null;
-let last10 = false;
-let last2 = false;
-let activeSignal = null;
-let serverOffset = 0;
-let autoScan = false;
-let roundId = 0;
-let alertTimers = [];
-let lastSnapshotAt = 0;
+const initData = tg?.initData || "";
+const $ = id => document.getElementById(id);
 
-const WATCH_SECONDS = 30;
-const SIGNAL_SECONDS = 40;
+let enabled = false;
+let audio;
+let busy = false;
+let data = null;
+let candidate = null;
+let signalUntil = 0;
+let shownMinute = null;
+let warned10 = null;
+let warned2 = null;
+let lastFetchMinute = null;
 
-function serverNow() {
-  return Date.now() + serverOffset;
+function connection(text, good=false) {
+  $("connection").textContent = "● " + text;
+  $("connection").style.color = good ? "var(--green)" : "var(--yellow)";
 }
 
-function clearAlertTimers() {
-  alertTimers.forEach(id => clearTimeout(id));
-  alertTimers = [];
-}
-
-function scheduleAlert(fn, delay) {
-  const id = setTimeout(fn, Math.max(0, delay));
-  alertTimers.push(id);
-  return id;
-}
-
-function beep(freq = 850, duration = 0.15) {
-  if (!soundOn) return;
-
+function beep(freq=880, duration=.13) {
+  if (!enabled) return;
   try {
     audio ||= new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === "suspended") audio.resume();
-
     const osc = audio.createOscillator();
     const gain = audio.createGain();
-
-    osc.type = "sine";
     osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.07, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(
-      0.001, audio.currentTime + duration
-    );
-
+    gain.gain.value = .06;
     osc.connect(gain);
     gain.connect(audio.destination);
     osc.start();
     osc.stop(audio.currentTime + duration);
-  } catch (_) {}
+  } catch {}
 }
 
-function analyze(pair) {
-  const prices = (pair.history || []).map(x => Number(x.price));
+async function scan() {
+  if (busy) return;
+  busy = true;
 
-  if (prices.length < 20) {
-    return { dir:"WAIT", score:0, rsi:50, trend:"WARMING" };
-  }
+  try {
+    const symbol = $("symbol").value;
+    const response = await fetch(
+      "/api/market?symbol=" + encodeURIComponent(symbol),
+      { headers: { "x-telegram-init-data": initData } }
+    );
 
-  const recent = prices.slice(-14);
-  let gains = 0;
-  let losses = 0;
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Market data error");
 
-  for (let i = 1; i < recent.length; i++) {
-    const delta = recent[i] - recent[i - 1];
-    if (delta > 0) gains += delta;
-    else losses -= delta;
-  }
+    data = result;
+    candidate = result.analysis;
+    connection("LIVE DATA", true);
 
-  const rsi = losses === 0
-    ? (gains === 0 ? 50 : 100)
-    : 100 - 100 / (1 + gains / losses);
+    $("radar").textContent = "SCANNING";
+    $("radarSub").textContent = symbol + " · " + result.provider;
+    $("price").textContent = Number(result.analysis.close).toPrecision(7);
+    $("rsi").textContent = result.analysis.rsi;
+    $("reason").textContent =
+      result.analysis.reasons.join(" · ") || "ไม่มีเงื่อนไขสนับสนุนชัดเจน";
+    $("updated").textContent =
+      "อัปเดต " + new Date(result.fetchedAt).toLocaleTimeString("th-TH") +
+      " · ประวัติ " + result.analysis.sampleSize + " แท่ง";
 
-  const fast = prices.slice(-8).reduce((a,b) => a+b, 0) / 8;
-  const slow = prices.slice(-20).reduce((a,b) => a+b, 0) / 20;
-  const momentum = prices.at(-1) - prices.at(-4);
-  const momentumLong = prices.at(-1) - prices.at(-10);
-
-  const up = fast > slow && momentum > 0 && momentumLong > 0;
-  const down = fast < slow && momentum < 0 && momentumLong < 0;
-
-  let dir = "WAIT";
-  if (up && rsi >= 50 && rsi < 70) dir = "CALL";
-  if (down && rsi > 30 && rsi <= 50) dir = "PUT";
-
-  const scale = Math.abs(Number(pair.price) * 0.00004) || 1e-8;
-  const alignment = Math.min(
-    100,
-    Math.round(Math.abs(fast - slow) / scale * 45)
-      + (momentum * momentumLong > 0 ? 25 : 0)
-      + (dir !== "WAIT" ? 20 : 0)
-  );
-
-  return {
-    dir,
-    score: alignment,
-    rsi,
-    trend: fast > slow ? "BULLISH" : fast < slow ? "BEARISH" : "NEUTRAL"
-  };
-}
-
-function drawChart(history) {
-  const svg = $("chart");
-
-  if (!history || history.length < 2) {
-    svg.innerHTML = "";
-    return;
-  }
-
-  const values = history.slice(-60).map(x => Number(x.price));
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-
-  const points = values.map((v, i) =>
-    `${i / (values.length - 1) * 320},${94 - (v - min) / span * 84}`
-  ).join(" ");
-
-  svg.innerHTML =
-    `<polyline points="${points}" fill="none" stroke="#4ce5ff"
-    stroke-width="2" vector-effect="non-scaling-stroke"/>`;
-}
-
-function renderSelected() {
-  const pair = pairs.find(p => p.key === selected);
-
-  if (!pair) {
-    $("price").textContent = "—";
-    $("priceInfo").textContent = "รอข้อมูลราคา";
-    $("rsi").textContent = "—";
-    $("trend").textContent = "—";
-    $("chart").innerHTML = "";
-    return;
-  }
-
-  const a = analyze(pair);
-  $("price").textContent = Number(pair.price).toFixed(pair.digits);
-  $("priceInfo").textContent =
-    "SIMULATED · " + new Date(pair.lastTickAt).toLocaleTimeString("th-TH");
-  $("rsi").textContent = a.rsi.toFixed(1);
-  $("trend").textContent = a.trend;
-  drawChart(pair.history);
-}
-
-function renderPairSelect() {
-  const select = $("pairSelect");
-  const oldValue = selected;
-
-  select.innerHTML = pairs.map(p =>
-    `<option value="${p.key}">${p.name}</option>`
-  ).join("");
-
-  if (pairs.some(p => p.key === oldValue)) {
-    select.value = oldValue;
-  } else if (pairs.length) {
-    selected = pairs[0].key;
-    select.value = selected;
+  } catch (e) {
+    connection("DATA ERROR");
+    $("radarSub").textContent = e.message;
+    $("updated").textContent = "ข้อมูลไม่พร้อม · งดส่งสัญญาณ";
+    candidate = null;
+  } finally {
+    busy = false;
   }
 }
 
-function renderPairs() {
-  $("pairs").innerHTML = pairs.map(p => {
-    const a = analyze(p);
-    const checked = selectedKeys.has(p.key) ? "checked" : "";
-    const active = p.key === selected;
-
-    return `
-      <div class="pair">
-        <div>
-          <label style="display:flex;align-items:center;gap:7px">
-            <input type="checkbox" data-pick="${p.key}" ${checked}
-              style="accent-color:var(--cyan);width:16px;height:16px">
-            <span class="pairName">${p.name}</span>
-          </label>
-          <div class="small">${a.trend} · ${a.dir}</div>
-          <div class="meter"><i style="width:${a.score}%"></i></div>
-        </div>
-        <div style="text-align:right;cursor:pointer" data-show="${p.key}">
-          <div class="pairPrice">${Number(p.price).toFixed(p.digits)}</div>
-          <span class="tag">${a.score} SCORE</span>
-          <div class="small">${active ? "กำลังแสดง" : "ดูราคา"}</div>
-        </div>
-      </div>`;
-  }).join("");
-
-  $("pairs").querySelectorAll("[data-pick]").forEach(el => {
-    el.addEventListener("change", () => {
-      if (el.checked) selectedKeys.add(el.dataset.pick);
-      else selectedKeys.delete(el.dataset.pick);
-      renderPairs();
-    });
-  });
-
-  $("pairs").querySelectorAll("[data-show]").forEach(el => {
-    el.addEventListener("click", () => {
-      selected = el.dataset.show;
-      $("pairSelect").value = selected;
-      renderSelected();
-      renderPairs();
-    });
-  });
+function showSignal(value) {
+  $("signal").className = "signal " +
+    (value === "CALL" ? "call" : value === "PUT" ? "put" : "wait");
+  $("word").textContent = value;
+  $("signalSub").textContent = value === "WAIT"
+    ? "เงื่อนไขไม่ชัดเจน · รอรอบใหม่"
+    : "สัญญาณเชิงเทคนิค · โปรดตรวจสอบราคาจริง";
+  $("hold").textContent = value === "WAIT" ? "" : "แสดงค้างสูงสุด 40 วินาที";
+  signalUntil = value === "WAIT" ? 0 : Date.now() + 40000;
+  shownMinute = Math.floor(Date.now() / 60000);
 }
 
-function getCandidates() {
-  if ($("multiScan").checked) {
-    return pairs.filter(p => selectedKeys.has(p.key));
+function tick() {
+  const now = Date.now();
+  const minute = Math.floor(now / 60000);
+  const remain = 60000 - (now % 60000);
+  const sec = Math.ceil(remain / 1000);
+
+  $("timer").textContent = sec + "s";
+
+  // Refresh on a new minute and every 15 seconds.
+  if (lastFetchMinute !== minute || sec % 15 === 0) {
+    lastFetchMinute = minute;
+    scan();
   }
 
-  const pair = pairs.find(p => p.key === selected);
-  return pair ? [pair] : [];
-}
-
-function setSignal(dir, pair, hint) {
-  const panel = $("signalPanel");
-  panel.classList.remove("call", "put");
-
-  if (dir === "CALL" || dir === "PUT") {
-    panel.classList.add(dir.toLowerCase());
+  if (sec === 10 && warned10 !== minute) {
+    warned10 = minute;
+    $("phase").textContent = "เตรียมเฝ้าระวัง · เหลือ 10 วินาที";
+    beep(660, .2);
   }
 
-  $("signalWord").textContent =
-    dir === "CALL" ? "▲ CALL" :
-    dir === "PUT" ? "▼ PUT" : "STANDBY";
+  if (sec === 2 && warned2 !== minute) {
+    warned2 = minute;
+    $("phase").textContent = "สัญญาณสำหรับแท่งถัดไป";
+    beep(1040, .15);
+    setTimeout(() => beep(1320, .17), 180);
 
-  $("signalPair").textContent = pair ? pair.name : "รอสัญญาณ";
-  $("signalHint").textContent = hint || "";
-}
+    // Never fabricate a direction when data is missing or uncertain.
+    showSignal(
+      candidate &&
+      (candidate.signal === "CALL" || candidate.signal === "PUT")
+        ? candidate.signal : "WAIT"
+    );
+  }
 
-function stopLoop() {
-  autoScan = false;
-  roundId++;
-  clearAlertTimers();
+  if (signalUntil && now >= signalUntil) {
+    signalUntil = 0;
+    showSignal("WAIT");
+    $("phase").textContent = "Standby · รอรอบถัดไป";
+  }
 
-  if (loop) clearInterval(loop);
-  loop = null;
-
-  phase = "standby";
-  activeSignal = null;
-  $("countdown").textContent = "--";
-  setSignal("WAIT", null, "STANDBY · หยุดระบบแล้ว");
-  $("startBtn").textContent = "▶ เริ่มอัตโนมัติ";
-}
-
-function beginWatchRound() {
-  if (!autoScan) return;
-
-  clearAlertTimers();
-  if (loop) clearInterval(loop);
-  loop = null;
-
-  const thisRound = ++roundId;
-  phase = "watch";
-  phaseEnds = Math.ceil(serverNow() / 1000) * 1000
-    + WATCH_SECONDS * 1000;
-
-  last10 = false;
-  last2 = false;
-  activeSignal = null;
-
-  setSignal("WAIT", null, "กำลังสแกนอัตโนมัติ · รอเงื่อนไข");
-  tickPhase();
-
-  loop = setInterval(() => {
-    if (thisRound !== roundId) return;
-    tickPhase();
-  }, 100);
-}
-
-function startRound() {
-  if (phase === "watch" || phase === "active") return;
-
-  autoScan = true;
-  $("startBtn").textContent = "● กำลังสแกน";
-  beginWatchRound();
-}
-
-function tickPhase() {
-  const left = Math.max(
-    0,
-    Math.ceil((phaseEnds - serverNow()) / 1000)
-  );
-
-  if (phase === "watch") {
-    $("countdown").textContent = `${left}s`;
-
-    if (left <= 10 && !last10) {
-      last10 = true;
-      beep(650, 0.22);
-      $("signalHint").textContent = "⚠ เตือนเฝ้าระวัง · อีก 10 วินาที";
-    }
-
-    if (left <= 2 && !last2) {
-      last2 = true;
-      beep(1150, 0.13);
-      scheduleAlert(() => beep(1150, 0.13), 200);
-      $("signalHint").textContent = "🔔 เตือนครั้งสุดท้าย · อีก 2 วินาที";
-    }
-
-    if (left <= 0) {
-      if (loop) clearInterval(loop);
-      loop = null;
-
-      const candidates = getCandidates();
-      const ranked = candidates
-        .map(pair => ({ pair, a: analyze(pair) }))
-        .filter(x => x.a.dir !== "WAIT" && x.a.score >= 60)
-        .sort((a,b) => b.a.score - a.a.score);
-
-      if (ranked.length) {
-        const best = ranked[0];
-
-        activeSignal = best;
-        phase = "active";
-        phaseEnds = serverNow() + SIGNAL_SECONDS * 1000;
-
-        setSignal(
-          best.a.dir,
-          best.pair,
-          "DEMO SIGNAL · ไม่ใช่ราคา OTC สด"
-        );
-
-        beep(best.a.dir === "CALL" ? 1000 : 500, 0.3);
-      } else {
-        phase = "standby";
-        $("countdown").textContent = "--";
-        setSignal("WAIT", null, "ไม่พบเงื่อนไข · รอสแกนรอบใหม่");
-      }
-
-      if (autoScan) {
-        const delay = phase === "active"
-          ? SIGNAL_SECONDS * 1000
-          : 1000;
-
-        scheduleAlert(() => {
-          if (autoScan) beginWatchRound();
-        }, delay);
-      }
-    }
-  } else if (phase === "active") {
-    $("countdown").textContent = `${left}s`;
-
-    if (left <= 0) {
-      phase = "standby";
-      activeSignal = null;
-      $("countdown").textContent = "--";
-      setSignal("WAIT", null, "ครบ 40 วินาที · เตรียมรอบใหม่");
-
-      if (loop) clearInterval(loop);
-      loop = null;
-
-      if (autoScan) {
-        scheduleAlert(() => {
-          if (autoScan) beginWatchRound();
-        }, 1000);
-      }
-    }
+  if (!signalUntil && sec > 10) {
+    $("phase").textContent = "Standby · สแกนตลาด";
   }
 }
 
-function connect() {
-  if (reconnectTimer) clearTimeout(reconnectTimer);
+$("sound").onclick = async () => {
+  enabled = !enabled;
+  $("sound").textContent = enabled ? "🔔 ปิดเสียงเตือน" : "🔊 เปิดเสียงเตือน";
 
-  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(`${scheme}//${location.host}`);
+  if (enabled) {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    await audio.resume();
+    beep(880, .12);
+  }
+};
 
-  ws.onopen = () => {
-    $("connection").textContent = "● DEMO CONNECTED";
-    $("connection").style.color = "var(--green)";
-  };
+$("refresh").onclick = scan;
+$("symbol").onchange = () => {
+  candidate = null;
+  showSignal("WAIT");
+  scan();
+};
 
-  ws.onmessage = event => {
-    try {
-      const data = JSON.parse(event.data);
-      if (!Array.isArray(data.pairs)) return;
-
-      if (Number.isFinite(data.serverTime)) {
-        serverOffset = data.serverTime - Date.now();
-      }
-
-      lastSnapshotAt = Date.now();
-      pairs = data.pairs;
-
-      const validKeys = new Set(pairs.map(p => p.key));
-      selectedKeys = new Set(
-        [...selectedKeys].filter(key => validKeys.has(key))
-      );
-
-      if (!selected && pairs.length) {
-        selected = pairs[0].key;
-      }
-
-      if (selected && !validKeys.has(selected) && pairs.length) {
-        selected = pairs[0].key;
-      }
-
-      if (!selectedKeys.size && pairs.length) {
-        selectedKeys.add(pairs[0].key);
-      }
-
-      renderPairSelect();
-      renderPairs();
-      renderSelected();
-
-      $("clockInfo").textContent =
-        "เวลาเซิร์ฟเวอร์: " +
-        new Date(data.serverTime || Date.now()).toLocaleTimeString("th-TH");
-    } catch (error) {
-      console.error("Invalid scanner update", error);
-    }
-  };
-
-  ws.onclose = () => {
-    $("connection").textContent = "● RECONNECTING";
-    $("connection").style.color = "var(--amber)";
-    reconnectTimer = setTimeout(connect, 2000);
-  };
-
-  ws.onerror = () => ws.close();
+if (!initData) {
+  connection("OPEN VIA TELEGRAM");
+  $("radarSub").textContent = "ต้องเปิดผ่าน Telegram Mini App";
 }
 
-$("pairSelect").addEventListener("change", e => {
-  selected = e.target.value;
-  renderSelected();
-  renderPairs();
-});
-
-$("soundBtn").addEventListener("click", async () => {
-  soundOn = !soundOn;
-  $("soundBtn").textContent = soundOn ? "🔕 ปิดเสียง" : "🔔 เปิดเสียง";
-
-  if (soundOn) {
-    try {
-      audio ||= new (window.AudioContext || window.webkitAudioContext)();
-      await audio.resume();
-      beep(880, 0.12);
-    } catch (_) {}
-  }
-});
-
-$("startBtn").addEventListener("click", startRound);
-
-$("rescanBtn").addEventListener("click", () => {
-  renderPairs();
-  renderSelected();
-
-  if (phase === "watch" || phase === "active") {
-    $("signalHint").textContent =
-      "อัปเดตการสแกนแล้ว · รอบปัจจุบันยังทำงานอยู่";
-    return;
-  }
-
-  if (autoScan) beginWatchRound();
-  else $("signalHint").textContent =
-    "สแกนข้อมูลจำลองแล้ว · กดเริ่มอัตโนมัติเพื่อวนรอบ";
-});
-
-$("stopBtn").addEventListener("click", stopLoop);
-
-setSignal("WAIT", null, "กำลังเชื่อมต่อข้อมูลจำลอง");
-connect();
-})();
+scan();
+setInterval(tick, 250);
 </script>
 </body>
 </html>
