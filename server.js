@@ -1,299 +1,386 @@
 
-import express from "express";
-import crypto from "node:crypto";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+'use strict';
+
+const express = require('express');
+const path = require('path');
 
 const app = express();
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT || 10000);
-const API_KEY = process.env.TWELVEDATA_API_KEY || "";
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const DEFAULT_SYMBOL = process.env.DEFAULT_SYMBOL || "EUR/USD";
-const CACHE_MS = Number(process.env.CACHE_MS || 110000);
-const MAX_AGE_MS = Number(process.env.MAX_DATA_AGE_MS || 180000);
-
-const SYMBOLS = [
-  "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD",
-  "USD/CHF", "NZD/USD", "EUR/GBP", "EUR/JPY", "GBP/JPY"
-];
-
-const allowedIds = new Set(
-  (process.env.ALLOWED_TELEGRAM_USER_IDS || "")
-    .split(",").map(v => v.trim()).filter(Boolean)
-);
-const cache = new Map();
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-app.use(express.static(path.join(ROOT, "public")));
+app.use(express.static(path.join(__dirname, 'public')));
 
-function verifyTelegram(initData) {
-  // ถ้าไม่ตั้ง BOT_TOKEN จะใช้โหมดทดสอบโดยไม่ตรวจ Telegram
-  if (!BOT_TOKEN) return { ok: true, userId: null };
+const SYMBOLS = [
+  'EUR/USD OTC',
+  'GBP/USD OTC',
+  'USD/JPY OTC',
+  'AUD/USD OTC',
+  'EUR/GBP OTC',
+  'USD/CHF OTC'
+];
 
-  if (!initData) return { ok: false, error: "กรุณาเปิดผ่าน Telegram Mini App" };
+const CANDLE_MS = 60_000;
+const SIGNAL_MS = 40_000;
+const markets = new Map();
 
-  try {
-    const params = new URLSearchParams(initData);
-    const hash = params.get("hash");
-    const authDate = Number(params.get("auth_date"));
+function randomNormal() {
+  let sum = 0;
+  for (let i = 0; i < 6; i++) sum += Math.random();
+  return (sum - 3) * 2;
+}
 
-    if (!hash || !Number.isFinite(authDate)) {
-      return { ok: false, error: "ข้อมูล Telegram ไม่ถูกต้อง" };
-    }
+function initialPrice(symbol) {
+  return symbol.includes('JPY')
+    ? 150 + Math.random() * 2
+    : 1 + Math.random() * 0.3;
+}
 
-    const age = Date.now() / 1000 - authDate;
-    if (age > 86400 || age < -60) {
-      return { ok: false, error: "ข้อมูล Telegram หมดอายุ กรุณาเปิด Mini App ใหม่" };
-    }
+function createMarket(symbol) {
+  if (markets.has(symbol)) return markets.get(symbol);
 
-    params.delete("hash");
+  const price = initialPrice(symbol);
+  const now = Date.now();
+  const candleStart = Math.floor(now / CANDLE_MS) * CANDLE_MS;
 
-    const checkString = [...params.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}=${v}`)
-      .join("\n");
+  const market = {
+    symbol,
+    price,
+    candleStart,
+    candles: [],
+    signal: null,
+    signalUntil: 0,
+    history: [],
+    wins: 0,
+    losses: 0
+  };
 
-    const secret = crypto
-      .createHmac("sha256", "WebAppData")
-      .update(BOT_TOKEN)
-      .digest();
+  let p = price;
 
-    const calculated = crypto
-      .createHmac("sha256", secret)
-      .update(checkString)
-      .digest("hex");
+  for (let i = 45; i >= 1; i--) {
+    const open = p;
+    p *= 1 + randomNormal() * 0.00008;
 
-    const a = Buffer.from(calculated, "hex");
-    const b = Buffer.from(hash, "hex");
-
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      return { ok: false, error: "ตรวจสอบ Telegram ไม่ผ่าน" };
-    }
-
-    let userId = null;
-    try {
-      userId = String(JSON.parse(params.get("user") || "{}").id || "");
-    } catch {}
-
-    if (allowedIds.size && !allowedIds.has(userId)) {
-      return { ok: false, error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" };
-    }
-
-    return { ok: true, userId };
-  } catch {
-    return { ok: false, error: "ไม่สามารถตรวจสอบ Telegram ได้" };
+    market.candles.push({
+      time: candleStart - i * CANDLE_MS,
+      open,
+      high: Math.max(open, p),
+      low: Math.min(open, p),
+      close: p
+    });
   }
+
+  market.price = p;
+  market.candles.push({
+    time: candleStart,
+    open: p,
+    high: p,
+    low: p,
+    close: p
+  });
+
+  markets.set(symbol, market);
+  return market;
 }
 
-function protect(req, res, next) {
-  const auth = verifyTelegram(req.get("x-telegram-init-data") || "");
-  if (!auth.ok) return res.status(401).json({ ok: false, error: auth.error });
-  req.telegramUser = auth;
-  next();
+function updateMarket(market) {
+  const now = Date.now();
+  const currentStart = Math.floor(now / CANDLE_MS) * CANDLE_MS;
+
+  if (currentStart !== market.candleStart) {
+    market.candleStart = currentStart;
+
+    market.candles.push({
+      time: currentStart,
+      open: market.price,
+      high: market.price,
+      low: market.price,
+      close: market.price
+    });
+
+    if (market.candles.length > 240) {
+      market.candles.shift();
+    }
+  }
+
+  // ราคาสังเคราะห์ ไม่ใช่ราคาตลาด OTC จริง
+  const volatility = market.symbol.includes('JPY')
+    ? 0.00010
+    : 0.00008;
+
+  const drift = Math.sin(now / 45000) * volatility * 0.08;
+
+  market.price = Math.max(
+    0.0001,
+    market.price * (1 + randomNormal() * volatility + drift)
+  );
+
+  const candle = market.candles[market.candles.length - 1];
+
+  candle.high = Math.max(candle.high, market.price);
+  candle.low = Math.min(candle.low, market.price);
+  candle.close = market.price;
 }
 
-function ema(values, period) {
+function calculateEMA(values, period) {
   if (values.length < period) return null;
-  const k = 2 / (period + 1);
-  let result = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+  const multiplier = 2 / (period + 1);
+
+  let value = values
+    .slice(0, period)
+    .reduce((a, b) => a + b, 0) / period;
+
   for (let i = period; i < values.length; i++) {
-    result = values[i] * k + result * (1 - k);
+    value = values[i] * multiplier +
+      value * (1 - multiplier);
   }
-  return result;
+
+  return value;
 }
 
-function rsi(values, period = 14) {
+function calculateRSI(values, period = 14) {
   if (values.length <= period) return null;
-  let gains = 0, losses = 0;
+
+  let gains = 0;
+  let losses = 0;
+
   for (let i = values.length - period; i < values.length; i++) {
-    const diff = values[i] - values[i - 1];
-    if (diff > 0) gains += diff;
-    else losses -= diff;
+    const change = values[i] - values[i - 1];
+
+    if (change > 0) gains += change;
+    else losses -= change;
   }
+
   if (losses === 0) return 100;
-  const rs = gains / Math.max(losses, 0.000000001);
+
+  const rs = gains / losses;
   return 100 - 100 / (1 + rs);
 }
 
-function analyze(values) {
-  // Twelve Data returns newest candle first; reverse for analysis.
-  const candles = [...values].reverse();
-  const closes = candles.map(c => Number(c.close));
-  if (closes.length < 55 || closes.some(v => !Number.isFinite(v))) {
-    return { signal: "WAIT", score: 0, reason: "ข้อมูลแท่งเทียนไม่เพียงพอ" };
+function analyse(market) {
+  const closes = market.candles.map(c => c.close);
+
+  const ema9 = calculateEMA(closes, 9);
+  const ema21 = calculateEMA(closes, 21);
+  const rsi = calculateRSI(closes, 14);
+
+  const momentum = closes.length >= 5
+    ? ((closes.at(-1) - closes.at(-5)) /
+       closes.at(-5)) * 10000
+    : 0;
+
+  let score = 0;
+
+  if (ema9 !== null && ema21 !== null) {
+    if (ema9 > ema21) score++;
+    if (ema9 < ema21) score--;
   }
 
-  const e9 = ema(closes, 9);
-  const e21 = ema(closes, 21);
-  const e50 = ema(closes, 50);
-  const r = rsi(closes, 14);
-  const last = candles[candles.length - 1];
-  const prev = candles[candles.length - 2];
+  if (momentum > 0.3) score++;
+  if (momentum < -0.3) score--;
 
-  let bull = 0, bear = 0;
-  if (e9 > e21) bull++; else if (e9 < e21) bear++;
-  if (e21 > e50) bull++; else if (e21 < e50) bear++;
-  if (closes.at(-1) > e9) bull++; else if (closes.at(-1) < e9) bear++;
-  if (r >= 52 && r < 70) bull++;
-  else if (r <= 48 && r > 30) bear++;
-  if (Number(last.close) > Number(last.open)) bull++;
-  else if (Number(last.close) < Number(last.open)) bear++;
-  if (Number(last.close) > Number(prev.close)) bull++;
-  else if (Number(last.close) < Number(prev.close)) bear++;
+  if (rsi !== null) {
+    if (rsi >= 52 && rsi < 70) score++;
+    if (rsi <= 48 && rsi > 30) score--;
+  }
 
-  let signal = "WAIT";
-  if (bull >= 4 && bull > bear) signal = "CALL";
-  if (bear >= 4 && bear > bull) signal = "PUT";
+  let signal = 'WAIT';
 
-  const score = signal === "WAIT"
-    ? Math.min(59, 40 + Math.abs(bull - bear) * 5)
-    : Math.min(85, 55 + Math.abs(bull - bear) * 5);
+  if (score >= 2) signal = 'CALL';
+  if (score <= -2) signal = 'PUT';
 
   return {
     signal,
     score,
-    price: closes.at(-1),
-    candleTime: last.datetime,
-    rsi: Number(r.toFixed(2)),
-    ema9: Number(e9.toFixed(6)),
-    ema21: Number(e21.toFixed(6)),
-    ema50: Number(e50.toFixed(6)),
-    reason: signal === "WAIT"
-      ? "เงื่อนไขยังไม่สอดคล้องกัน"
-      : `EMA + RSI + momentum (${bull}:${bear})`
+    // เป็นคะแนนความสอดคล้อง ไม่ใช่โอกาสชนะจริง
+    confidence: Math.min(85, 50 + Math.abs(score) * 10),
+    indicators: {
+      ema9,
+      ema21,
+      rsi,
+      momentum
+    }
   };
 }
 
-async function getMarket(symbol, force = false) {
-  const old = cache.get(symbol);
-  if (!force && old && Date.now() - old.fetchedAt < CACHE_MS) return old;
+function snapshot(symbol) {
+  const market = createMarket(symbol);
+  const now = Date.now();
+  const analysis = analyse(market);
 
-  if (!API_KEY || API_KEY.toLowerCase() === "demo") {
-    throw new Error("ยังไม่ได้ตั้งค่า TWELVEDATA_API_KEY ใน Render");
-  }
-
-  const url = new URL("https://api.twelvedata.com/time_series");
-  url.searchParams.set("symbol", symbol);
-  url.searchParams.set("interval", "1min");
-  url.searchParams.set("outputsize", "120");
-  url.searchParams.set("timezone", "UTC");
-  url.searchParams.set("apikey", API_KEY);
-
-  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  const data = await response.json();
-
-  if (!response.ok || data.status === "error" || !Array.isArray(data.values)) {
-    throw new Error(data.message || `Twelve Data HTTP ${response.status}`);
-  }
-
-  const latest = data.values[0];
-  const candleMs = Date.parse(String(latest.datetime).replace(" ", "T") + "Z");
-  const result = {
-    symbol,
-    fetchedAt: Date.now(),
-    latestAgeMs: Number.isFinite(candleMs) ? Math.max(0, Date.now() - candleMs) : null,
-    values: data.values,
-    analysis: analyze(data.values)
+  return {
+    ok: true,
+    mode: 'SIMULATION',
+    disclaimer: 'SIMULATED PRICE - NOT LIVE OTC DATA',
+    symbol: market.symbol,
+    price: market.price,
+    serverTime: now,
+    candleStart: market.candleStart,
+    candleRemaining: Math.max(
+      0,
+      Math.ceil(
+        (market.candleStart + CANDLE_MS - now) / 1000
+      )
+    ),
+    candles: market.candles.slice(-60),
+    analysis,
+    order: {
+      active: now < market.signalUntil,
+      signal: now < market.signalUntil ? market.signal : null,
+      expiresAt: market.signalUntil
+    },
+    stats: {
+      wins: market.wins,
+      losses: market.losses,
+      total: market.wins + market.losses
+    },
+    history: market.history.slice(-10).reverse()
   };
-
-  cache.set(symbol, result);
-  return result;
 }
 
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
-    service: "neural-radar-ai",
-    time: new Date().toISOString(),
-    marketApiConfigured: Boolean(API_KEY),
-    telegramAuthEnabled: Boolean(BOT_TOKEN)
-  });
-});
+for (const symbol of SYMBOLS) createMarket(symbol);
 
-app.get("/api/status", protect, (_req, res) => {
+setInterval(() => {
+  for (const market of markets.values()) {
+    updateMarket(market);
+  }
+}, 1000);
+
+app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
-    scannerRunning: true,
-    cachedPairs: cache.size,
-    symbols: SYMBOLS,
+    service: 'OTC AI Signal Radar',
+    mode: 'SIMULATION',
     time: new Date().toISOString()
   });
 });
 
-app.get("/api/symbols", protect, (_req, res) => {
-  res.json({ ok: true, symbols: SYMBOLS });
+app.get('/api/status', (req, res) => {
+  res.json({
+    ok: true,
+    connected: true,
+    mode: 'SIMULATION_ONLY',
+    symbols: SYMBOLS,
+    timeframe: '1m',
+    liveMarketData: false
+  });
 });
 
-app.get("/api/scan", protect, async (req, res) => {
-  const symbol = String(req.query.symbol || DEFAULT_SYMBOL).toUpperCase();
-  if (!SYMBOLS.includes(symbol)) {
-    return res.status(400).json({ ok: false, error: "ไม่รองรับคู่เงินนี้" });
-  }
+app.get('/api/snapshot', (req, res) => {
+  const symbol = SYMBOLS.includes(req.query.symbol)
+    ? req.query.symbol
+    : SYMBOLS[0];
 
-  try {
-    const result = await getMarket(symbol, req.query.refresh === "1");
-    const stale = result.latestAgeMs !== null && result.latestAgeMs > MAX_AGE_MS;
-    const a = stale
-      ? { signal: "WAIT", score: 0, reason: "ข้อมูลราคาเก่าเกินเกณฑ์" }
-      : result.analysis;
+  res.json(snapshot(symbol));
+});
 
-    res.json({
+app.get('/api/stream', (req, res) => {
+  const symbol = SYMBOLS.includes(req.query.symbol)
+    ? req.query.symbol
+    : SYMBOLS[0];
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const send = () => {
+    res.write(`data: ${JSON.stringify(snapshot(symbol))}\n\n`);
+  };
+
+  send();
+
+  const timer = setInterval(send, 1000);
+
+  req.on('close', () => clearInterval(timer));
+});
+
+app.post('/api/signal', (req, res) => {
+  const symbol = SYMBOLS.includes(req.body?.symbol)
+    ? req.body.symbol
+    : SYMBOLS[0];
+
+  const market = createMarket(symbol);
+  const now = Date.now();
+
+  if (now < market.signalUntil) {
+    return res.json({
       ok: true,
-      symbol,
-      pair: symbol,
-      signal: a.signal,
-      score: a.score,
-      price: a.price ?? result.analysis.price,
-      candleTime: result.analysis.candleTime,
-      fetchedAt: new Date(result.fetchedAt).toISOString(),
-      dataAgeMs: result.latestAgeMs,
-      stale,
-      reason: a.reason,
-      indicators: {
-        rsi: result.analysis.rsi,
-        ema9: result.analysis.ema9,
-        ema21: result.analysis.ema21,
-        ema50: result.analysis.ema50
-      }
+      accepted: false,
+      reason: 'SIGNAL_ALREADY_ACTIVE',
+      ...snapshot(symbol)
     });
-  } catch (error) {
-    res.status(502).json({ ok: false, error: error.message || "ดึงข้อมูลตลาดไม่สำเร็จ" });
   }
-});
 
-app.get("/api/scan/all", protect, (_req, res) => {
-  const results = SYMBOLS.map(symbol => {
-    const c = cache.get(symbol);
-    if (!c) return {
-      symbol, pair: symbol, signal: "WAIT", score: 0,
-      stale: true, reason: "ยังไม่มีข้อมูลแคช"
-    };
+  const result = analyse(market);
 
-    const stale = c.latestAgeMs !== null && c.latestAgeMs > MAX_AGE_MS;
-    return {
-      symbol, pair: symbol,
-      signal: stale ? "WAIT" : c.analysis.signal,
-      score: stale ? 0 : c.analysis.score,
-      price: c.analysis.price,
-      stale,
-      fetchedAt: new Date(c.fetchedAt).toISOString(),
-      reason: stale ? "ข้อมูลราคาเก่า" : c.analysis.reason
-    };
+  if (result.signal === 'WAIT') {
+    return res.json({
+      ok: true,
+      accepted: false,
+      reason: 'NO_CLEAR_SIGNAL',
+      ...snapshot(symbol)
+    });
+  }
+
+  market.signal = result.signal;
+  market.signalUntil = now + SIGNAL_MS;
+
+  market.history.push({
+    time: now,
+    symbol,
+    signal: result.signal,
+    score: result.score,
+    outcome: 'PENDING'
   });
 
-  const bestSignal = results
-    .filter(x => !x.stale && x.signal !== "WAIT")
-    .sort((a, b) => b.score - a.score)[0] || null;
+  if (market.history.length > 50) {
+    market.history.shift();
+  }
 
-  res.json({ ok: true, results, bestSignal });
+  res.json({
+    ok: true,
+    accepted: true,
+    signal: result.signal,
+    expiresAt: market.signalUntil,
+    analysis: result,
+    ...snapshot(symbol)
+  });
 });
 
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(ROOT, "public", "index.html"));
+// บันทึกผล Paper Trading ด้วยตนเอง
+app.post('/api/outcome', (req, res) => {
+  const symbol = SYMBOLS.includes(req.body?.symbol)
+    ? req.body.symbol
+    : SYMBOLS[0];
+
+  const outcome = req.body?.outcome;
+
+  if (!['WIN', 'LOSS'].includes(outcome)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'outcome must be WIN or LOSS'
+    });
+  }
+
+  const market = createMarket(symbol);
+
+  if (outcome === 'WIN') market.wins++;
+  else market.losses++;
+
+  res.json({
+    ok: true,
+    stats: {
+      wins: market.wins,
+      losses: market.losses,
+      total: market.wins + market.losses
+    }
+  });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Neural Radar AI listening on port ${PORT}`);
-  console.log(`Twelve Data key configured: ${Boolean(API_KEY)}`);
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`OTC AI Radar listening on port ${PORT}`);
 });
