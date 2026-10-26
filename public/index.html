@@ -1,11 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport"
-    content="width=device-width, initial-scale=1, maximum-scale=1,
-    viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#080c14" />
   <title>AI Signal Radar</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -26,13 +23,11 @@
       margin: 0; width: 100%; height: 100%;
       overflow: hidden; background: var(--bg);
       color: #f1f5ff;
-      font-family: Inter, system-ui, sans-serif;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
     }
     body {
-      height: 100dvh;
-      min-height: 0;
-      padding: env(safe-area-inset-top) 12px
-        env(safe-area-inset-bottom);
+      height: 100dvh; min-height: 0;
+      padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom);
     }
     button, select { font: inherit; }
     button {
@@ -40,6 +35,7 @@
       border: 1px solid var(--line);
       border-radius: 10px; background: #172236;
       min-height: 38px; padding: 8px 12px;
+      font-weight: 700;
     }
     button:disabled { opacity: .45; cursor: not-allowed; }
     .app {
@@ -51,11 +47,11 @@
       display: flex; align-items: center;
       justify-content: space-between; gap: 8px;
     }
-    .brand { font-size: 16px; font-weight: 900; letter-spacing: .8px; }
+    .brand { font-size: 16px; font-weight: 900; letter-spacing: .8px; color: #4de8ff; }
     .sub { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; }
     .status {
       display: flex; align-items: center; gap: 6px;
-      font-size: 10px; color: var(--muted);
+      font-size: 10px; color: var(--muted); font-weight: bold;
     }
     .dot {
       width: 8px; height: 8px; border-radius: 50%;
@@ -66,20 +62,17 @@
     .banner {
       display: none; padding: 7px 10px; border-radius: 8px;
       color: #ffd8de; background: #401a29;
-      border: 1px solid #713044; font-size: 11px;
+      border: 1px solid #713044; font-size: 11px; text-align: center;
     }
     .banner.show { display: block; }
-    .metrics {
-      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
-    }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
     .metric, .panel {
       background: var(--panel); border: 1px solid var(--line);
-      border-radius: 12px; padding: 10px;
-      min-width: 0;
+      border-radius: 12px; padding: 10px; min-width: 0;
     }
     .label { font-size: 10px; color: var(--muted); }
     .value {
-      font-size: 14px; font-weight: 800;
+      font-size: 13px; font-weight: 800;
       margin-top: 5px; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
     }
@@ -87,14 +80,13 @@
     select {
       width: 100%; min-width: 0; color: #fff;
       background: var(--panel); border: 1px solid var(--line);
-      border-radius: 10px; padding: 10px;
+      border-radius: 10px; padding: 10px; font-weight: bold;
     }
     .hero {
       flex: 1; min-height: 155px; display: flex;
       flex-direction: column; justify-content: center;
       align-items: center; text-align: center;
-      background:
-        radial-gradient(ellipse at center, #173247 0%, #101827 55%, #0c1220 100%);
+      background: radial-gradient(ellipse at center, #173247 0%, #101827 55%, #0c1220 100%);
       border: 1px solid #2b4259; border-radius: 16px;
       padding: 10px;
     }
@@ -102,14 +94,11 @@
       width: 75px; height: 75px; position: relative;
       display: grid; place-items: center; margin-bottom: 6px;
       border: 1px solid #31546b; border-radius: 50%;
-      background: repeating-radial-gradient(circle,
-        transparent 0 13px, #244156 14px 15px);
+      background: repeating-radial-gradient(circle, transparent 0 13px, #244156 14px 15px);
     }
     .radar:before {
-      content: ""; position: absolute; inset: 0;
-      border-radius: 50%;
-      background: conic-gradient(from 0deg,
-        transparent 0 75%, #2bf0a222 100%);
+      content: ""; position: absolute; inset: 0; border-radius: 50%;
+      background: conic-gradient(from 0deg, transparent 0 75%, #2bf0a222 100%);
       animation: spin 3s linear infinite;
     }
     .radar span { z-index: 1; font-size: 24px; }
@@ -121,41 +110,17 @@
     .signal.CALL { color: var(--green); text-shadow: 0 0 22px #2bf0a244; }
     .signal.PUT { color: var(--red); text-shadow: 0 0 22px #ff526d44; }
     .signal.STANDBY { color: var(--yellow); font-size: 27px; }
-    .hero-sub { color: var(--muted); font-size: 10px; margin-top: 7px; }
+    .hero-sub { color: var(--muted); font-size: 11px; margin-top: 7px; }
     .scoreline { margin-top: 10px; width: min(240px, 90%); }
-    .track {
-      height: 5px; background: #273246;
-      border-radius: 99px; overflow: hidden; margin-top: 5px;
-    }
-    .fill {
-      height: 100%; width: 0; background: var(--blue);
-      transition: width .25s;
-    }
-    .bottom-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
-    }
+    .track { height: 5px; background: #273246; border-radius: 99px; overflow: hidden; margin-top: 5px; }
+    .fill { height: 100%; width: 0; background: var(--blue); transition: width .25s; }
+    .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .small-value { font-size: 12px; font-weight: 750; margin-top: 4px; }
     .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-    .primary { background: #153c39; border-color: #267c68; }
+    .primary { background: #153c39; border-color: #267c68; color: #35f2a0; }
     .active { color: var(--green); border-color: #287e66; }
-    .note {
-      text-align: center; color: var(--muted);
-      font-size: 9px; line-height: 1.4;
-    }
-    .history {
-      display: flex; justify-content: space-between;
-      gap: 6px; font-size: 10px; color: var(--muted);
-    }
-    @media (max-height: 680px) {
-      .app { gap: 5px; padding: 4px 0; }
-      .metric, .panel { padding: 7px; }
-      .hero { min-height: 120px; }
-      .radar { width: 52px; height: 52px; margin-bottom: 3px; }
-      .radar span { font-size: 19px; }
-      .signal { font-size: 27px; }
-      .signal.STANDBY { font-size: 22px; }
-      .note { font-size: 8px; }
-    }
+    .note { text-align: center; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .history { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -163,59 +128,59 @@
   <header class="top">
     <div>
       <div class="brand">◈ AI SIGNAL RADAR</div>
-      <div class="sub">REAL MARKET · 1 MINUTE</div>
+      <div class="sub">ตลาดจริง (NON-OTC) · TIMEFRAME 1M</div>
     </div>
     <div class="status">
       <span id="dot" class="dot"></span>
-      <span id="status">CONNECTING</span>
+      <span id="status">กำลังเชื่อมต่อ...</span>
     </div>
   </header>
 
   <div id="banner" class="banner">
-    ⚠ CONNECTION LOST — สัญญาณหยุดชั่วคราว
+    ⚠ สัญญาณขาดการติดต่อ — กำลังพยายามเชื่อมต่อใหม่
   </div>
 
   <section class="metrics">
     <div class="metric">
-      <div class="label">SERVER</div>
-      <div class="value" id="server">OFFLINE</div>
+      <div class="label">เซิร์ฟเวอร์</div>
+      <div class="value" id="server">ออฟไลน์</div>
     </div>
     <div class="metric">
-      <div class="label">TIMEFRAME</div>
-      <div class="value">1 MIN</div>
+      <div class="label">ไทม์เฟรม</div>
+      <div class="value">1 นาที</div>
     </div>
     <div class="metric">
-      <div class="label">QUOTA</div>
-      <div class="value" id="quota">UNLIMITED*</div>
+      <div class="label">โควต้าคงเหลือ</div>
+      <div class="value" id="quota">สายฟรีตลอดชีพ</div>
     </div>
   </section>
 
   <section class="pair-row">
     <select id="pair" aria-label="เลือกคู่เงิน">
-      <option value="frxEURUSD">EUR/USD</option>
-      <option value="frxGBPUSD">GBP/USD</option>
-      <option value="frxUSDJPY">USD/JPY</option>
-      <option value="frxAUDUSD">AUD/USD</option>
-      <option value="frxUSDCAD">USD/CAD</option>
-      <option value="frxNZDUSD">NZD/USD</option>
-      <option value="frxUSDCHF">USD/CHF</option>
+      <option value="EUR/USD">EUR/USD</option>
+      <option value="GBP/USD">GBP/USD</option>
+      <option value="USD/JPY">USD/JPY</option>
+      <option value="AUD/USD">AUD/USD</option>
+      <option value="USD/CAD">USD/CAD</option>
+      <option value="NZD/USD">NZD/USD</option>
+      <option value="EUR/GBP">EUR/GBP</option>
     </select>
-    <button id="sound">🔇 SOUND OFF</button>
+    <button id="sound">🔇 ปิดเสียง</button>
   </section>
 
   <section class="hero">
     <div class="radar"><span>◈</span></div>
     <div id="signal" class="signal STANDBY">STANDBY</div>
-    <div id="pairName" class="hero-sub">EUR/USD · WAITING FOR DATA</div>
+    <div id="pairName" class="hero-sub">EUR/USD · กำลังรอข้อมูล</div>
     <div id="price" class="value">—</div>
     <div class="scoreline">
       <div class="row">
-        <span class="label">TECHNICAL SCORE</span>
+        <span class="label">คะแนนทางเทคนิค</span>
         <span id="score" class="label">0 / 100</span>
       </div>
       <div class="track"><div id="fill" class="fill"></div></div>
     </div>
-    <div id="reason" class="hero-sub">รอข้อมูลตลาดจริง</div>
+    <div id="reason" class="hero-sub">รอข้อมูลตลาดสด</div>
   </section>
 
   <section class="bottom-grid">
@@ -224,15 +189,15 @@
       <div id="rsi" class="small-value">—</div>
     </div>
     <div class="panel">
-      <div class="label">NEXT CANDLE IN</div>
-      <div id="countdown" class="small-value">-- SEC</div>
+      <div class="label">แท่งถัดไปใน</div>
+      <div id="countdown" class="small-value">-- วินาที</div>
     </div>
     <div class="panel">
-      <div class="label">LAST UPDATE</div>
-      <div id="updated" class="small-value">Waiting…</div>
+      <div class="label">อัปเดตล่าสุด</div>
+      <div id="updated" class="small-value">รอข้อมูล...</div>
     </div>
     <div class="panel">
-      <div class="label">LAST SIGNAL</div>
+      <div class="label">สัญญาณล่าสุด</div>
       <div id="lastSignal" class="small-value">STANDBY</div>
     </div>
   </section>
@@ -240,25 +205,24 @@
   <section class="panel">
     <div class="row">
       <div>
-        <div class="label">CONTINUOUS SCAN</div>
-        <div id="scanStatus" class="small-value">AUTO SCAN OFF</div>
+        <div class="label">ระบบสแกนต่อเนื่อง</div>
+        <div id="scanStatus" class="small-value">ปิดสแกนออโต้</div>
       </div>
-      <button id="auto">▶ AUTO SCAN OFF</button>
+      <button id="auto">▶ เปิดสแกนออโต้</button>
     </div>
   </section>
 
   <section class="actions">
-    <button id="scan" class="primary">SCAN NOW</button>
-    <button id="stop">STOP</button>
-    <button id="reset">STANDBY</button>
+    <button id="scan" class="primary">⚡ สแกนทันที</button>
+    <button id="stop">หยุดสแกน</button>
+    <button id="reset">รีเซ็ตสถานะ</button>
   </section>
 
   <div id="history" class="history">
-    <span>WAITING FOR SIGNAL</span><span>—</span>
+    <span>ประวัติสัญญาณ: ยังไม่มีข้อมูล</span><span>—</span>
   </div>
   <footer class="note">
-    *Unlimited เป็นเพียงสถานะแสดงผลตัวอย่าง ไม่ใช่ระบบสิทธิ์สมาชิกจริง<br>
-    ข้อมูลจาก Deriv ไม่ใช่ราคา IQ Option โดยตรง · ใช้เพื่อวิเคราะห์เท่านั้น
+    ระบบคำนวณราคาจริงจาก Twelve Data API · ใช้เป็นเรดาร์วิเคราะห์สัญญาณส่วนตัวเท่านั้น
   </footer>
 </div>
 
@@ -273,23 +237,17 @@
   let socket;
   let market = null;
   let autoScan = false;
-  let stopped = false;
   let soundOn = false;
   let audio;
   let currentSignal = null;
   let signalUntil = 0;
-  let seenSignalKey = "";
-  let alert10Key = "";
-  let alert2Key = "";
-  let lastConnection = false;
 
-  const pair = $("pair");
+  const pairSelect = $("pair");
 
   function beep(freq = 800, duration = 100) {
     if (!soundOn) return;
     try {
-      audio ||= new (window.AudioContext ||
-        window.webkitAudioContext)();
+      audio ||= new (window.AudioContext || window.webkitAudioContext)();
       if (audio.state === "suspended") audio.resume();
       const osc = audio.createOscillator();
       const gain = audio.createGain();
@@ -305,12 +263,9 @@
   function setConnection(connected, fresh = connected) {
     const good = connected && fresh;
     $("dot").className = "dot " + (good ? "on" : "off");
-    $("status").textContent = good ? "LIVE" : "DISCONNECTED";
-    $("server").textContent = good ? "ONLINE" : "OFFLINE";
+    $("status").textContent = good ? "เชื่อมต่อสด" : "หลุดการเชื่อมต่อ";
+    $("server").textContent = good ? "ออนไลน์" : "ออฟไลน์";
     $("banner").classList.toggle("show", !good);
-
-    if (lastConnection && !good) beep(250, 350);
-    lastConnection = good;
   }
 
   function connect() {
@@ -318,7 +273,7 @@
     socket = new WebSocket(`${protocol}//${location.host}`);
 
     socket.onopen = () => {
-      $("status").textContent = "CONNECTED";
+      setConnection(true, true);
     };
 
     socket.onmessage = event => {
@@ -326,27 +281,17 @@
       try { msg = JSON.parse(event.data); } catch { return; }
 
       if (msg.type === "connection") {
-        setConnection(msg.data.connected, msg.data.connected);
+        setConnection(msg.data.connected, msg.data.dataFresh);
       }
       if (msg.type === "market") {
         market = msg.data;
         render();
       }
-      if (msg.type === "heartbeat") {
-        setConnection(msg.data.connected, msg.data.dataFresh);
-      }
-      if (msg.type === "signal") {
-        const s = msg.data;
-        if (s.symbol === pair.value) acceptSignal(s);
-      }
-      if (msg.type === "feedError") {
-        $("reason").textContent = "FEED ERROR — WAITING";
-      }
     };
 
     socket.onclose = () => {
       setConnection(false, false);
-      setTimeout(connect, 2000);
+      setTimeout(connect, 3000);
     };
     socket.onerror = () => setConnection(false, false);
   }
@@ -355,107 +300,59 @@
     if (!market) return;
 
     setConnection(market.connected, market.dataFresh);
-    const selected = market.pairs.find(p => p.symbol === pair.value);
+    const selectedSymbol = pairSelect.value;
+    const selected = (market.pairs || []).find(p => p.symbol === selectedSymbol || p.pair === selectedSymbol);
 
     if (!selected) return;
 
     const a = selected.analysis || {};
-    const fresh = selected.receivedAt &&
-      Date.now() - selected.receivedAt < 15000;
+    const fresh = selected.receivedAt && (Date.now() - selected.receivedAt < 300000);
 
-    $("pairName").textContent =
-      `${selected.pair} · ${fresh ? "LIVE PRICE" : "STALE / NO DATA"}`;
-    $("price").textContent = selected.price == null
-      ? "—" : Number(selected.price).toFixed(5);
-    $("rsi").textContent = a.rsi == null
-      ? "—" : Number(a.rsi).toFixed(2);
+    $("pairName").textContent = `${selectedSymbol} · ${fresh ? "ราคาตลาดสด" : "รอการอัปเดต"}`;
+    $("price").textContent = selected.price == null ? "—" : Number(selected.price).toFixed(5);
+    $("rsi").textContent = a.rsi == null ? "—" : Number(a.rsi).toFixed(2);
     $("score").textContent = `${a.score || 0} / 100`;
-    $("fill").style.width =
-      `${Math.max(0, Math.min(100, a.score || 0))}%`;
-    $("reason").textContent = a.reason || "Waiting for setup";
-    $("updated").textContent = fresh
-      ? new Date(selected.receivedAt).toLocaleTimeString()
-      : "NO FRESH DATA";
+    $("fill").style.width = `${Math.max(0, Math.min(100, a.score || 0))}%`;
+    $("reason").textContent = a.reason || "รอจังหวะตลาด";
+    $("updated").textContent = fresh ? new Date(selected.receivedAt).toLocaleTimeString('th-TH') : "รอข้อมูลสด";
 
-    if (!fresh || !market.dataFresh) {
-      showSignal("STANDBY");
-      $("reason").textContent = "ข้อมูลไม่สด — งดสัญญาณ";
-      return;
-    }
-
-    // New actionable signals arrive from the server only
-    // when a candle boundary is observed.
-    if (a.signal === "STANDBY") {
-      showSignal("STANDBY");
-    } else if (!currentSignal ||
-      currentSignal.candleEpoch !== a.candleEpoch) {
-      showSignal("STANDBY");
-    }
-
-    if (currentSignal && Date.now() >= signalUntil) {
-      currentSignal = null;
-      showSignal("STANDBY");
+    if (currentSignal && Date.now() < signalUntil) {
+      showSignal(currentSignal.signal);
+    } else {
+      showSignal(a.signal || "STANDBY");
     }
   }
 
   function showSignal(value) {
-    $("signal").textContent = value;
-    $("signal").className = "signal " + value;
-  }
-
-  function acceptSignal(s) {
-    if (!autoScan || stopped || !market?.dataFresh) return;
-
-    const key = `${s.symbol}:${s.candleEpoch}:${s.signal}`;
-    if (key === seenSignalKey) return;
-    seenSignalKey = key;
-
-    currentSignal = s;
-    signalUntil = Date.now() + 40000;
-    $("lastSignal").textContent = s.signal;
-    $("history").innerHTML =
-      `<span>${s.pair} · ${s.signal}</span>` +
-      `<span>SCORE ${s.score}</span>`;
-
-    if (s.symbol === pair.value) {
-      showSignal(s.signal);
-      beep(s.signal === "CALL" ? 1000 : 450, 250);
-    }
+    $("signal").textContent = value === "WAIT" ? "STANDBY" : value;
+    $("signal").className = "signal " + (value === "WAIT" ? "STANDBY" : value);
   }
 
   function scanSelected() {
-    if (!market?.dataFresh) {
-      $("reason").textContent = "NO LIVE DATA — SCAN BLOCKED";
-      showSignal("STANDBY");
+    const selectedSymbol = pairSelect.value;
+    const selected = (market?.pairs || []).find(p => p.symbol === selectedSymbol || p.pair === selectedSymbol);
+    
+    if (!selected || !selected.price) {
+      $("reason").textContent = "กำลังเร่งดึงข้อมูลสด กรุณากดอีกครั้งในไม่กี่วินาที";
       return;
     }
-
-    const selected = market.pairs.find(p => p.symbol === pair.value);
-    if (!selected) return;
 
     const a = selected.analysis || {};
-    if (a.signal === "STANDBY") {
-      showSignal("STANDBY");
-      $("reason").textContent = a.reason || "No setup";
-      return;
-    }
-
-    // Manual scan displays analysis; it does not place orders.
-    currentSignal = {
-      ...a,
-      symbol: pair.value,
-      candleEpoch: a.candleEpoch
-    };
+    currentSignal = { signal: a.signal, symbol: selectedSymbol };
     signalUntil = Date.now() + 40000;
+
     showSignal(a.signal);
     $("lastSignal").textContent = a.signal;
-    beep(a.signal === "CALL" ? 1000 : 450, 250);
+    $("history").innerHTML = `<span>ล่าสุด: ${selectedSymbol} · สัญญาณ ${a.signal}</span><span>คะแนน ${a.score}</span>`;
+    
+    if (a.signal !== "STANDBY" && a.signal !== "WAIT") {
+      beep(a.signal === "CALL" ? 1000 : 450, 250);
+    }
   }
 
   $("sound").onclick = async () => {
     soundOn = !soundOn;
-    $("sound").textContent = soundOn
-      ? "🔊 SOUND ON" : "🔇 SOUND OFF";
+    $("sound").textContent = soundOn ? "🔊 เปิดเสียงแล้ว" : "🔇 ปิดเสียง";
     if (soundOn) {
       beep(800, 80);
       try { await audio?.resume(); } catch {}
@@ -464,22 +361,18 @@
 
   $("auto").onclick = () => {
     autoScan = !autoScan;
-    stopped = false;
-    $("auto").textContent = autoScan
-      ? "■ AUTO SCAN ON" : "▶ AUTO SCAN OFF";
+    $("auto").textContent = autoScan ? "■ ปิดสแกนออโต้" : "▶ เปิดสแกนออโต้";
     $("auto").classList.toggle("active", autoScan);
-    $("scanStatus").textContent = autoScan
-      ? "AUTO SCAN ACTIVE" : "AUTO SCAN OFF";
+    $("scanStatus").textContent = autoScan ? "ระบบสแกนอัตโนมัติทำงาน" : "ปิดสแกนออโต้";
   };
 
   $("scan").onclick = scanSelected;
 
   $("stop").onclick = () => {
     autoScan = false;
-    stopped = true;
     currentSignal = null;
-    $("auto").textContent = "▶ AUTO SCAN OFF";
-    $("scanStatus").textContent = "SCAN STOPPED";
+    $("auto").textContent = "▶ เปิดสแกนออโต้";
+    $("scanStatus").textContent = "หยุดสแกนแล้ว";
     showSignal("STANDBY");
   };
 
@@ -487,10 +380,10 @@
     currentSignal = null;
     signalUntil = 0;
     showSignal("STANDBY");
-    $("reason").textContent = "Waiting for next setup";
+    $("reason").textContent = "รอจังหวะใหม่";
   };
 
-  pair.onchange = () => {
+  pairSelect.onchange = () => {
     currentSignal = null;
     signalUntil = 0;
     showSignal("STANDBY");
@@ -500,36 +393,16 @@
   function tick() {
     const now = Date.now();
     const remaining = 60 - Math.floor((now / 1000) % 60);
-    $("countdown").textContent = `${remaining} SEC`;
-
-    const candleKey = Math.floor(now / 60000);
-
-    if (remaining === 10 && alert10Key !== candleKey) {
-      alert10Key = candleKey;
-      beep(650, 100);
-    }
-
-    if (remaining === 2 && alert2Key !== candleKey) {
-      alert2Key = candleKey;
-      beep(950, 120);
-    }
+    $("countdown").textContent = `${remaining} วินาที`;
 
     if (currentSignal && now >= signalUntil) {
       currentSignal = null;
-      showSignal("STANDBY");
-    }
-
-    // Refresh status even when no price message arrives.
-    if (market) {
-      const p = market.pairs.find(x => x.symbol === pair.value);
-      if (!p?.receivedAt || now - p.receivedAt > 15000) {
-        setConnection(market.connected, false);
-      }
+      render();
     }
   }
 
   connect();
-  setInterval(tick, 200);
+  setInterval(tick, 500);
 })();
 </script>
 </body>
