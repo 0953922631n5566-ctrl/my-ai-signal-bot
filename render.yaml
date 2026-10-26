@@ -1,22 +1,12 @@
 
 services:
   - type: web
-    name: market-ai-miniapp
+    name: otc-ai-signal-radar
     runtime: node
     plan: free
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
-      - key: NODE_VERSION
-        value: "20"
-      - key: TWELVEDATA_API_KEY
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_BOT_USERNAME
-        sync: false
-      - key: APP_BASE_URL
-        sync: false
-      - key: ALLOWED_TELEGRAM_USER_IDS
-        sync: false
+      - key: NODE_ENV
+        value: production
