@@ -74,7 +74,6 @@ select{width:100%;background:#080f1d;border:1px solid #344762;color:var(--text);
   </select>
   <div class="row" style="margin-top:12px"><strong id="pairName">EUR/USD</strong><span id="dataStatus" class="pill">รอข้อมูล</span></div>
   
-  <!-- ส่วนปรับตั้งค่าเปอร์เซ็นต์ความมั่นใจ Threshold -->
   <div class="slider-container">
     <div class="row" style="margin-bottom: 5px;">
       <span class="small muted">เกณฑ์ความมั่นใจขั้นต่ำ (Min Score)</span>
@@ -136,7 +135,7 @@ select{width:100%;background:#080f1d;border:1px solid #344762;color:var(--text);
 </section>
 
 <div class="notice">
-<strong>คำแนะนำ:</strong> เมื่อเปิดสแกนออโต้ ระบบจะคอยตรวจจับทุกคู่เงินและสลับไปยังคู่ที่ได้คะแนนสัญญาณสูงสุดให้อัตโนมัติ เพื่อให้ได้จังหวะเทรดที่ดีที่สุด
+<strong>คำแนะนำ:</strong> เมื่อได้สัญญาณไฟเข้าออร์เดอร์ สัญญาณจะล็อกค้างไว้และจะดับกลับเป็น Standby เมื่อเหลือนับถอยหลัง 20 วินาทีสุดท้ายเพื่อเตรียมรับสัญญาณถัดไป
 </div>
 <div class="footer">AI SIGNAL RADAR · TWELVE DATA REFERENCE FEED</div>
 </main>
@@ -150,7 +149,7 @@ const state = {
   pairs:{}, selected:"EUR/USD", socket:null, reconnect:null,
   auto:false, autoTimer:null, busy:false, sound:false,
   audio:null, lastWarning10:"", lastWarning3:"", lastSignalKey:"",
-  activeSignal: null
+  lockedSignal: null // สัญญาณที่ถูกล็อกไว้จนถึง 20 วินาทีสุดท้าย
 };
 
 function setMessage(s){ $("message").textContent=s; }
@@ -238,11 +237,30 @@ function updateTimer(){
     alert3();
   }
 
-  // ดับสัญญาณไฟกลับเป็น Standby เมื่อเหลือ 20 วินาทีสุดท้ายตามความต้องการ
-  if(remaining <= 20 && state.activeSignal){
-    state.activeSignal = null;
+  // ปลดล็อกสัญญาณไฟกลับเป็น STANDBY เมื่อเหลือนับถอยหลัง 20 วินาทีสุดท้าย
+  if(remaining <= 20 && state.lockedSignal){
+    state.lockedSignal = null;
     renderSelected();
   }
+}
+
+// ฟังก์ชันหาค่าแนวโน้มเพื่อแก้อาการขึ้นขีด -
+function extractTrendText(p){
+  if(!p) return "—";
+  const ind = p.indicators || {};
+  let t = String(p.trend || ind.trend || ind.trendStrength || "").toUpperCase();
+  
+  if(t.includes("BULL") || t.includes("UP") || t.includes("STRONG") && (ind.bullishPoints > ind.bearishPoints)){
+    return "ขาขึ้น";
+  }
+  if(t.includes("BEAR") || t.includes("DOWN") || t.includes("STRONG") && (ind.bearishPoints > ind.bullishPoints)){
+    return "ขาลง";
+  }
+  if(ind.bullishPoints != null && ind.bearishPoints != null){
+    if(ind.bullishPoints > ind.bearishPoints) return "ขาขึ้น";
+    if(ind.bearishPoints > ind.bullishPoints) return "ขาลง";
+  }
+  return "ไซด์เวย์";
 }
 
 function renderSelected(){
@@ -259,8 +277,8 @@ function renderSelected(){
   }
   
   const isNew=fresh(p);
-  let s = "STANDBY";
-  if(state.activeSignal) s = state.activeSignal;
+  // ถ้ามีสัญญาณถูกล็อกไว้ ให้โชว์สัญญาณนั้นยาวไปจนกว่าจะถึง 20 วินาทีสุดท้าย
+  let s = state.lockedSignal ? state.lockedSignal : (isNew ? signalOf(p) : "STANDBY");
 
   $("signalCircle").className="signal "+(s==="CALL"?"call":s==="PUT"?"put":"standby");
   $("signalWord").textContent=s;
@@ -269,12 +287,14 @@ function renderSelected(){
   $("score").textContent=p.score==null?"—":p.score+"/100";
   $("age").textContent=ageText(p);
   $("dataStatus").textContent=isNew?"ข้อมูลล่าสุด":"ข้อมูลเก่า";
+  
   const ind=p.indicators||{};
   $("rsi").textContent=num(ind.rsi14??ind.rsi,1);
-  const t=String(p.trend||ind.trend||"").toUpperCase();
-  $("trend").textContent=t.includes("BULL")||t==="UP"?"ขาขึ้น":t.includes("BEAR")||t==="DOWN"?"ขาลง":(t||"—");
-  $("source").textContent="Twelve Data";
-  $("reason").textContent=p.reason||"ได้รับข้อมูลแล้ว";
+  
+  // อัปเดตช่องแนวโน้มแบบแม่นยำ ไม่ขึ้นขีด -
+  $("trend").textContent = extractTrendText(p);
+  $("source").textContent = "Twelve Data";
+  $("reason").textContent = p.reason || "ได้รับข้อมูลแล้ว";
 }
 
 function renderRadar(){
@@ -327,10 +347,11 @@ function handlePair(d){
   if(!s){applyState(d);return;}
   state.pairs[s]={...(state.pairs[s]||{}),...p};
   
+  // ล็อกสัญญาณถ้าตรวจพบ CALL/PUT ในคู่ที่เลือกอยู่
   if(s===state.selected && fresh(state.pairs[s])){
     const detectedSig = signalOf(state.pairs[s]);
     if(detectedSig!=="STANDBY"){
-      state.activeSignal = detectedSig;
+      state.lockedSignal = detectedSig;
     }
   }
   render();
@@ -370,7 +391,7 @@ function connect(){
 async function selectPair(s){
   if(!symbols.includes(s))return;
   state.selected=s;$("pairSelect").value=s;
-  state.activeSignal=null;
+  state.lockedSignal=null;
   render();
   try{
     await fetch("/api/select",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol:s})});
@@ -394,7 +415,6 @@ function startAuto(){
   setMessage("เปิดโหมดสลับคู่เงินอัตโนมัติแล้ว");
   scanNow();
   clearInterval(state.autoTimer);
-  // ทุกๆ 60 วินาที ระบบจะกดสแกนอัตโนมัติเพื่ออัปเดตและสลับคู่ให้อัตโนมัติ
   state.autoTimer=setInterval(()=>{if(document.visibilityState==="visible")scanNow();},60000);
 }
 
@@ -409,7 +429,6 @@ $("scan").addEventListener("click",scanNow);
 $("auto").addEventListener("click",()=>state.auto?stopAuto():startAuto());
 $("refresh").addEventListener("click",()=>{send({action:"get_state"});setMessage("รีเฟรชแล้ว");});
 
-// ควบคุม Slider ปรับเปอร์เซ็นต์ Threshold
 $("thresholdRange").addEventListener("input",e=>{
   const val=e.target.value;
   $("thresholdVal").textContent=val+"%";
