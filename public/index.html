@@ -52,8 +52,8 @@ button:disabled{opacity:.55}
 .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .metric{background:#0a1828;border-radius:8px;padding:7px;text-align:center}
 .metric .value{font-size:13px}
-.controls{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.controls button{width:100%;padding:8px}
+.controls{display:grid;grid-template-columns:2fr 1fr;gap:6px}
+.controls button{width:100%;padding:10px}
 .small{font-size:10px;color:var(--muted);text-align:center}
 </style>
 </head>
@@ -73,13 +73,13 @@ button:disabled{opacity:.55}
 </section>
 
 <section class="card hero">
- <div class="row between"><span class="label">สถานะระบบ</span><span class="label" id="quotaText">โควต้า: -- / 800</span></div>
+ <div class="row between"><span class="label">สถานะระบบ: ออโต้สแกนทำงานอยู่</span><span class="label" id="quotaText">โควต้า: -- / 800</span></div>
  <div id="signalLight" class="signal"><strong id="signalText">STANDBY</strong><small id="signalSub">รอสัญญาณ</small></div>
  <div class="row between"><span class="label">เกณฑ์สัญญาณ</span><strong id="thresholdText">62%</strong></div>
  <input id="threshold" type="range" min="40" max="95" value="62" style="width:100%;padding:0;accent-color:var(--cyan)">
  <div class="row between" style="margin-top:4px"><span class="label">คะแนนเทคนิค</span><strong id="score">— / 100</strong></div>
  <div class="bar"><span id="scoreBar"></span></div>
- <div class="row between" style="margin-top:6px"><span class="label" id="reason" style="font-size:10px">รอผลวิเคราะห์</span><button id="soundBtn" style="padding:6px 10px;font-size:10px">เปิดเสียง</button></div>
+ <div class="row between" style="margin-top:6px"><span class="label" id="reason" style="font-size:10px">รอผลวิเคราะห์</span></div>
 </section>
 
 <section class="metrics">
@@ -90,17 +90,17 @@ button:disabled{opacity:.55}
 
 <section class="card" style="padding:8px 10px;">
  <div class="controls">
-   <button class="primary" id="scanBtn">สแกนตอนนี้</button>
-   <button id="autoBtn">สแกนอัตโนมัติ: ปิด</button>
+   <button class="primary" id="scanBtn">⚡ สแกนทันที</button>
+   <button id="soundBtn">ปิดเสียง</button>
  </div>
 </section>
 
-<div class="small">Twelve Data API เรียลไทม์ • สั่นเตือนที่ 5 วิ • ดับไฟอัตโนมัติที่ 40 วิ</div>
+<div class="small">ระบบออโต้สแกนอัตโนมัติ • สั่นเตือน 5 วิ • ดับไฟอัตโนมัติ 40 วิ</div>
 </main>
 
 <script>
 const $=id=>document.getElementById(id);
-let ws=null, soundEnabled=false, audioCtx=null, autoTimer=null;
+let ws=null, soundEnabled=true, audioCtx=null, autoTimer=null;
 let activeSignal="STANDBY", holdUntil=0, latestPair=null, reconnectTimer=null;
 
 function beep(freq=800,duration=.12){
@@ -136,14 +136,14 @@ function connect(){
   ws=new WebSocket(`${proto}//${location.host}`);
   
   ws.onopen=()=>{
-    setConnection(true,"ออนไลน์ / ดึง API");
+    setConnection(true,"ออนไลน์ / ออโต้สแกน");
     ws.send(JSON.stringify({action:"get_state"}));
   };
   
   ws.onmessage=e=>{
     let m;try{m=JSON.parse(e.data)}catch{return}
     if(m.type==="state"){
-      setConnection(true,m.configured?"ออนไลน์ / ดึง API":"ยังไม่ตั้ง API Key");
+      setConnection(true,m.configured?"ออนไลน์ / ออโต้สแกน":"ยังไม่ตั้ง API Key");
       if(m.state){
         $("symbol").value=m.state.symbol;
         $("threshold").value=m.state.threshold||62;
@@ -158,7 +158,7 @@ function connect(){
     }
   };
   
-  ws.onclose=()=>{setConnection(false,"สัญญาณหลุด / กำลังเชื่อมต่อใหม่");reconnectTimer=setTimeout(connect,2500)};
+  ws.onclose=()=>{setConnection(false,"สัญญาณหลุด / กำลังต่อใหม่");reconnectTimer=setTimeout(connect,2500)};
   ws.onerror=()=>setConnection(false,"การเชื่อมต่อขัดข้อง");
 }
 
@@ -250,18 +250,13 @@ async function scanNow(){
 
 $("scanBtn").onclick=scanNow;
 
-$("autoBtn").onclick=()=>{
-  if(autoTimer){
-    clearInterval(autoTimer); autoTimer=null;
-    $("autoBtn").textContent="สแกนอัตโนมัติ: ปิด";
-  }else{
-    autoTimer=setInterval(()=>{
-      if(document.visibilityState==="visible" && navigator.onLine) scanNow();
-    },60000);
-    $("autoBtn").textContent="สแกนอัตโนมัติ: เปิด";
-    scanNow();
-  }
-};
+// ระบบเริ่มต้นสแกนอัตโนมัติทันทีที่เปิดแอป (Auto-Run)
+function startAutoScanAlways(){
+  if(autoTimer) clearInterval(autoTimer);
+  autoTimer = setInterval(()=>{
+    if(document.visibilityState==="visible" && navigator.onLine) scanNow();
+  }, 60000);
+}
 
 setInterval(()=>{
   const now=Date.now(), remain=60-Math.floor((now%60000)/1000);
@@ -291,9 +286,10 @@ setInterval(()=>{
   }
 },250);
 
-window.addEventListener("online",()=>{if(ws?.readyState===1)setConnection(true,"ออนไลน์ / ดึง API");});
+window.addEventListener("online",()=>{if(ws?.readyState===1)setConnection(true,"ออนไลน์ / ออโต้สแกน");});
 window.addEventListener("offline",()=>{setConnection(false,"อินเทอร์เน็ตหลุด / สัญญาณขาดหาย");if(soundEnabled)beep(300,.35);});
 
 connect();
 scanNow();
+startAutoScanAlways();
 </script></body></html>
