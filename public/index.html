@@ -4,11 +4,17 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#07111f"><title>AI Signal Radar</title>
 <style>
-:root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2d;--line:#203550;--muted:#8da4c2;--text:#f1f6ff;--green:#12d6a0;--red:#ff5d72;--cyan:#48c8ff;--yellow:#ffc857}
+:root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2d;--line:#203550;--muted:#8da4c2;--text:#f1f6ff;--green:#12d6a0;--red:#ff5d72;--cyan:#48c8ff;--yellow:#ff9f43}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#123050 0,transparent 42%),var(--bg);color:var(--text);font:14px system-ui,-apple-system,sans-serif;min-height:100vh}
 main{max-width:520px;margin:auto;padding:14px;display:grid;gap:10px}.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:18px;font-weight:800;letter-spacing:.4px}.sub{font-size:11px;color:var(--muted);margin-top:2px}.status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}.dot{width:8px;height:8px;border-radius:50%;background:#64748b}.dot.on{background:var(--green);box-shadow:0 0 12px var(--green)}.dot.bad{background:var(--red);box-shadow:0 0 12px var(--red)}
-.card{background:linear-gradient(145deg,#0e2035,#0a1728);border:1px solid var(--line);border-radius:16px;padding:13px}.row{display:flex;align-items:center;gap:10px}.between{justify-content:space-between}.label{color:var(--muted);font-size:11px}.value{font-weight:750;font-size:17px}select,input,button{font:inherit;color:var(--text);background:#10233a;border:1px solid #294461;border-radius:10px;padding:10px;outline:none}select{min-width:118px}button{cursor:pointer;font-weight:700}button.primary{background:linear-gradient(90deg,#0dbd91,#0aa7c5);border:0;color:#04131c}button:disabled{opacity:.55}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hero{text-align:center;padding:16px 12px}.signal{margin:9px auto 8px;width:154px;height:154px;border-radius:50%;display:grid;place-content:center;border:4px solid #38516c;background:#0a1b2b;box-shadow:0 0 0 10px #102338;color:#b4c2d5;transition:.2s}.signal strong{font-size:29px;letter-spacing:1px}.signal small{font-size:10px}.signal.call{border-color:var(--green);color:var(--green);box-shadow:0 0 28px #12d6a033,0 0 0 10px #102e38}.signal.put{border-color:var(--red);color:var(--red);box-shadow:0 0 28px #ff5d7233,0 0 0 10px #351c2b}.signal.active{animation:pulse 1.2s infinite}@keyframes pulse{50%{filter:brightness(1.35)}}.count{font-size:29px;font-weight:800;font-variant-numeric:tabular-nums}.bar{height:5px;background:#20334a;border-radius:8px;overflow:hidden;margin-top:8px}.bar span{display:block;height:100%;background:var(--cyan);width:0}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.metric{background:#0a1828;border-radius:10px;padding:9px}.metric .value{font-size:15px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls button{width:100%}.toggle{display:flex;align-items:center;gap:8px;font-size:12px}.toggle input{accent-color:var(--green);width:18px;height:18px}.banner{display:none;border:1px solid #783d48;background:#351c2b;color:#ffd8de;padding:10px;border-radius:10px;font-size:12px}.banner.show{display:block}.small{font-size:11px;color:var(--muted);line-height:1.5}.sectiontitle{font-weight:800;margin-bottom:8px}.resultgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.resultgrid .metric{padding:8px}.resultgrid .value{font-size:16px}.good{color:var(--green)}.bad{color:var(--red)}.history{max-height:190px;overflow:auto;font-size:11px}.historyrow{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:7px 0;border-bottom:1px solid #1c3047}.hidden{display:none!important}
-@media(max-height:780px){main{padding:9px;gap:7px}.card{padding:10px}.signal{width:120px;height:120px}.signal strong{font-size:25px}.hero{padding:9px}.count{font-size:24px}.small{font-size:10px}}
+.card{background:linear-gradient(145deg,#0e2035,#0a1728);border:1px solid var(--line);border-radius:16px;padding:13px}.row{display:flex;align-items:center;gap:10px}.between{justify-content:space-between}.label{color:var(--muted);font-size:11px}.value{font-weight:750;font-size:17px}select,input,button{font:inherit;color:var(--text);background:#10233a;border:1px solid #294461;border-radius:10px;padding:10px;outline:none}select{min-width:118px}button{cursor:pointer;font-weight:700}button.primary{background:linear-gradient(90deg,#0dbd91,#0aa7c5);border:0;color:#04131c}button:disabled{opacity:.55}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hero{text-align:center;padding:16px 12px}
+.signal{margin:9px auto 8px;width:154px;height:154px;border-radius:50%;display:grid;place-content:center;border:4px solid #38516c;background:#0a1b2b;box-shadow:0 0 0 10px #102338;color:#b4c2d5;transition:.2s}
+.signal strong{font-size:29px;letter-spacing:1px}.signal small{font-size:10px}
+.signal.call{border-color:var(--green);color:var(--green);box-shadow:0 0 28px #12d6a033,0 0 0 10px #102e38}
+.signal.put{border-color:var(--red);color:var(--red);box-shadow:0 0 28px #ff5d7233,0 0 0 10px #351c2b}
+.signal.warning{border-color:var(--yellow);color:var(--yellow);box-shadow:0 0 28px #ff9f4333,0 0 0 10px #35291c}
+.signal.active{animation:pulse 1.2s infinite}@keyframes pulse{50%{filter:brightness(1.35)}}
+.count{font-size:29px;font-weight:800;font-variant-numeric:tabular-nums}.bar{height:5px;background:#20334a;border-radius:8px;overflow:hidden;margin-top:8px}.bar span{display:block;height:100%;background:var(--cyan);width:0}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.metric{background:#0a1828;border-radius:10px;padding:9px}.metric .value{font-size:15px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls button{width:100%}.toggle{display:flex;align-items:center;gap:8px;font-size:12px}.toggle input{accent-color:var(--green);width:18px;height:18px}.banner{display:none;border:1px solid #783d48;background:#351c2b;color:#ffd8de;padding:10px;border-radius:10px;font-size:12px}.banner.show{display:block}.small{font-size:11px;color:var(--muted);line-height:1.5}.sectiontitle{font-weight:800;margin-bottom:8px}.resultgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.resultgrid .metric{padding:8px}.resultgrid .value{font-size:16px}.good{color:var(--green)}.bad{color:var(--red)}.history{max-height:190px;overflow:auto;font-size:11px}.historyrow{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:7px 0;border-bottom:1px solid #1c3047}.hidden{display:none!important}
 </style>
 </head>
 <body><main>
@@ -20,11 +26,11 @@ main{max-width:520px;margin:auto;padding:14px;display:grid;gap:10px}.top{display
  <div style="text-align:right"><div class="label">แท่ง 1 นาที</div><div class="count" id="countdown">--:--</div></div>
 </section>
 <section class="card hero">
- <div class="row between"><span class="label">สัญญาณล่าสุด</span><span class="label" id="dataStatus">รอข้อมูลตลาด</span></div>
- <div id="signalLight" class="signal"><strong id="signalText">STANDBY</strong><small id="signalSub">รอสัญญาณ</small></div>
+ <div class="row between"><span class="label">สถานะเรดาร์</span><span class="label" id="dataStatus">รอข้อมูลตลาด</span></div>
+ <div id="signalLight" class="signal"><strong id="signalText">STANDBY</strong><small id="signalSub">รอรอบสัญญาณ</small></div>
  <div class="row between"><span class="label">เกณฑ์สัญญาณ</span><strong id="thresholdText">62%</strong></div>
  <input id="threshold" type="range" min="40" max="95" value="62" style="width:100%;padding:0;accent-color:var(--cyan)">
- <div class="row between"><span class="label">คะแนนเทคนิค (ไม่ใช่โอกาสชนะ)</span><strong id="score">— / 100</strong></div>
+ <div class="row between"><span class="label">คะแนนเทคนิค</span><strong id="score">— / 100</strong></div>
  <div class="bar"><span id="scoreBar"></span></div>
  <div class="row between" style="margin-top:8px"><span class="label" id="reason">รอผลวิเคราะห์</span><button id="soundBtn">เปิดเสียง</button></div>
 </section>
@@ -36,60 +42,162 @@ main{max-width:520px;margin:auto;padding:14px;display:grid;gap:10px}.top{display
 <section class="card">
  <div class="row between"><div class="sectiontitle">การทำงาน</div><label class="toggle"><input type="checkbox" id="auto"> สแกนอัตโนมัติ</label></div>
  <div class="controls"><button class="primary" id="scanBtn">สแกนตอนนี้</button><button id="allBtn">สแกนทุกคู่</button></div>
- <div class="row between" style="margin-top:9px"><button id="orderBtn" style="flex:1">เข้าออเดอร์แล้ว · เริ่ม 40 วิ</button><button id="stopBtn">รีเซ็ตไฟ</button></div>
- <div class="small" id="holdStatus" style="margin-top:7px">ไฟ 40 วินาทีจะเริ่มเมื่อคุณกดปุ่มหลังเข้าออเดอร์ด้วยตนเอง</div>
+ <div class="small" id="holdStatus" style="margin-top:9px">ระบบจะเตือนสีส้มช่วง 10 วินาทีสุดท้าย และปล่อยสัญญาณจริงพร้อมสั่นในช่วง 1.5 วินาทีสุดท้ายของรอบ</div>
 </section>
-<section class="card">
- <div class="row between"><div class="sectiontitle">Backtest · ทดสอบย้อนหลัง</div><select id="btCandles" style="min-width:100px"><option value="200">200 แท่ง</option><option value="500">500 แท่ง</option><option value="1000" selected>1,000 แท่ง</option><option value="2000">2,000 แท่ง</option><option value="5000">5,000 แท่ง*</option></select></div>
- <button class="primary" id="btBtn" style="width:100%">เริ่มทดสอบย้อนหลัง</button>
- <div class="small" id="btNote" style="margin:7px 0">ยังไม่มีผลทดสอบในเซสชันนี้ · *ข้อมูลที่ดึงได้ขึ้นกับแพ็กเกจ Twelve Data</div>
- <div id="btResults" class="hidden">
-  <div class="resultgrid" style="margin-top:8px">
-   <div class="metric"><div class="label">Win rate</div><div class="value" id="btWinRate">—</div></div>
-   <div class="metric"><div class="label">ชนะ / แพ้</div><div class="value" id="btWL">—</div></div>
-   <div class="metric"><div class="label">สัญญาณ</div><div class="value" id="btTotal">—</div></div>
-  </div>
-  <div class="history" id="btHistory" style="margin-top:8px"></div>
- </div>
-</section>
-<div class="small">ข้อมูล Twelve Data เป็นราคาอ้างอิง ไม่รับประกันว่าตรงกับ IQ Option · คะแนนเป็นเกณฑ์คัดกรอง ไม่ใช่ความน่าจะเป็นที่พิสูจน์แล้ว · ทดสอบย้อนหลังไม่รับประกันผลในอนาคต</div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let ws=null, wsConnected=false, soundEnabled=false, audioCtx=null, autoTimer=null, holdTimer=null, holdUntil=0, latestPair=null, reconnectTimer=null;
+let ws=null, wsConnected=false, soundEnabled=false, audioCtx=null, autoTimer=null, latestPair=null, reconnectTimer=null;
+
 function beep(freq=800,duration=.12){if(!soundEnabled)return;try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")audioCtx.resume();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=freq;o.type="sine";g.gain.value=.07;o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+duration);}catch(e){}}
+function vibrateDevice(pattern){if(navigator.vibrate)navigator.vibrate(pattern);}
 function setConnection(ok,text){wsConnected=ok;$("connDot").className="dot "+(ok?"on":"bad");$("connText").textContent=text;$("lostBanner").classList.toggle("show",!ok);}
-function connect(){clearTimeout(reconnectTimer);const proto=location.protocol==="https:"?"wss:":"ws:";ws=new WebSocket(`${proto}//${location.host}`);
- ws.onopen=()=>{setConnection(true,"เชื่อมต่อแล้ว");ws.send(JSON.stringify({action:"get_state"}));};
- ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}
- if(m.type==="state"){setConnection(true,m.configured?"ระบบพร้อม":"ยังไม่ตั้ง API Key");if(m.state){$("symbol").value=m.state.symbol;$("threshold").value=m.state.threshold||62;setThresholdUI(m.state.threshold||62);renderPair(m.state);}if(m.pairs)renderPairs(m.pairs);if(m.lastScanAt)$("lastScan").textContent=new Date(m.lastScanAt).toLocaleTimeString("th-TH");}
- if(m.type==="pair_update"){renderPair(m.pair);}
- if(m.type==="scan_status"){$("scanBtn").disabled=!!m.scanning;$("allBtn").disabled=!!m.scanning;$("scanBtn").textContent=m.scanning?"กำลังสแกน…":"สแกนตอนนี้";}
- if(m.type==="scan_complete"){if(m.lastScanAt)$("lastScan").textContent=new Date(m.lastScanAt).toLocaleTimeString("th-TH");}
- if(m.type==="error")$("reason").textContent=m.error||"เกิดข้อผิดพลาด";
- };
- ws.onclose=()=>{setConnection(false,"หลุดการเชื่อมต่อ");reconnectTimer=setTimeout(connect,2500)};
- ws.onerror=()=>setConnection(false,"เชื่อมต่อมีปัญหา");
+
+function connect(){
+  clearTimeout(reconnectTimer);
+  const proto=location.protocol==="https:"?"wss:":"ws:";
+  ws=new WebSocket(`${proto}//${location.host}`);
+  ws.onopen=()=>{setConnection(true,"เชื่อมต่อแล้ว");ws.send(JSON.stringify({action:"get_state"}));};
+  ws.onmessage=e=>{
+    let m;try{m=JSON.parse(e.data)}catch{return}
+    if(m.type==="state"){
+      setConnection(true,m.configured?"ระบบพร้อม":"ยังไม่ตั้ง API Key");
+      if(m.state){$("symbol").value=m.state.symbol;$("threshold").value=m.state.threshold||62;setThresholdUI(m.state.threshold||62);renderPair(m.state);}
+      if(m.pairs)renderPairs(m.pairs);
+      if(m.lastScanAt)$("lastScan").textContent=new Date(m.lastScanAt).toLocaleTimeString("th-TH");
+    }
+    if(m.type==="pair_update"){renderPair(m.pair);}
+    if(m.type==="scan_status"){$("scanBtn").disabled=!!m.scanning;$("allBtn").disabled=!!m.scanning;$("scanBtn").textContent=m.scanning?"กำลังสแกน…":"สแกนตอนนี้";}
+    if(m.type==="scan_complete"){if(m.lastScanAt)$("lastScan").textContent=new Date(m.lastScanAt).toLocaleTimeString("th-TH");}
+    if(m.type==="error")$("reason").textContent=m.error||"เกิดข้อผิดพลาด";
+  };
+  ws.onclose=()=>{setConnection(false,"หลุดการเชื่อมต่อ");reconnectTimer=setTimeout(connect,2500)};
+  ws.onerror=()=>setConnection(false,"เชื่อมต่อมีปัญหา");
 }
+
 function setThresholdUI(v){$("thresholdText").textContent=Math.round(v)+"%";}
-function renderPair(p){if(!p||p.symbol!==$("symbol").value)return;latestPair=p;$("price").textContent=Number.isFinite(Number(p.price))?Number(p.price).toFixed(p.symbol.includes("JPY")?3:5):"—";$("updated").textContent=p.updatedAt?new Date(p.updatedAt).toLocaleTimeString("th-TH"):"รอข้อมูล";
- $("dataStatus").textContent=p.dataStatus==="LIVE_REFERENCE"?"ข้อมูลอ้างอิง":p.dataStatus==="ERROR"?"ข้อมูลผิดพลาด":"รอข้อมูล";$("signalText").textContent=p.signal||"STANDBY";$("signalSub").textContent=p.signal==="CALL"?"ขึ้น":p.signal==="PUT"?"ลง":"รอสัญญาณ";
- const light=$("signalLight");light.className="signal "+(p.signal==="CALL"?"call":p.signal==="PUT"?"put":"");if(holdUntil>Date.now()&&p.signal!=="STANDBY")light.classList.add("active");
- $("score").textContent=(p.score??"—")+" / 100";$("scoreBar").style.width=Math.max(0,Math.min(100,Number(p.score)||0))+"%";$("reason").textContent=p.reason||"รอผลวิเคราะห์";$("rsi").textContent=p.indicators?.rsi14??"—";$("trend").textContent=(p.indicators?.ema21>p.indicators?.ema50)?"ขึ้น":(p.indicators?.ema21<p.indicators?.ema50)?"ลง":"กลาง";if(p.updatedAt)$("lastScan").textContent=new Date(p.updatedAt).toLocaleTimeString("th-TH");
+
+function renderPair(p){
+  if(!p||p.symbol!==$("symbol").value)return;
+  latestPair=p;
+  $("price").textContent=Number.isFinite(Number(p.price))?Number(p.price).toFixed(p.symbol.includes("JPY")?3:5):"—";
+  $("updated").textContent=p.updatedAt?new Date(p.updatedAt).toLocaleTimeString("th-TH"):"รอข้อมูล";
+  $("dataStatus").textContent=p.dataStatus==="LIVE_REFERENCE"?"ข้อมูลอ้างอิง":"รอข้อมูล";
+  $("score").textContent=(p.score??"—")+" / 100";
+  $("scoreBar").style.width=Math.max(0,Math.min(100,Number(p.score)||0))+"%";
+  $("reason").textContent=p.reason||"รอผลวิเคราะห์";
+  $("rsi").textContent=p.indicators?.rsi14??"—";
+  $("trend").textContent=(p.indicators?.ema21>p.indicators?.ema50)?"ขึ้น":(p.indicators?.ema21<p.indicators?.ema50)?"ลง":"กลาง";
+  if(p.updatedAt)$("lastScan").textContent=new Date(p.updatedAt).toLocaleTimeString("th-TH");
 }
+
 function renderPairs(pairs){const p=pairs?.find(x=>x.symbol===$("symbol").value);if(p)renderPair(p);}
 async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!r.ok||j.ok===false)throw new Error(j.error||j.message||"คำขอไม่สำเร็จ");return j;}
-$("symbol").addEventListener("change",async()=>{try{await post("/api/select",{symbol:$("symbol").value});if(ws?.readyState===1)ws.send(JSON.stringify({action:"set_symbol",symbol:$("symbol").value}));renderPair(latestPair);}catch(e){$("reason").textContent=e.message;}});
-let thresholdDebounce=null;$("threshold").addEventListener("input",e=>{const v=Number(e.target.value);setThresholdUI(v);clearTimeout(thresholdDebounce);thresholdDebounce=setTimeout(async()=>{try{await post("/api/threshold",{threshold:v});if(ws?.readyState===1)ws.send(JSON.stringify({action:"set_threshold",threshold:v}));}catch(err){$("reason").textContent=err.message;}},180);});
-$("soundBtn").onclick=async()=>{soundEnabled=!soundEnabled;if(soundEnabled){beep(880,.1);$("soundBtn").textContent="ปิดเสียง";}else $("soundBtn").textContent="เปิดเสียง";};
-$("scanBtn").onclick=async()=>{try{$("scanBtn").disabled=true;await post("/api/scan",{symbol:$("symbol").value});}catch(e){$("reason").textContent=e.message;}finally{$("scanBtn").disabled=false;}};
+
+$("symbol").addEventListener("change",async()=>{
+  try{
+    await post("/api/select",{symbol:$("symbol").value});
+    if(ws?.readyState===1)ws.send(JSON.stringify({action:"set_symbol",symbol:$("symbol").value}));
+  }catch(e){$("reason").textContent=e.message;}
+});
+
+let thresholdDebounce=null;
+$("threshold").addEventListener("input",e=>{
+  const v=Number(e.target.value);
+  setThresholdUI(v);
+  clearTimeout(thresholdDebounce);
+  thresholdDebounce=setTimeout(async()=>{
+    try{
+      await post("/api/threshold",{threshold:v});
+      if(ws?.readyState===1)ws.send(JSON.stringify({action:"set_threshold",threshold:v}));
+    }catch(err){$("reason").textContent=err.message;}
+  },180);
+});
+
+$("soundBtn").onclick=async()=>{
+  soundEnabled=!soundEnabled;
+  if(soundEnabled){beep(880,.1);$("soundBtn").textContent="ปิดเสียง";}else{$("soundBtn").textContent="เปิดเสียง";}
+};
+
+$("scanBtn").onclick=async()=>{
+  try{$("scanBtn").disabled=true;await post("/api/scan",{symbol:$("symbol").value});}
+  catch(e){$("reason").textContent=e.message;}
+  finally{$("scanBtn").disabled=false;}
+};
+
 $("allBtn").onclick=async()=>{try{await post("/api/scan-all",{});}catch(e){$("reason").textContent=e.message;}};
-$("auto").addEventListener("change",()=>{clearInterval(autoTimer);if($("auto").checked){autoTimer=setInterval(()=>{if(document.visibilityState==="visible"&&navigator.onLine&&!$("scanBtn").disabled) $("scanBtn").click();},60000);$("holdStatus").textContent="เปิดสแกนอัตโนมัติทุก 60 วินาที (ขึ้นกับโควตา API)";}else $("holdStatus").textContent="ปิดสแกนอัตโนมัติ";});
-$("orderBtn").onclick=()=>{if(!latestPair||!["CALL","PUT"].includes(latestPair.signal)){ $("holdStatus").textContent="ยังไม่มี CALL/PUT ให้เริ่มจับเวลา";return;}holdUntil=Date.now()+40000;clearInterval(holdTimer);beep(950,.16);$("holdStatus").textContent="ไฟค้าง 40 วินาที · เริ่ม "+new Date().toLocaleTimeString("th-TH");holdTimer=setInterval(()=>{const left=Math.max(0,Math.ceil((holdUntil-Date.now())/1000));$("holdStatus").textContent=left?`แสดงสถานะอีก ${left} วินาที`:"ครบ 40 วินาที · กลับ Standby";if(!left){clearInterval(holdTimer);holdTimer=null;$("signalLight").classList.remove("active");$("signalLight").classList.remove("call","put");$("signalText").textContent="STANDBY";$("signalSub").textContent="รอรอบถัดไป";holdUntil=0;}},250);};
-$("stopBtn").onclick=()=>{holdUntil=0;clearInterval(holdTimer);$("signalLight").className="signal";$("signalText").textContent="STANDBY";$("signalSub").textContent="รีเซ็ตแล้ว";$("holdStatus").textContent="ไฟถูกรีเซ็ต";}
-$("btBtn").onclick=async()=>{const btn=$("btBtn");btn.disabled=true;btn.textContent="กำลังทดสอบ…";$("btNote").textContent="กำลังดึงแท่งเทียนย้อนหลังและจำลองสัญญาณ";try{const r=await post("/api/backtest",{symbol:$("symbol").value,candles:Number($("btCandles").value)});$("btResults").classList.remove("hidden");$("btWinRate").textContent=r.winRate===null?"—":r.winRate+"%";$("btWL").textContent=`${r.wins} / ${r.losses}`;$("btTotal").textContent=r.totalSignals;$("btNote").textContent=`${r.symbol} · ${r.candles} แท่ง · เกณฑ์ ${r.threshold}% · ${r.method}`;$("btHistory").innerHTML="<div class='historyrow'><b>เวลา UTC</b><b>สัญญาณ</b><b>ผล</b></div>"+(r.signals.slice(-30).reverse().map(s=>`<div class="historyrow"><span>${new Date(s.time).toLocaleString("th-TH")}</span><b class="${s.signal==="CALL"?"good":"bad"}">${s.signal} ${s.score}%</b><b class="${s.win===null?"":s.win?"good":"bad"}">${s.win===null?"ชนะ":"แพ้"}</b></div>`).join("")||"<div>ไม่มีสัญญาณผ่านเกณฑ์ในช่วงนี้</div>");}catch(e){$("btNote").textContent="ทดสอบไม่สำเร็จ: "+e.message;}finally{btn.disabled=false;btn.textContent="เริ่มทดสอบย้อนหลัง";}};
-let lastBoundary=Math.floor(Date.now()/60000);setInterval(()=>{const now=Date.now(),remain=60-Math.floor((now%60000)/1000);$("countdown").textContent=`00:${String(remain===60?0:remain).padStart(2,"0")}`;const boundary=Math.floor(now/60000);if(boundary!==lastBoundary){lastBoundary=boundary;if($("auto").checked&&document.visibilityState==="visible")$("scanBtn").click();}
- if(remain===10)beep(650,.1);if(remain===5){beep(1000,.14);if(latestPair&&latestPair.signal!=="STANDBY"){$("signalLight").classList.add("active");}}},250);
-window.addEventListener("online",()=>{if(ws?.readyState===1)setConnection(true,"เชื่อมต่อแล้ว");});window.addEventListener("offline",()=>{setConnection(false,"อินเทอร์เน็ตหลุด");if(soundEnabled)beep(300,.35);});
+
+$("auto").addEventListener("change",()=>{
+  clearInterval(autoTimer);
+  if($("auto").checked){
+    autoTimer=setInterval(()=>{if(document.visibilityState==="visible"&&navigator.onLine&&!$("scanBtn").disabled)$("scanBtn").click();},60000);
+    $("holdStatus").textContent="เปิดสแกนอัตโนมัติทุก 60 วินาที";
+  }else{
+    $("holdStatus").textContent="ปิดสแกนอัตโนมัติ";
+  }
+});
+
+// ควบคุมจังหวะเวลาแบบแม่นยำด้วยมิลลิวินาที (ms)
+let lastBoundary=Math.floor(Date.now()/60000);
+let triggered10 = false;
+let triggered15 = false; // สำหรับ 1.5 วินาทีสุดท้าย
+
+setInterval(()=>{
+  const now = Date.now();
+  const msRemain = 60000 - (now % 60000); // คำนวณเวลาที่เหลือเป็นมิลลิวินาทีในรอบนาทีนั้น
+  const secDisplay = Math.ceil(msRemain / 1000);
+  $("countdown").textContent = `00:${String(secDisplay === 60 ? 0 : secDisplay).padStart(2,"0")}`;
+
+  const boundary = Math.floor(now/60000);
+  if(boundary !== lastBoundary){
+    lastBoundary = boundary;
+    triggered10 = false;
+    triggered15 = false;
+    if($("auto").checked && document.visibilityState==="visible")$("scanBtn").click();
+  }
+
+  const light = $("signalLight");
+  const text = $("signalText");
+  const sub = $("signalSub");
+
+  // ช่วงมากกว่า 10 วินาทีขึ้นไป -> STANDBY (ดับไฟรอรอบ)
+  if(msRemain > 10000){
+    light.className = "signal";
+    text.textContent = "STANDBY";
+    sub.textContent = "รอรอบสัญญาณ";
+  }
+  // ช่วงระหว่าง 10 วินาที ถึง 1.5 วินาที (10000ms ถึง 1500ms) -> ไฟเตือนสีส้ม (WATCH)
+  else if(msRemain > 1500 && msRemain <= 10000){
+    if(!triggered10){
+      triggered10 = true;
+      beep(650, .1);
+    }
+    light.className = "signal warning active";
+    text.textContent = "WATCH";
+    sub.textContent = "เตรียมเฝ้าระวัง";
+  }
+  // ช่วง 1.5 วินาทีสุดท้าย (เหลือน้อยกว่าหรือเท่ากับ 1500ms) -> ปล่อยสัญญาณจริง CALL หรือ PUT พร้อมสั่นเตือน
+  else {
+    if(latestPair && latestPair.signal && latestPair.signal !== "STANDBY"){
+      const isCall = latestPair.signal === "CALL";
+      light.className = "signal " + (isCall ? "call" : "put") + " active";
+      text.textContent = latestPair.signal;
+      sub.textContent = isCall ? "โอกาสขึ้น (ซื้อขึ้น)" : "โอกาสลง (ขายลง)";
+      
+      if(!triggered15){
+        triggered15 = true;
+        beep(1000, .2);
+        vibrateDevice([200, 100, 200]); // สั่นเตือนจังหวะกดออร์เดอร์
+      }
+    } else {
+      light.className = "signal";
+      text.textContent = "STANDBY";
+      sub.textContent = "ไม่มีสัญญาณเข้าเกณฑ์";
+    }
+  }
+}, 100); // ตรวจสอบความถี่ระดับ 100ms เพื่อความลื่นไหลและแม่นยำระดับเสี้ยววินาที
+
+window.addEventListener("online",()=>{if(ws?.readyState===1)setConnection(true,"เชื่อมต่อแล้ว");});
+window.addEventListener("offline",()=>{setConnection(false,"อินเทอร์เน็ตหลุด");if(soundEnabled)beep(300,.35);});
 connect();
 </script></body></html>
