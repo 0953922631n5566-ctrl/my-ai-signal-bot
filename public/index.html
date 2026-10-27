@@ -1,451 +1,1001 @@
 
-<script>
-(() => {
-  "use strict";
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#070b16">
+  <title>AI Signal Radar</title>
 
-  const $ = id => document.getElementById(id);
-  const tg = window.Telegram?.WebApp;
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  tg?.ready();
-  tg?.expand();
-
-  const POLL_MS = 900000; // 15 นาที เพื่อควบคุมการใช้ API ฟรี
-  const SIGNAL_DISPLAY_MS = 40000;
-  const MAX_DATA_AGE_MS = 240000;
-
-  let socket = null;
-  let reconnectTimer = null;
-  let autoTimer = null;
-  let countdownTimer = null;
-  let autoScan = false;
-  let soundOn = false;
-  let audio = null;
-  let latestState = null;
-  let pairs = [];
-  let currentSignal = null;
-  let signalUntil = 0;
-  let lastSignalKey = "";
-  let lastBeepSecond = -1;
-  let scanPending = false;
-
-  const pairSelect = $("pair");
-
-  function beep(freq = 800, duration = 120) {
-    if (!soundOn) return;
-
-    try {
-      audio ||= new (
-        window.AudioContext || window.webkitAudioContext
-      )();
-
-      if (audio.state === "suspended") audio.resume();
-
-      const osc = audio.createOscillator();
-      const gain = audio.createGain();
-
-      osc.frequency.value = freq;
-      gain.gain.value = 0.06;
-
-      osc.connect(gain);
-      gain.connect(audio.destination);
-
-      osc.start();
-      osc.stop(audio.currentTime + duration / 1000);
-    } catch (error) {
-      console.warn("Audio unavailable", error);
-    }
-  }
-
-  function setConnection(connected) {
-    $("dot").className = "dot " + (connected ? "on" : "off");
-    $("status").textContent = connected
-      ? "เชื่อมต่อแล้ว"
-      : "กำลังเชื่อมต่อใหม่";
-
-    $("server").textContent = connected ? "ออนไลน์" : "ออฟไลน์";
-    $("banner").classList.toggle("show", !connected);
-  }
-
-  function send(message) {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      $("reason").textContent = "ยังไม่ได้เชื่อมต่อเซิร์ฟเวอร์";
-      return false;
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b16;
+      --panel: #10182a;
+      --panel2: #0b1221;
+      --line: #25334d;
+      --text: #edf4ff;
+      --muted: #8da1bf;
+      --blue: #4aa3ff;
+      --green: #24e6a1;
+      --red: #ff536b;
+      --yellow: #ffc857;
     }
 
-    socket.send(JSON.stringify(message));
-    return true;
-  }
+    * { box-sizing: border-box; }
 
-  function selectedPair() {
-    return pairs.find(p => p.symbol === pairSelect.value) || null;
-  }
-
-  function isFresh(pair) {
-    if (!pair) return false;
-
-    const candleTime = Date.parse(pair.candleTime || "");
-    const updatedTime = Date.parse(pair.updatedAt || "");
-
-    // ตรวจเวลาของแท่งเทียน ไม่ใช้เวลาที่เพิ่งรับข้อความ
-    if (!Number.isFinite(candleTime)) return false;
-
-    const age = Date.now() - candleTime;
-
-    return age >= -60000 &&
-      age <= MAX_DATA_AGE_MS &&
-      pair.dataStatus === "LIVE_REFERENCE" &&
-      Number.isFinite(Number(pair.price));
-  }
-
-  function resetSignalDisplay(message = "รอสัญญาณที่ยืนยันได้") {
-    currentSignal = null;
-    signalUntil = 0;
-
-    $("signal").textContent = "STANDBY";
-    $("signal").className = "signal STANDBY";
-    $("reason").textContent = message;
-  }
-
-  function showSignal(signal, pair, force = false) {
-    const validSignals = ["CALL", "PUT", "STANDBY"];
-    const value = validSignals.includes(signal) ? signal : "STANDBY";
-
-    if (value === "STANDBY") {
-      resetSignalDisplay(pair?.reason || "ยังไม่มีสัญญาณ");
-      return;
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(ellipse at top, #122443 0%, transparent 45%),
+        var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    const key = `${pair.symbol}:${pair.candleTime}:${value}`;
+    button, select { font: inherit; }
 
-    // ไม่ส่งเสียงซ้ำจากข้อมูลเดิม
-    if (key !== lastSignalKey) {
-      lastSignalKey = key;
-      beep(value === "CALL" ? 1000 : 450, 220);
+    button {
+      cursor: pointer;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      color: var(--text);
+      background: #172239;
+      font-weight: 700;
+      transition: .15s ease;
     }
 
-    currentSignal = {
-      signal: value,
-      symbol: pair.symbol,
-      candleTime: pair.candleTime
-    };
+    button:active { transform: scale(.98); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
 
-    signalUntil = Date.now() + SIGNAL_DISPLAY_MS;
-
-    $("signal").textContent = value;
-    $("signal").className = "signal " + value;
-    $("lastSignal").textContent = value;
-    $("reason").textContent = pair.reason || "ได้รับสัญญาณจากเซิร์ฟเวอร์";
-  }
-
-  function render() {
-    const pair = selectedPair();
-
-    if (!pair) {
-      resetSignalDisplay("รอข้อมูลคู่เงิน");
-      return;
+    .app {
+      width: min(100%, 720px);
+      margin: 0 auto;
+      padding: 16px 14px calc(28px + env(safe-area-inset-bottom));
     }
 
-    const fresh = isFresh(pair);
-
-    if (pair.price != null && Number.isFinite(Number(pair.price))) {
-      const symbol = pair.symbol || "";
-      const decimals = symbol.includes("JPY") ? 3 : 5;
-
-      $("price").textContent = Number(pair.price).toFixed(decimals);
-    } else {
-      $("price").textContent = "—";
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
     }
 
-    $("pairName").textContent =
-      `${pair.symbol} · ${fresh ? "ข้อมูลพร้อมใช้" : "ข้อมูลเก่าหรือยังไม่พร้อม"}`;
-
-    const indicators = pair.indicators || {};
-
-    $("rsi").textContent = Number.isFinite(Number(indicators.rsi14))
-      ? Number(indicators.rsi14).toFixed(2)
-      : "—";
-
-    const score = Number(pair.score || 0);
-    $("score").textContent = `${score} / 100`;
-    $("fill").style.width = `${Math.max(0, Math.min(100, score))}%`;
-
-    $("updated").textContent = pair.updatedAt
-      ? new Date(pair.updatedAt).toLocaleTimeString("th-TH")
-      : "รอการสแกน";
-
-    $("history").textContent =
-      `ล่าสุด: ${pair.symbol} · ${pair.signal || "STANDBY"} · คะแนน ${score}`;
-
-    if (!fresh) {
-      resetSignalDisplay(
-        pair.reason || "ข้อมูลแท่งเทียนเก่า กรุณารอสแกนใหม่"
-      );
-      return;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
-    if (currentSignal && Date.now() < signalUntil &&
-        currentSignal.symbol === pair.symbol &&
-        currentSignal.candleTime === pair.candleTime) {
-      $("signal").textContent = currentSignal.signal;
-      $("signal").className = "signal " + currentSignal.signal;
-      return;
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      color: #06121c;
+      font-size: 20px;
+      font-weight: 1000;
+      background: linear-gradient(135deg, #4aa3ff, #24e6a1);
+      box-shadow: 0 0 24px #24e6a133;
     }
 
-    // แสดงสัญญาณที่คำนวณได้จริงจาก server
-    if (pair.signal === "CALL" || pair.signal === "PUT") {
-      showSignal(pair.signal, pair);
-    } else {
-      resetSignalDisplay(pair.reason || "รอสัญญาณที่ยืนยันได้");
-    }
-  }
+    h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
+    .subtitle { color: var(--muted); font-size: 11px; margin-top: 4px; letter-spacing: 1px; }
 
-  function handleState(msg) {
-    latestState = msg;
-
-    if (Array.isArray(msg.pairs)) {
-      pairs = msg.pairs;
-    }
-
-    if (msg.state && msg.state.symbol) {
-      const current = msg.state;
-      const index = pairs.findIndex(p => p.symbol === current.symbol);
-
-      if (index >= 0) pairs[index] = { ...pairs[index], ...current };
-      else pairs.push(current);
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #0c1424;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
     }
 
-    $("quota").textContent = msg.configured
-      ? "API เชื่อมต่อแล้ว"
-      : "ตั้งค่า API Key";
-
-    if (msg.lastError) {
-      $("reason").textContent = msg.lastError;
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--yellow);
+      display: inline-block;
     }
 
-    render();
-  }
+    .dot.online { background: var(--green); box-shadow: 0 0 9px #24e6a1; }
+    .dot.offline { background: var(--red); }
 
-  function handlePairUpdate(pair) {
-    if (!pair || !pair.symbol) return;
+    .card {
+      background: linear-gradient(145deg, #111b2e, #0b1220);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 13px;
+      box-shadow: 0 12px 30px #00000020;
+    }
 
-    const index = pairs.findIndex(p => p.symbol === pair.symbol);
+    .section-title {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
 
-    if (index >= 0) pairs[index] = { ...pairs[index], ...pair };
-    else pairs.push(pair);
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
 
-    render();
-  }
+    .pair-select {
+      width: 100%;
+      background: #080f1d;
+      border: 1px solid #30415f;
+      color: var(--text);
+      padding: 13px;
+      border-radius: 12px;
+      outline: none;
+    }
 
-  function connect() {
-    if (socket && (
-      socket.readyState === WebSocket.OPEN ||
-      socket.readyState === WebSocket.CONNECTING
-    )) return;
+    .signal-card {
+      text-align: center;
+      padding: 23px 15px;
+      overflow: hidden;
+      position: relative;
+    }
 
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    socket = new WebSocket(`${protocol}//${location.host}`);
+    .signal-card::before {
+      content: "";
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: #4aa3ff0a;
+      top: -130px;
+      left: calc(50% - 110px);
+      pointer-events: none;
+    }
 
-    socket.onopen = () => {
-      setConnection(true);
-      send({ action: "get_state" });
-    };
+    .signal-label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 2px;
+      font-weight: 800;
+    }
 
-    socket.onmessage = event => {
-      let msg;
+    .signal {
+      margin: 13px auto;
+      width: min(62vw, 220px);
+      height: min(62vw, 220px);
+      max-height: 220px;
+      max-width: 220px;
+      min-height: 170px;
+      min-width: 170px;
+      border-radius: 50%;
+      border: 2px solid #35445f;
+      background: radial-gradient(circle, #17243b, #0a1020 70%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      box-shadow: inset 0 0 32px #4aa3ff0b;
+      position: relative;
+    }
 
-      try {
-        msg = JSON.parse(event.data);
-      } catch {
-        return;
+    .signal.call {
+      border-color: var(--green);
+      box-shadow: 0 0 30px #24e6a122, inset 0 0 32px #24e6a118;
+    }
+
+    .signal.put {
+      border-color: var(--red);
+      box-shadow: 0 0 30px #ff536b22, inset 0 0 32px #ff536b18;
+    }
+
+    .signal.standby {
+      border-color: #42516d;
+    }
+
+    .signal-word {
+      font-size: clamp(31px, 9vw, 45px);
+      font-weight: 1000;
+      letter-spacing: 1px;
+      line-height: 1.1;
+    }
+
+    .signal.call .signal-word { color: var(--green); }
+    .signal.put .signal-word { color: var(--red); }
+    .signal.standby .signal-word { color: #c5d2e7; }
+
+    .signal-direction { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+    .price {
+      font-size: clamp(25px, 7vw, 34px);
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      margin-top: 5px;
+    }
+
+    .pair-name { font-size: 17px; font-weight: 800; }
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .metric {
+      padding: 12px 8px;
+      background: #080f1d;
+      border: 1px solid #1d2b43;
+      border-radius: 12px;
+      min-width: 0;
+    }
+
+    .metric-label { font-size: 10px; color: var(--muted); margin-bottom: 7px; }
+    .metric-value { font-size: 17px; font-weight: 800; overflow-wrap: anywhere; }
+    .metric-sub { font-size: 10px; color: var(--muted); margin-top: 5px; }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, #2377dc, #3e9cff);
+      border-color: #4aa3ff;
+      color: white;
+    }
+
+    .success {
+      background: #0b3029;
+      border-color: #1c8d6a;
+      color: var(--green);
+    }
+
+    .danger {
+      background: #351722;
+      border-color: #8c3548;
+      color: #ff8192;
+    }
+
+    .full { width: 100%; }
+
+    .radar-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, .7fr) minmax(0, .7fr);
+      align-items: center;
+      gap: 8px;
+      padding: 12px 0;
+      border-bottom: 1px solid #1c2940;
+      cursor: pointer;
+    }
+
+    .radar-row:last-child { border-bottom: 0; }
+    .radar-row.active { background: #14243a; margin: 0 -8px; padding: 12px 8px; border-radius: 10px; }
+    .radar-pair { font-size: 13px; font-weight: 800; }
+    .radar-price { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .radar-signal { font-size: 12px; font-weight: 900; text-align: center; }
+    .radar-score { text-align: right; font-size: 12px; color: var(--muted); }
+
+    .green { color: var(--green); }
+    .red { color: var(--red); }
+    .yellow { color: var(--yellow); }
+
+    .notice {
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--muted);
+      padding: 12px;
+      border: 1px solid #293650;
+      background: #0b1220;
+      border-radius: 12px;
+    }
+
+    .message {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      min-height: 18px;
+    }
+
+    .footer {
+      text-align: center;
+      color: #667994;
+      font-size: 10px;
+      line-height: 1.6;
+      padding: 8px 12px 0;
+    }
+
+    @media (max-width: 360px) {
+      .app { padding-left: 9px; padding-right: 9px; }
+      .card { padding: 12px; }
+      .status-pill { font-size: 10px; padding: 6px 8px; }
+      .metrics { gap: 5px; }
+      .metric-value { font-size: 15px; }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div>
+          <h1>AI SIGNAL RADAR</h1>
+          <div class="subtitle">MARKET SCANNER · 1 MIN</div>
+        </div>
+      </div>
+      <div class="status-pill">
+        <span id="connectionDot" class="dot"></span>
+        <span id="connectionText">กำลังเชื่อมต่อ</span>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="section-title">เลือกคู่เงิน · Currency Pair</div>
+      <select id="pairSelect" class="pair-select" aria-label="เลือกคู่เงิน">
+        <option value="EUR/USD">EUR/USD</option>
+        <option value="GBP/USD">GBP/USD</option>
+        <option value="USD/JPY">USD/JPY</option>
+        <option value="AUD/USD">AUD/USD</option>
+        <option value="USD/CAD">USD/CAD</option>
+        <option value="NZD/USD">NZD/USD</option>
+        <option value="EUR/GBP">EUR/GBP</option>
+      </select>
+      <div class="row" style="margin-top:12px">
+        <div>
+          <div class="pair-name" id="selectedPairName">EUR/USD</div>
+          <div class="small muted">ข้อมูลตลาดหลัก · Non-OTC</div>
+        </div>
+        <div class="status-pill">
+          <span class="dot" id="dataDot"></span>
+          <span id="dataStatus">รอข้อมูล</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card signal-card">
+      <div class="signal-label">AI SIGNAL</div>
+      <div id="signalCircle" class="signal standby">
+        <div id="signalWord" class="signal-word">STANDBY</div>
+        <div id="signalDirection" class="signal-direction">รอสัญญาณที่ยืนยันได้</div>
+      </div>
+      <div class="muted small">ราคาล่าสุดจากแหล่งข้อมูลอ้างอิง</div>
+      <div id="price" class="price">—</div>
+      <div class="row" style="margin-top:15px">
+        <div style="text-align:left">
+          <div class="small muted">คะแนนทางเทคนิค</div>
+          <div id="score" style="font-size:18px;font-weight:800">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="small muted">อัปเดตข้อมูล</div>
+          <div id="updatedAt" class="small">ยังไม่มีข้อมูล</div>
+        </div>
+      </div>
+      <div id="reason" class="message">กำลังรอข้อมูลจากเซิร์ฟเวอร์</div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Technical Indicators</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-label">RSI (14)</div>
+          <div class="metric-value" id="rsi">—</div>
+          <div class="metric-sub">โมเมนตัม</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">แนวโน้ม</div>
+          <div class="metric-value" id="trend">—</div>
+          <div class="metric-sub">EMA / Momentum</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">แหล่งข้อมูล</div>
+          <div class="metric-value" id="source">—</div>
+          <div class="metric-sub">Reference feed</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">ควบคุมการสแกน</div>
+      <div class="buttons">
+        <button id="scanButton" class="primary">⌕ สแกนตอนนี้</button>
+        <button id="autoButton" class="success">▶ เปิดสแกนอัตโนมัติ</button>
+        <button id="soundButton">🔔 เปิดเสียง</button>
+        <button id="refreshButton">↻ รีเฟรชข้อมูล</button>
+      </div>
+      <div id="scanMessage" class="message">พร้อมทำงานเมื่อเซิร์ฟเวอร์เชื่อมต่อแล้ว</div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <div class="section-title" style="margin-bottom:0">RADAR · คู่เงินทั้งหมด</div>
+        <div class="small muted" id="pairCount">0 คู่</div>
+      </div>
+      <div id="radarList" style="margin-top:10px">
+        <div class="message">กำลังโหลดรายการคู่เงิน...</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">สถานะระบบ</div>
+      <div class="row" style="margin-bottom:10px">
+        <span class="muted small">การเชื่อมต่อ WebSocket</span>
+        <strong id="wsStatus" class="small yellow">กำลังเชื่อมต่อ</strong>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <span class="muted small">การสแกนอัตโนมัติในหน้านี้</span>
+        <strong id="autoStatus" class="small">ปิดอยู่</strong>
+      </div>
+      <div class="row">
+        <span class="muted small">สถานะ API</span>
+        <strong id="apiStatus" class="small">กำลังตรวจสอบ</strong>
+      </div>
+      <div id="lastScan" class="message">ยังไม่ทราบเวลาสแกนล่าสุด</div>
+    </section>
+
+    <div class="notice">
+      <strong>คำเตือนความเสี่ยง:</strong>
+      CALL/PUT เป็นผลวิเคราะห์จากข้อมูลอ้างอิงและตัวชี้วัดทางเทคนิค
+      ไม่ใช่การรับประกันผลกำไร คะแนนไม่ใช่เปอร์เซ็นต์โอกาสชนะที่ผ่านการสอบเทียบ
+      โปรดตรวจสอบราคาและเวลาใน IQ Option ก่อนตัดสินใจ และส่งคำสั่งด้วยตนเองเท่านั้น
+    </div>
+
+    <div class="footer">
+      AI SIGNAL RADAR · Twelve Data reference feed<br>
+      ไม่มีการส่งคำสั่งซื้อขายแทนผู้ใช้
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = (id) => document.getElementById(id);
+
+      const symbols = [
+        "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
+        "USD/CAD", "NZD/USD", "EUR/GBP"
+      ];
+
+      const state = {
+        selectedSymbol: "EUR/USD",
+        pairs: {},
+        socket: null,
+        reconnectTimer: null,
+        reconnectDelay: 1500,
+        autoScan: false,
+        autoTimer: null,
+        soundEnabled: false,
+        audioContext: null,
+        busy: false,
+        lastSignalKey: "",
+        lastScanMessage: ""
+      };
+
+      function setConnection(connected, label) {
+        $("connectionText").textContent = label;
+        $("connectionDot").className = "dot " + (connected ? "online" : "offline");
+        $("wsStatus").textContent = connected ? "เชื่อมต่อแล้ว" : "ไม่ได้เชื่อมต่อ";
+        $("wsStatus").className = "small " + (connected ? "green" : "red");
       }
 
-      switch (msg.type) {
-        case "state":
-          handleState(msg);
-          break;
+      function showMessage(message) {
+        $("scanMessage").textContent = message;
+      }
 
-        case "pair_update":
-          handlePairUpdate(msg.pair);
-          break;
+      function cleanNumber(value, decimals = 5) {
+        if (value === null || value === undefined || value === "") return "—";
+        const n = Number(value);
+        return Number.isFinite(n) ? n.toFixed(decimals) : "—";
+      }
 
-        case "scan_status":
-          scanPending = Boolean(msg.scanning);
-          $("scan").disabled = scanPending;
-          $("scan").textContent = scanPending
-            ? "กำลังสแกน..."
-            : "⚡ สแกนทันที";
-          break;
+      function getPair(symbol) {
+        return state.pairs[symbol] || null;
+      }
 
-        case "scan_complete":
-          scanPending = false;
-          $("scan").disabled = false;
-          $("scan").textContent = "⚡ สแกนทันที";
+      function normalizeSignal(value) {
+        const s = String(value || "").toUpperCase();
+        if (s === "CALL" || s === "BUY" || s === "UP") return "CALL";
+        if (s === "PUT" || s === "SELL" || s === "DOWN") return "PUT";
+        return "STANDBY";
+      }
 
-          if (Array.isArray(msg.pairs)) pairs = msg.pairs;
-          render();
-          break;
+      function isFresh(pair) {
+        if (!pair) return false;
 
-        case "scan_result":
-          scanPending = false;
-          $("scan").disabled = false;
-          $("scan").textContent = "⚡ สแกนทันที";
+        const timestamp = pair.updatedAt || pair.receivedAt || pair.candleTime;
+        if (!timestamp) return false;
 
-          if (msg.ok === false) {
-            $("reason").textContent = msg.message || msg.error ||
-              "สแกนไม่สำเร็จ";
+        const parsed = Date.parse(timestamp);
+        if (!Number.isFinite(parsed)) return false;
+
+        // ยอมรับข้อมูลที่อัปเดตไม่เกิน 4 นาที และไม่เกินเวลาเครื่องอย่างผิดปกติ
+        const age = Date.now() - parsed;
+        return age >= -60000 && age <= 4 * 60 * 1000;
+      }
+
+      function getAgeText(pair) {
+        const timestamp = pair && (pair.updatedAt || pair.receivedAt || pair.candleTime);
+        const parsed = timestamp ? Date.parse(timestamp) : NaN;
+        if (!Number.isFinite(parsed)) return "ยังไม่มีข้อมูล";
+        const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+        if (seconds < 60) return seconds + " วินาทีที่แล้ว";
+        return Math.floor(seconds / 60) + " นาทีที่แล้ว";
+      }
+
+      function renderSelected() {
+        const symbol = state.selectedSymbol;
+        const pair = getPair(symbol);
+
+        $("selectedPairName").textContent = symbol;
+
+        if (!pair) {
+          $("signalCircle").className = "signal standby";
+          $("signalWord").textContent = "STANDBY";
+          $("signalDirection").textContent = "รอข้อมูลตลาด";
+          $("price").textContent = "—";
+          $("score").textContent = "—";
+          $("updatedAt").textContent = "ยังไม่มีข้อมูล";
+          $("reason").textContent = "ยังไม่ได้รับข้อมูลของคู่นี้จากเซิร์ฟเวอร์";
+          $("rsi").textContent = "—";
+          $("trend").textContent = "—";
+          $("source").textContent = "—";
+          $("dataStatus").textContent = "รอข้อมูล";
+          $("dataDot").className = "dot";
+          return;
+        }
+
+        const fresh = isFresh(pair);
+        const signal = fresh ? normalizeSignal(pair.signal || pair.analysis?.signal) : "STANDBY";
+        const circle = $("signalCircle");
+
+        circle.className = "signal " +
+          (signal === "CALL" ? "call" : signal === "PUT" ? "put" : "standby");
+
+        $("signalWord").textContent = signal;
+        $("signalDirection").textContent =
+          signal === "CALL" ? "แนวโน้มขึ้น · ตรวจสอบก่อนเข้า" :
+          signal === "PUT" ? "แนวโน้มลง · ตรวจสอบก่อนเข้า" :
+          fresh ? "ยังไม่มีสัญญาณที่ชัดเจน" : "ข้อมูลเก่าหรือยังไม่พร้อม";
+
+        $("price").textContent = cleanNumber(pair.price, 5);
+        $("score").textContent =
+          pair.score === undefined || pair.score === null ? "—" : String(pair.score) + "/100";
+        $("updatedAt").textContent = getAgeText(pair);
+
+        const indicators = pair.indicators || {};
+        $("rsi").textContent = cleanNumber(indicators.rsi14 ?? indicators.rsi, 1);
+
+        const trend = String(pair.trend || indicators.trend || "").toUpperCase();
+        $("trend").textContent =
+          trend.includes("BULL") || trend === "UP" ? "ขาขึ้น" :
+          trend.includes("BEAR") || trend === "DOWN" ? "ขาลง" :
+          trend || "—";
+
+        $("source").textContent =
+          pair.dataStatus === "LIVE_REFERENCE" ? "Twelve Data" :
+          pair.dataStatus || "Reference";
+
+        $("dataStatus").textContent = fresh ? "ข้อมูลล่าสุด" : "ข้อมูลเก่า";
+        $("dataDot").className = "dot " + (fresh ? "online" : "offline");
+
+        let reason = pair.reason || pair.message || "";
+        if (!reason && Array.isArray(pair.reasons)) reason = pair.reasons.join(" · ");
+        if (!reason) reason = fresh ? "ได้รับข้อมูลแล้ว" : "รอการอัปเดตข้อมูลจากเซิร์ฟเวอร์";
+        if (!fresh) reason = "ข้อมูลอาจเก่าเกินไป — รอสแกนข้อมูลใหม่ก่อนใช้สัญญาณ";
+        $("reason").textContent = reason;
+      }
+
+      function renderRadar() {
+        const container = $("radarList");
+        const available = symbols.filter((symbol) => getPair(symbol));
+
+        $("pairCount").textContent = available.length + " คู่";
+
+        if (!available.length) {
+          container.innerHTML = '<div class="message">รอข้อมูลคู่เงินจากเซิร์ฟเวอร์...</div>';
+          return;
+        }
+
+        container.innerHTML = "";
+
+        symbols.forEach((symbol) => {
+          const pair = getPair(symbol);
+          if (!pair) return;
+
+          const fresh = isFresh(pair);
+          const signal = fresh ? normalizeSignal(pair.signal) : "STANDBY";
+          const row = document.createElement("div");
+          row.className = "radar-row" +
+            (symbol === state.selectedSymbol ? " active" : "");
+
+          const left = document.createElement("div");
+          const pairName = document.createElement("div");
+          pairName.className = "radar-pair";
+          pairName.textContent = symbol;
+
+          const price = document.createElement("div");
+          price.className = "radar-price";
+          price.textContent = cleanNumber(pair.price, 5);
+
+          left.append(pairName, price);
+
+          const signalEl = document.createElement("div");
+          signalEl.className = "radar-signal " +
+            (signal === "CALL" ? "green" : signal === "PUT" ? "red" : "yellow");
+          signalEl.textContent = signal;
+
+          const score = document.createElement("div");
+          score.className = "radar-score";
+          score.textContent = pair.score == null ? "—" : String(pair.score) + "/100";
+
+          row.append(left, signalEl, score);
+          row.addEventListener("click", () => selectSymbol(symbol));
+          container.appendChild(row);
+        });
+      }
+
+      function renderAll() {
+        renderSelected();
+        renderRadar();
+      }
+
+      function applyState(data) {
+        if (!data || typeof data !== "object") return;
+
+        // รองรับโครงสร้าง state จาก server.js และรูปแบบ API status
+        const possiblePairs = data.pairs || data.state?.pairs || data.market?.pairs;
+        if (Array.isArray(possiblePairs)) {
+          possiblePairs.forEach((pair) => {
+            if (pair && (pair.symbol || pair.pair)) {
+              const symbol = String(pair.symbol || pair.pair).replace("_", "/");
+              state.pairs[symbol] = { ...(state.pairs[symbol] || {}), ...pair };
+            }
+          });
+        } else if (possiblePairs && typeof possiblePairs === "object") {
+          Object.entries(possiblePairs).forEach(([key, pair]) => {
+            if (pair && typeof pair === "object") {
+              const symbol = String(pair.symbol || key).replace("_", "/");
+              state.pairs[symbol] = { ...(state.pairs[symbol] || {}), ...pair };
+            }
+          });
+        }
+
+        const current = data.selectedPair || data.selected || data.currentPair;
+        if (current && typeof current === "object") {
+          const symbol = String(current.symbol || current.pair || state.selectedSymbol).replace("_", "/");
+          state.pairs[symbol] = { ...(state.pairs[symbol] || {}), ...current };
+        }
+
+        if (data.lastScanAt) {
+          $("lastScan").textContent = "สแกนล่าสุด: " + new Date(data.lastScanAt).toLocaleString();
+        }
+
+        renderAll();
+      }
+
+      function handlePairUpdate(data) {
+        if (!data || typeof data !== "object") return;
+
+        // Server อาจส่ง {type:"pair_update", pair:{...}}
+        const incoming = data.pair || data.data || data;
+        const symbol = String(incoming.symbol || incoming.pair || "").replace("_", "/");
+
+        if (!symbol) {
+          applyState(data);
+          return;
+        }
+
+        state.pairs[symbol] = { ...(state.pairs[symbol] || {}), ...incoming };
+        renderAll();
+
+        const fresh = isFresh(state.pairs[symbol]);
+        const signal = fresh ? normalizeSignal(state.pairs[symbol].signal) : "STANDBY";
+        const key = symbol + ":" + signal + ":" + (incoming.updatedAt || incoming.candleTime || "");
+
+        if (state.soundEnabled && signal !== "STANDBY" && key !== state.lastSignalKey) {
+          playTone(signal === "CALL" ? 880 : 440);
+        }
+        state.lastSignalKey = key;
+      }
+
+      function sendSocket(payload) {
+        if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+          showMessage("ยังเชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณารอสักครู่");
+          return false;
+        }
+
+        state.socket.send(JSON.stringify(payload));
+        return true;
+      }
+
+      function connectSocket() {
+        if (state.socket &&
+            (state.socket.readyState === WebSocket.OPEN ||
+             state.socket.readyState === WebSocket.CONNECTING)) return;
+
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        const url = protocol + "//" + location.host;
+
+        try {
+          const socket = new WebSocket(url);
+          state.socket = socket;
+
+          socket.onopen = () => {
+            state.reconnectDelay = 1500;
+            setConnection(true, "ออนไลน์");
+            $("apiStatus").textContent = "เชื่อมต่อแล้ว";
+            $("apiStatus").className = "small green";
+            sendSocket({ action: "get_state" });
+          };
+
+          socket.onmessage = (event) => {
+            let message;
+            try {
+              message = JSON.parse(event.data);
+            } catch {
+              return;
+            }
+
+            const type = String(message.type || message.event || "").toLowerCase();
+
+            if (type === "state" || type === "market" || type === "initial_state") {
+              applyState(message);
+            } else if (type === "pair_update") {
+              handlePairUpdate(message);
+            } else if (type === "scan_status") {
+              showMessage(message.message || "กำลังสแกนตลาด...");
+            } else if (type === "scan_complete") {
+              state.busy = false;
+              $("scanButton").disabled = false;
+              showMessage(message.message || "สแกนเสร็จแล้ว");
+              if (message.lastScanAt) {
+                $("lastScan").textContent = "สแกนล่าสุด: " +
+                  new Date(message.lastScanAt).toLocaleString();
+              }
+              fetchStatus();
+            } else if (type === "scan_result") {
+              const result = message.pair || message.result || message.data;
+              if (result) handlePairUpdate(result);
+              else applyState(message);
+              state.busy = false;
+              $("scanButton").disabled = false;
+              showMessage(message.message || "ได้รับผลสแกนแล้ว");
+            } else if (type === "error") {
+              state.busy = false;
+              $("scanButton").disabled = false;
+              showMessage(message.message || message.error || "เกิดข้อผิดพลาดจากเซิร์ฟเวอร์");
+            } else {
+              // รองรับกรณีเซิร์ฟเวอร์ส่งข้อมูลคู่เงินโดยตรง
+              if (message.symbol || message.pair) handlePairUpdate(message);
+              else applyState(message);
+            }
+          };
+
+          socket.onerror = () => {
+            setConnection(false, "การเชื่อมต่อมีปัญหา");
+          };
+
+          socket.onclose = () => {
+            setConnection(false, "กำลังเชื่อมต่อใหม่");
+            if (state.socket === socket) state.socket = null;
+
+            clearTimeout(state.reconnectTimer);
+            state.reconnectTimer = setTimeout(connectSocket, state.reconnectDelay);
+            state.reconnectDelay = Math.min(state.reconnectDelay * 1.7, 15000);
+          };
+        } catch (error) {
+          setConnection(false, "เชื่อมต่อไม่ได้");
+          showMessage("เปิด WebSocket ไม่สำเร็จ: " + error.message);
+        }
+      }
+
+      async function fetchStatus() {
+        try {
+          const response = await fetch("/api/status", { cache: "no-store" });
+          if (!response.ok) throw new Error("HTTP " + response.status);
+
+          const data = await response.json();
+          $("apiStatus").textContent = data.configured === false ?
+            "ยังไม่ได้ตั้งค่า API Key" : "ทำงานได้";
+          $("apiStatus").className = "small " +
+            (data.configured === false ? "red" : "green");
+
+          applyState(data);
+
+          if (data.lastScanAt) {
+            $("lastScan").textContent = "สแกนล่าสุด: " +
+              new Date(data.lastScanAt).toLocaleString();
           }
-          break;
 
-        case "error":
-          $("reason").textContent = msg.error || "เกิดข้อผิดพลาด";
-          break;
-
-        default:
-          // Ignore unknown message types.
-          break;
+          if (data.configured === false) {
+            showMessage("เซิร์ฟเวอร์ยังไม่พบ TWELVE_DATA_API_KEY ใน Environment Variables");
+          }
+        } catch (error) {
+          $("apiStatus").textContent = "ตรวจสอบไม่ได้";
+          $("apiStatus").className = "small red";
+        }
       }
-    };
 
-    socket.onclose = () => {
-      setConnection(false);
-      clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(connect, 3000);
-    };
+      async function selectSymbol(symbol) {
+        if (!symbols.includes(symbol)) return;
 
-    socket.onerror = () => setConnection(false);
-  }
+        state.selectedSymbol = symbol;
+        $("pairSelect").value = symbol;
+        renderAll();
 
-  async function scanSelected() {
-    if (scanPending) {
-      $("reason").textContent = "กำลังสแกนอยู่ กรุณารอสักครู่";
-      return;
-    }
+        // ส่งทั้ง action และ type เพื่อรองรับ server.js หลายรูปแบบ
+        sendSocket({ action: "set_symbol", type: "set_symbol", symbol });
 
-    const pair = selectedPair();
+        try {
+          await fetch("/api/select", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol })
+          });
+        } catch (_) {
+          // WebSocket ยังสามารถใช้เปลี่ยนคู่เงินได้
+        }
+      }
 
-    if (!pairSelect.value) {
-      $("reason").textContent = "กรุณาเลือกคู่เงิน";
-      return;
-    }
+      async function manualScan() {
+        if (state.busy) return;
 
-    $("reason").textContent =
-      `กำลังขอข้อมูลตลาดสำหรับ ${pairSelect.value}...`;
+        state.busy = true;
+        $("scanButton").disabled = true;
+        showMessage("กำลังส่งคำขอสแกนไปยังเซิร์ฟเวอร์...");
 
-    // The current server scans all seven pairs with this action.
-    const sent = send({
-      action: "manual_scan",
-      symbol: pairSelect.value
-    });
+        const sent = sendSocket({
+          action: "manual_scan",
+          type: "manual_scan",
+          symbol: state.selectedSymbol
+        });
 
-    if (sent) {
-      scanPending = true;
-      $("scan").disabled = true;
-      $("scan").textContent = "กำลังสแกน...";
-    }
-  }
+        // ลองเรียก REST API ด้วย เพื่อรองรับ server.js ที่ใช้ POST /api/scan
+        try {
+          const response = await fetch("/api/scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: state.selectedSymbol })
+          });
 
-  $("sound").onclick = async () => {
-    soundOn = !soundOn;
-    $("sound").textContent = soundOn ? "🔊 เปิดเสียง" : "🔇 ปิดเสียง";
+          if (response.ok) {
+            const data = await response.json().catch(() => ({}));
+            applyState(data);
+            showMessage(data.message || "ส่งคำขอสแกนแล้ว กำลังรอผลข้อมูล");
+          } else if (!sent) {
+            showMessage("ส่งคำขอสแกนไม่ได้ โปรดตรวจสอบเซิร์ฟเวอร์");
+          }
+        } catch (_) {
+          if (!sent) showMessage("ยังเชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+        }
 
-    if (soundOn) {
+        // ปลดปุ่มกรณีเซิร์ฟเวอร์ไม่ส่ง scan_complete กลับมา
+        setTimeout(() => {
+          state.busy = false;
+          $("scanButton").disabled = false;
+        }, 30000);
+      }
+
+      function startAutoScan() {
+        state.autoScan = true;
+        $("autoButton").textContent = "■ ปิดสแกนอัตโนมัติ";
+        $("autoButton").className = "danger";
+        $("autoStatus").textContent = "เปิดอยู่";
+        $("autoStatus").className = "small green";
+        showMessage("เปิดสแกนอัตโนมัติในหน้านี้แล้ว");
+
+        // สแกนทันทีหนึ่งครั้ง และรอบถัดไปทุก 15 นาที
+        manualScan();
+        clearInterval(state.autoTimer);
+        state.autoTimer = setInterval(() => {
+          if (document.visibilityState === "visible") manualScan();
+        }, 15 * 60 * 1000);
+      }
+
+      function stopAutoScan() {
+        state.autoScan = false;
+        clearInterval(state.autoTimer);
+        state.autoTimer = null;
+        $("autoButton").textContent = "▶ เปิดสแกนอัตโนมัติ";
+        $("autoButton").className = "success";
+        $("autoStatus").textContent = "ปิดอยู่";
+        $("autoStatus").className = "small";
+        showMessage("ปิดการสแกนอัตโนมัติในหน้านี้แล้ว");
+      }
+
+      function playTone(frequency) {
+        if (!state.soundEnabled) return;
+
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) return;
+
+          if (!state.audioContext) state.audioContext = new AudioContextClass();
+          if (state.audioContext.state === "suspended") state.audioContext.resume();
+
+          const oscillator = state.audioContext.createOscillator();
+          const gain = state.audioContext.createGain();
+
+          oscillator.type = "sine";
+          oscillator.frequency.value = frequency;
+          gain.gain.setValueAtTime(0.0001, state.audioContext.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.15, state.audioContext.currentTime + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, state.audioContext.currentTime + 0.35);
+
+          oscillator.connect(gain);
+          gain.connect(state.audioContext.destination);
+          oscillator.start();
+          oscillator.stop(state.audioContext.currentTime + 0.36);
+        } catch (_) {
+          // เสียงอาจถูกบล็อกโดยเบราว์เซอร์ จนกว่าจะมีการแตะหน้าจอ
+        }
+      }
+
+      $("pairSelect").addEventListener("change", (event) => {
+        selectSymbol(event.target.value);
+      });
+
+      $("scanButton").addEventListener("click", manualScan);
+
+      $("autoButton").addEventListener("click", () => {
+        if (state.autoScan) stopAutoScan();
+        else startAutoScan();
+      });
+
+      $("soundButton").addEventListener("click", async () => {
+        state.soundEnabled = !state.soundEnabled;
+        $("soundButton").textContent = state.soundEnabled ? "🔔 ปิดเสียง" : "🔔 เปิดเสียง";
+
+        if (state.soundEnabled) {
+          playTone(660);
+          showMessage("เปิดเสียงแล้ว หากไม่ได้ยินเสียงให้ตรวจสอบระดับเสียงของอุปกรณ์");
+        } else {
+          showMessage("ปิดเสียงแล้ว");
+        }
+      });
+
+      $("refreshButton").addEventListener("click", async () => {
+        await fetchStatus();
+        sendSocket({ action: "get_state" });
+        showMessage("รีเฟรชสถานะแล้ว");
+      });
+
+      // Telegram Mini App: ขยายพื้นที่ใช้งานเมื่อเปิดจาก Telegram
       try {
-        audio ||= new (
-          window.AudioContext || window.webkitAudioContext
-        )();
-        await audio.resume();
-        beep(800, 80);
-      } catch {}
-    }
-  };
+        if (window.Telegram && window.Telegram.WebApp) {
+          window.Telegram.WebApp.ready();
+          window.Telegram.WebApp.expand();
+        }
+      } catch (_) {}
 
-  $("scan").onclick = scanSelected;
+      // โหลดข้อมูล API ก่อน จากนั้นเชื่อมต่อ WebSocket
+      fetchStatus();
+      connectSocket();
 
-  $("auto").onclick = () => {
-    autoScan = !autoScan;
+      // ตรวจสถานะเป็นระยะ โดยไม่เรียกข้อมูลแท่งเทียนโดยตรง
+      setInterval(fetchStatus, 60000);
 
-    $("auto").textContent = autoScan ? "■ ปิดออโต้" : "▶ เปิดออโต้";
-    $("auto").classList.toggle("active", autoScan);
-    $("scanStatus").textContent = autoScan
-      ? "สแกนอัตโนมัติทุก 15 นาที"
-      : "ปิดสแกนออโต้";
-
-    clearInterval(autoTimer);
-
-    if (autoScan) {
-      scanSelected();
-      autoTimer = setInterval(() => {
-        if (document.visibilityState === "visible") scanSelected();
-      }, POLL_MS);
-    }
-  };
-
-  $("stop").onclick = () => {
-    autoScan = false;
-    clearInterval(autoTimer);
-
-    $("auto").textContent = "▶ เปิดออโต้";
-    $("auto").classList.remove("active");
-    $("scanStatus").textContent = "หยุดสแกนแล้ว";
-    $("scan").disabled = false;
-    $("scan").textContent = "⚡ สแกนทันที";
-
-    resetSignalDisplay("หยุดสแกนอัตโนมัติแล้ว");
-  };
-
-  $("reset").onclick = () => {
-    resetSignalDisplay("รีเซ็ตหน้าจอแล้ว รอสัญญาณจากเซิร์ฟเวอร์");
-    render();
-  };
-
-  pairSelect.onchange = () => {
-    currentSignal = null;
-    signalUntil = 0;
-
-    send({
-      action: "set_symbol",
-      symbol: pairSelect.value
-    });
-
-    render();
-  };
-
-  function tick() {
-    const now = Date.now();
-    const remaining = 60 - Math.floor((now / 1000) % 60);
-
-    $("countdown").textContent = `${remaining} วินาที`;
-
-    if (remaining !== lastBeepSecond) {
-      lastBeepSecond = remaining;
-
-      if (remaining === 10) beep(700, 100);
-      if (remaining <= 2) beep(1100, 130);
-    }
-
-    if (currentSignal && now >= signalUntil) {
-      currentSignal = null;
-      signalUntil = 0;
-      render();
-    }
-
-    // Do not leave a stale signal displayed when the data expires.
-    const pair = selectedPair();
-    if (pair && !isFresh(pair)) {
-      resetSignalDisplay("ข้อมูลเก่า รอสแกนใหม่");
-    }
-  }
-
-  connect();
-
-  countdownTimer = setInterval(tick, 500);
-
-  // Refresh status after a reconnect or page return.
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      if (!socket || socket.readyState !== WebSocket.OPEN) connect();
-      else send({ action: "get_state" });
-    }
-  });
-})();
-</script>
+      // ปรับสถานะข้อมูลให้เป็น STANDBY เมื่อข้อมูลเก่า
+      setInterval(renderAll, 5000);
+    })();
+  </script>
+</body>
+</html>
