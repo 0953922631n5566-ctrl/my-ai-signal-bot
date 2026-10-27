@@ -5,12 +5,6 @@ const http = require("http");
 const WebSocket = require("ws");
 const path = require("path");
 
-// ======================================================
-// AI SIGNAL RADAR - TWELVE DATA (BALANCED & STABLE)
-// Forex / Non-OTC / 1-minute candles
-// Reference market data only; not IQ Option OTC prices
-// ======================================================
-
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -18,15 +12,13 @@ const wss = new WebSocket.Server({ server });
 const PORT = Number(process.env.PORT || 3000);
 const API_KEY = process.env.TWELVE_DATA_API_KEY || "";
 
-// รอบเวลาสแกนออโต้ (15 นาที เพื่อประหยัดโควต้าตามแพ็กเกจ Free/Basic)
 const POLL_INTERVAL_MS = Math.max(
   60000,
   Number(process.env.POLL_INTERVAL_MS || 900000)
 );
 
 const MIN_CANDLES = 100;
-// ปรับลดลงเล็กน้อยเพื่อให้ระบบมีความสมดุล ส่งสัญญาณได้แม่นยำและไม่แข็งทื่อจนเกินไป
-const MIN_SCORE = 62; 
+let dynamicThreshold = 62; // ค่าเริ่มต้นเปอร์เซ็นต์ความมั่นใจ (ปรับเปลี่ยนได้จากหน้าจอ)
 const MIN_AGREEMENT = 0.55;
 const STALE_AFTER_MS = 4 * 60 * 1000;
 
@@ -43,10 +35,6 @@ const PAIRS = [
 app.use(express.json({ limit: "100kb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// ======================================================
-// STATE
-// ======================================================
-
 const state = {
   symbol: "EUR/USD",
   timeframe: "1min",
@@ -59,7 +47,7 @@ const state = {
   dataStatus: "WAITING",
   reason: "รอข้อมูลตลาด",
   indicators: {},
-  threshold: MIN_SCORE
+  threshold: dynamicThreshold
 };
 
 const pairsCache = new Map();
@@ -85,11 +73,7 @@ let scanInProgress = false;
 let scanTimer = null;
 let lastScanAt = null;
 let lastError = null;
-let lastManualScanTime = 0; // ป้องกันการกดสแกนถี่เกินไป (Rate Limit Protection)
-
-// ======================================================
-// UTILITIES
-// ======================================================
+let lastManualScanTime = 0;
 
 function round(value, digits = 2) {
   if (!Number.isFinite(value)) return null;
@@ -105,9 +89,7 @@ function mean(values) {
 function stddev(values) {
   if (values.length < 2) return 0;
   const avg = mean(values);
-  return Math.sqrt(
-    mean(values.map(value => (value - avg) ** 2))
-  );
+  return Math.sqrt(mean(values.map(value => (value - avg) ** 2)));
 }
 
 function validNumber(value) {
@@ -118,9 +100,7 @@ function utcDateTime(value) {
   if (!value) return null;
   const normalized = String(value).trim().replace(" ", "T");
   const result = Date.parse(
-    /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized)
-      ? normalized
-      : `${normalized}Z`
+    /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized) ? normalized : `${normalized}Z`
   );
   return Number.isFinite(result) ? result : null;
 }
@@ -130,10 +110,6 @@ function getPair(symbol) {
     pair => pair.symbol.toUpperCase() === String(symbol || "").toUpperCase()
   );
 }
-
-// ======================================================
-// TWELVE DATA - REST API
-// ======================================================
 
 async function fetchCandles(symbol) {
   if (!API_KEY) {
@@ -171,11 +147,8 @@ async function fetchCandles(symbol) {
   }
 
   const body = await response.json();
-
   if (body.status === "error" || body.code || (body.message && !body.values)) {
-    throw new Error(
-      String(body.message || body.code || "Twelve Data API error").slice(0, 220)
-    );
+    throw new Error(String(body.message || body.code || "Twelve Data API error").slice(0, 220));
   }
 
   if (!Array.isArray(body.values)) {
@@ -210,10 +183,6 @@ async function fetchCandles(symbol) {
   return [...unique.values()];
 }
 
-// ======================================================
-// TECHNICAL INDICATORS
-// ======================================================
-
 function emaSeries(values, period) {
   const output = Array(values.length).fill(null);
   if (values.length < period) return output;
@@ -230,8 +199,7 @@ function emaSeries(values, period) {
 function rsiSeries(values, period = 14) {
   const output = Array(values.length).fill(null);
   if (values.length <= period) return output;
-  let gain = 0;
-  let loss = 0;
+  let gain = 0, loss = 0;
   for (let i = 1; i <= period; i++) {
     const change = values[i] - values[i - 1];
     gain += Math.max(0, change);
@@ -330,10 +298,6 @@ function bollingerValue(closes, period = 20) {
   };
 }
 
-// ======================================================
-// BALANCED MULTI-INDICATOR SIGNAL ENGINE
-// ======================================================
-
 function analyzeCandles(candles) {
   if (!Array.isArray(candles) || candles.length < MIN_CANDLES) {
     throw new Error(`ต้องมีข้อมูลอย่างน้อย ${MIN_CANDLES} แท่ง`);
@@ -395,60 +359,19 @@ function analyzeCandles(candles) {
     }
   }
 
-  // Trend structure
   vote(
     ema5.at(-1) > ema9.at(-1) && ema9.at(-1) > ema21.at(-1),
     ema5.at(-1) < ema9.at(-1) && ema9.at(-1) < ema21.at(-1),
     2,
     "EMA 5/9/21"
   );
-
-  vote(
-    ema21.at(-1) > ema50.at(-1),
-    ema21.at(-1) < ema50.at(-1),
-    2,
-    "EMA 21/50"
-  );
-
-  vote(
-    latest.close > ema100.at(-1),
-    latest.close < ema100.at(-1),
-    2,
-    "EMA 100"
-  );
-
-  // Momentum (ขยายช่วง RSI เล็กน้อยเพื่อให้จับจังหวะได้ดีขึ้น)
+  vote(ema21.at(-1) > ema50.at(-1), ema21.at(-1) < ema50.at(-1), 2, "EMA 21/50");
+  vote(latest.close > ema100.at(-1), latest.close < ema100.at(-1), 2, "EMA 100");
   vote(rsiNow >= 50 && rsiNow < 72, rsiNow <= 50 && rsiNow > 28, 1.5, "RSI");
-
-  vote(
-    macdLineLast > macdSignal,
-    macdLineLast < macdSignal,
-    2,
-    "MACD"
-  );
-
-  vote(
-    stochastic > 45 && stochastic < 85,
-    stochastic < 55 && stochastic > 15,
-    1,
-    "Stochastic"
-  );
-
-  // Price action momentum
-  vote(
-    latest.close > latest.open,
-    latest.close < latest.open,
-    1,
-    "Price action"
-  );
-
-  // Bollinger location
-  vote(
-    latest.close > bands.middle,
-    latest.close < bands.middle,
-    1,
-    "Bollinger"
-  );
+  vote(macdLineLast > macdSignal, macdLineLast < macdSignal, 2, "MACD");
+  vote(stochastic > 45 && stochastic < 85, stochastic < 55 && stochastic > 15, 1, "Stochastic");
+  vote(latest.close > latest.open, latest.close < latest.open, 1, "Price action");
+  vote(latest.close > bands.middle, latest.close < bands.middle, 1, "Bollinger");
 
   const totalVotes = bullish + bearish;
   const winningVotes = Math.max(bullish, bearish);
@@ -471,8 +394,8 @@ function analyzeCandles(candles) {
     reason = "ข้อมูลแท่งเทียนเก่าหรือเวลาไม่ตรง";
   } else if (volatilityRatio > 3.5) {
     reason = "ความผันผวนสูงผิดปกติ";
-  } else if (score < MIN_SCORE || agreement < MIN_AGREEMENT) {
-    reason = "คะแนนหรือความเห็นตัวชี้วัดไม่ถึงเกณฑ์สมดุล";
+  } else if (score < dynamicThreshold || agreement < MIN_AGREEMENT) {
+    reason = `คะแนนไม่ถึงเกณฑ์ (${score}/${dynamicThreshold}%)`;
   } else if (bullish > bearish && rsiNow < 75) {
     signal = "CALL";
     reason = "แนวโน้มและโมเมนตัมเอนเอียงขึ้นอย่างสมดุล";
@@ -512,22 +435,15 @@ function analyzeCandles(candles) {
   };
 }
 
-// ======================================================
-// SCAN ONE PAIR
-// ======================================================
-
 async function scanPair(symbol) {
   const pair = getPair(symbol);
-  if (!pair) {
-    throw new Error("ไม่รองรับคู่เงินนี้");
-  }
+  if (!pair) throw new Error("ไม่รองรับคู่เงินนี้");
 
   const old = pairsCache.get(pair.symbol);
-
   try {
     const candles = await fetchCandles(pair.symbol);
     if (!Array.isArray(candles) || candles.length < MIN_CANDLES) {
-      throw new Error(`ข้อมูลไม่เพียงพอ: ได้ ${candles.length} แท่ง ต้องการ ${MIN_CANDLES} แท่ง`);
+      throw new Error(`ข้อมูลไม่เพียงพอ: ได้ ${candles.length} แท่ง`);
     }
 
     const latest = candles[candles.length - 1];
@@ -555,18 +471,13 @@ async function scanPair(symbol) {
     lastError = null;
 
     if (state.symbol === pair.symbol) {
-      Object.assign(state, payload);
+      Object.assign(state, payload, { threshold: dynamicThreshold });
     }
 
-    broadcast({
-      type: "pair_update",
-      pair: payload
-    });
-
+    broadcast({ type: "pair_update", pair: payload });
     return payload;
   } catch (error) {
     lastError = error.message;
-
     const failed = {
       ...(old || {}),
       symbol: pair.symbol,
@@ -576,31 +487,18 @@ async function scanPair(symbol) {
       reason: error.message,
       updatedAt: new Date().toISOString()
     };
-
     pairsCache.set(pair.symbol, failed);
-
     if (state.symbol === pair.symbol) {
       Object.assign(state, failed);
     }
-
-    broadcast({
-      type: "pair_update",
-      pair: failed
-    });
-
+    broadcast({ type: "pair_update", pair: failed });
     return failed;
   }
 }
 
-// ======================================================
-// SCAN ALL PAIRS (สำหรับ Scheduler อัตโนมัติ)
-// ======================================================
-
-async function scanAllPairs() {
-  if (scanInProgress) {
-    return { ok: false, message: "กำลังสแกนอยู่" };
-  }
-
+// ฟังก์ชันสแกนทุกคู่ และค้นหาคู่ที่ได้คะแนนสูงสุดเพื่อทำการ Auto-Switch
+async function scanAllPairsAndAutoSwitch(autoMode = false) {
+  if (scanInProgress) return { ok: false, message: "กำลังสแกนอยู่" };
   if (!API_KEY) {
     lastError = "ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY";
     broadcastState();
@@ -611,28 +509,43 @@ async function scanAllPairs() {
   broadcast({ type: "scan_status", scanning: true });
 
   const results = [];
+  let bestPair = null;
+  let highestScore = -1;
 
   try {
     for (const pair of PAIRS) {
       const result = await scanPair(pair.symbol);
       results.push(result);
-      await new Promise(resolve => setTimeout(resolve, 1500)); // เว้นระยะปลอดภัยกันชน Rate Limit
+
+      // ค้นหาคู่ที่มีสัญญาณ (CALL/PUT) และคะแนนสูงสุด
+      if (result.signal !== "STANDBY" && result.score > highestScore) {
+        highestScore = result.score;
+        bestPair = result.symbol;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1200));
     }
 
     lastScanAt = new Date().toISOString();
-    broadcast({ type: "scan_complete", scanning: false, lastScanAt, pairs: getPairs() });
 
-    return { ok: true, lastScanAt, pairsScanned: results.length, results };
+    // ถ้าเปิดโหมดออโต้ และเจอคู่ที่มีสัญญาณที่ดีกว่า ให้สลับคู่ให้อัตโนมัติทันที
+    if (autoMode && bestPair && bestPair !== state.symbol) {
+      const target = getPair(bestPair);
+      if (target) {
+        state.symbol = target.symbol;
+        const cached = pairsCache.get(target.symbol);
+        Object.assign(state, cached, { symbol: target.symbol, timeframe: "1min", threshold: dynamicThreshold });
+      }
+    }
+
+    broadcast({ type: "scan_complete", scanning: false, lastScanAt, pairs: getPairs() });
+    return { ok: true, lastScanAt, bestPair, pairsScanned: results.length, results };
   } finally {
     scanInProgress = false;
     broadcast({ type: "scan_status", scanning: false });
     broadcastState();
   }
 }
-
-// ======================================================
-// PAIR LIST AND BROADCAST
-// ======================================================
 
 function getPairs() {
   return PAIRS.map(pair => pairsCache.get(pair.symbol));
@@ -648,7 +561,7 @@ function buildPayload() {
     lastScanAt,
     lastError,
     pollIntervalMs: POLL_INTERVAL_MS,
-    state: { ...state },
+    state: { ...state, threshold: dynamicThreshold },
     pairs: getPairs()
   };
 }
@@ -672,10 +585,6 @@ function broadcastState() {
   broadcast(buildPayload());
 }
 
-// ======================================================
-// HTTP API
-// ======================================================
-
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, configured: Boolean(API_KEY), activeClients, scanning: scanInProgress, lastScanAt, time: new Date().toISOString() });
 });
@@ -684,36 +593,17 @@ app.get("/api/status", (req, res) => {
   res.json(buildPayload());
 });
 
-app.get("/api/pairs", (req, res) => {
-  res.json({ ok: true, pairs: getPairs() });
-});
-
-app.get("/api/history", (req, res) => {
-  res.json({ ok: true, lastScanAt, pairs: getPairs() });
-});
-
-app.get("/api/settings", (req, res) => {
-  res.json({ ok: true, symbol: state.symbol, timeframe: state.timeframe, threshold: MIN_SCORE, pollIntervalMs: POLL_INTERVAL_MS, supportedSymbols: PAIRS.map(pair => pair.symbol) });
-});
-
-// Endpoint สำหรับกดสแกนทันที (ปรับให้สแกนเฉพาะคู่ที่เลือก เพื่อประหยัดโควต้า API ไม่ให้ชนเพดาน 8/min)
 app.post("/api/scan", async (req, res) => {
   try {
     const now = Date.now();
-    if (now - lastManualScanTime < 8000) {
-      return res.status(429).json({ ok: false, message: "กรุณารอสสักครู่ก่อนสแกนใหม่อีกครั้งเพื่อป้องกันโควต้า API เต็ม" });
+    if (now - lastManualScanTime < 5000) {
+      return res.status(429).json({ ok: false, message: "กรุณารอสักครู่ก่อนสแกนใหม่อีกครั้ง" });
     }
     lastManualScanTime = now;
 
     const targetSymbol = (req.body && req.body.symbol) || state.symbol;
     const result = await scanPair(targetSymbol);
-    
-    res.json({
-      ok: true,
-      message: `สแกนคู่ ${targetSymbol} สำเร็จ`,
-      pair: result,
-      pairs: getPairs()
-    });
+    res.json({ ok: true, message: `สแกนคู่ ${targetSymbol} สำเร็จ`, pair: result, pairs: getPairs() });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -721,21 +611,27 @@ app.post("/api/scan", async (req, res) => {
 
 app.post("/api/select", async (req, res) => {
   const pair = getPair(req.body && req.body.symbol);
-  if (!pair) {
-    return res.status(400).json({ ok: false, error: "คู่เงินไม่ถูกต้อง" });
-  }
+  if (!pair) return res.status(400).json({ ok: false, error: "คู่เงินไม่ถูกต้อง" });
 
   state.symbol = pair.symbol;
   const cached = pairsCache.get(pair.symbol);
-  Object.assign(state, cached, { symbol: pair.symbol, timeframe: "1min" });
+  Object.assign(state, cached, { symbol: pair.symbol, timeframe: "1min", threshold: dynamicThreshold });
   broadcastState();
 
   res.json({ ok: true, state: { ...state } });
 });
 
-// ======================================================
-// WEBSOCKET
-// ======================================================
+// Endpoint รับค่าปรับเปอร์เซ็นต์ Threshold
+app.post("/api/threshold", (req, res) => {
+  const newThreshold = Number(req.body && req.body.threshold);
+  if (Number.isFinite(newThreshold) && newThreshold >= 40 && newThreshold <= 95) {
+    dynamicThreshold = newThreshold;
+    state.threshold = dynamicThreshold;
+    broadcastState();
+    return res.json({ ok: true, threshold: dynamicThreshold });
+  }
+  res.status(400).json({ ok: false, error: "ค่าเปอร์เซ็นต์ไม่ถูกต้อง" });
+});
 
 wss.on("connection", ws => {
   activeClients++;
@@ -759,75 +655,54 @@ wss.on("connection", ws => {
 
     if (action === "set_symbol" || action === "select_pair") {
       const pair = getPair(message.symbol);
-      if (!pair) {
-        sendJSON(ws, { type: "error", error: "ไม่รองรับคู่เงินนี้" });
-        return;
-      }
+      if (!pair) return sendJSON(ws, { type: "error", error: "ไม่รองรับคู่เงินนี้" });
       state.symbol = pair.symbol;
-      Object.assign(state, pairsCache.get(pair.symbol), { symbol: pair.symbol, timeframe: "1min" });
+      Object.assign(state, pairsCache.get(pair.symbol), { symbol: pair.symbol, timeframe: "1min", threshold: dynamicThreshold });
       sendJSON(ws, buildPayload());
       return;
     }
 
-    if (action === "manual_scan" || action === "scan" || action === "rescan") {
-      const now = Date.now();
-      if (now - lastManualScanTime < 8000) {
-        sendJSON(ws, { type: "error", message: "กรุณารอสักครู่ (ป้องกันโควต้า API เกิน)" });
-        return;
+    if (action === "set_threshold") {
+      const val = Number(message.threshold);
+      if (Number.isFinite(val) && val >= 40 && val <= 95) {
+        dynamicThreshold = val;
+        state.threshold = dynamicThreshold;
+        broadcastState();
       }
-      lastManualScanTime = now;
-
-      const targetSymbol = message.symbol || state.symbol;
-      const result = await scanPair(targetSymbol);
-      sendJSON(ws, {
-        type: "scan_result",
-        ok: true,
-        pair: result
-      });
       return;
     }
 
-    sendJSON(ws, { type: "error", error: "ไม่รู้จักคำสั่งนี้" });
+    if (action === "manual_scan" || action === "scan" || action === "rescan") {
+      const targetSymbol = message.symbol || state.symbol;
+      const result = await scanPair(targetSymbol);
+      sendJSON(ws, { type: "scan_result", ok: true, pair: result });
+      return;
+    }
   });
 
   ws.on("close", () => {
     activeClients = Math.max(0, activeClients - 1);
   });
-
-  ws.on("error", () => {});
 });
-
-// ======================================================
-// PERIODIC SCAN SCHEDULER
-// ======================================================
 
 function startScheduler() {
   if (scanTimer) clearInterval(scanTimer);
   scanTimer = setInterval(async () => {
     if (activeClients === 0 || scanInProgress || !API_KEY) return;
-    await scanAllPairs();
+    // รันสแกนทุกคู่ พร้อมเปิดโหมด Auto-Switch อัตโนมัติ
+    await scanAllPairsAndAutoSwitch(true);
   }, POLL_INTERVAL_MS);
 }
 
-// ======================================================
-// START SERVER
-// ======================================================
-
 app.use((req, res) => {
-  if (req.method !== "GET") {
-    return res.status(404).json({ ok: false, error: "ไม่พบ endpoint" });
-  }
+  if (req.method !== "GET") return res.status(404).json({ ok: false, error: "ไม่พบ endpoint" });
   res.sendFile(path.join(__dirname, "public", "index.html"), error => {
-    if (error && !res.headersSent) {
-      res.status(404).send("AI Signal Radar is running.");
-    }
+    if (error && !res.headersSent) res.status(404).send("AI Signal Radar is running.");
   });
 });
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`AI Signal Radar listening on port ${PORT}`);
-  console.log(`Twelve Data API configured: ${Boolean(API_KEY)}`);
-  console.log(`Poll interval: ${POLL_INTERVAL_MS} ms`);
   startScheduler();
 });
 
