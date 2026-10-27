@@ -17,7 +17,7 @@ app.use(express.json({ limit: "100kb" }));
 const PORT = Number(process.env.PORT || 3000);
 const API_KEY = process.env.TWELVE_DATA_API_KEY;
 
-// ดึงข้อมูลตามรอบ (ค่าเริ่มต้น 2 นาทีเพื่อประหยัดโควต้าฟรี)
+// ดึงข้อมูลทุก 2 นาทีเพื่อประหยัดโควต้าฟรี
 const POLL_INTERVAL_MS = Math.max(
   120000,
   Number(process.env.POLL_INTERVAL_MS || 120000)
@@ -35,24 +35,6 @@ const ALLOWED_SYMBOLS = [
   "NZD/USD",
   "EUR/GBP"
 ];
-
-// Mapping รูปแบบสัญลักษณ์คู่เงินรองรับหน้าเว็บ
-const SYMBOL_MAP = {
-  "frxEURUSD": "EUR/USD",
-  "frxGBPUSD": "GBP/USD",
-  "frxUSDJPY": "USD/JPY",
-  "frxAUDUSD": "AUD/USD",
-  "frxUSDCAD": "USD/CAD",
-  "frxNZDUSD": "NZD/USD",
-  "frxEURGBP": "EUR/GBP",
-  "EUR/USD": "EUR/USD",
-  "GBP/USD": "GBP/USD",
-  "USD/JPY": "USD/JPY",
-  "AUD/USD": "AUD/USD",
-  "USD/CAD": "USD/CAD",
-  "NZD/USD": "NZD/USD",
-  "EUR/GBP": "EUR/GBP"
-};
 
 const state = {
   source: "Twelve Data REST API",
@@ -240,14 +222,13 @@ async function fetchCandles(symbol) {
   }
 }
 
-async function refreshData() {
+async function refreshData(targetSymbol = state.symbol) {
   if (pollInProgress) return;
   pollInProgress = true;
   state.loading = true;
 
   try {
-    const symbolToFetch = state.symbol;
-    const candles = await fetchCandles(symbolToFetch);
+    const candles = await fetchCandles(targetSymbol);
 
     state.candles = candles;
     state.price = candles[candles.length - 1].close;
@@ -264,10 +245,9 @@ async function refreshData() {
     state.trend = analysis.trend;
     state.reason = analysis.reason;
 
-    // เก็บลง Cache รายคู่เงิน
-    state.pairsCache[symbolToFetch] = {
-      symbol: symbolToFetch,
-      pair: symbolToFetch,
+    state.pairsCache[targetSymbol] = {
+      symbol: targetSymbol,
+      pair: targetSymbol,
       price: state.price,
       receivedAt: Date.now(),
       analysis: {
@@ -315,7 +295,8 @@ function buildMarketPayload() {
   return {
     connected: state.connected,
     dataFresh: isFresh(),
-    pairs: pairsList
+    pairs: pairsList,
+    apiCalls: state.apiCalls
   };
 }
 
@@ -351,6 +332,8 @@ function broadcastStatus() {
 // WEBSOCKET & HTTP ENDPOINTS
 // --------------------------------------------------
 wss.on("connection", (socket) => {
+  console.log("Client connected. Total:", wss.clients.size);
+
   socket.send(JSON.stringify({
     type: "connection",
     data: { connected: state.connected, dataFresh: isFresh() },
@@ -362,10 +345,30 @@ wss.on("connection", (socket) => {
     data: buildMarketPayload(),
     time: nowIso()
   }));
+
+  socket.on("message", (data) => {
+    try {
+      const msg = JSON.parse(data);
+      if (msg.type === "set_symbol" && ALLOWED_SYMBOLS.includes(msg.symbol)) {
+        state.symbol = msg.symbol;
+        refreshData(state.symbol);
+      }
+      if (msg.type === "manual_scan") {
+        if (msg.symbol && ALLOWED_SYMBOLS.includes(msg.symbol)) {
+          state.symbol = msg.symbol;
+        }
+        refreshData(state.symbol);
+      }
+    } catch {}
+  });
+
+  socket.on("close", () => {
+    console.log("Client disconnected. Total:", wss.clients.size);
+  });
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, configured: Boolean(API_KEY), time: nowIso() });
+  res.json({ ok: true, configured: Boolean(API_KEY), activeClients: wss.clients.size, time: nowIso() });
 });
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -375,6 +378,13 @@ app.get("*", (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`เซิร์ฟเวอร์เปิดทำงานที่พอร์ต ${PORT}`);
-  refreshData();
-  pollTimer = setInterval(refreshData, POLL_INTERVAL_MS);
+  
+  // Smart Polling: ดึงข้อมูลเมื่อมีผู้ใช้งานเชื่อมต่ออยู่เท่านั้น เพื่อประหยัดโควต้า API
+  pollTimer = setInterval(() => {
+    if (wss.clients.size > 0) {
+      refreshData(state.symbol);
+    } else {
+      console.log("⏸️ ไม่มีผู้ใช้งานเชื่อมต่อ - หยุดดึง API ชั่วคราว");
+    }
+  }, POLL_INTERVAL_MS);
 });
