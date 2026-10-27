@@ -150,8 +150,8 @@
       <div class="value">1 นาที</div>
     </div>
     <div class="metric">
-      <div class="label">โควต้าคงเหลือ</div>
-      <div class="value" id="quota">สายฟรีตลอดชีพ</div>
+      <div class="label">โควต้าใช้งาน</div>
+      <div class="value" id="quota">พร้อมลุย 800</div>
     </div>
   </section>
 
@@ -242,6 +242,8 @@
   let currentSignal = null;
   let signalUntil = 0;
 
+  let lastBeepSecond = -1;
+
   const pairSelect = $("pair");
 
   function beep(freq = 800, duration = 100) {
@@ -285,6 +287,9 @@
       }
       if (msg.type === "market") {
         market = msg.data;
+        if (market.apiCalls) {
+          $("quota").textContent = `ใช้ไป ${market.apiCalls} ครั้ง`;
+        }
         render();
       }
     };
@@ -318,7 +323,7 @@
 
     if (currentSignal && Date.now() < signalUntil) {
       showSignal(currentSignal.signal);
-    } else {
+    } else if (!currentSignal) {
       showSignal(a.signal || "STANDBY");
     }
   }
@@ -330,16 +335,20 @@
 
   function scanSelected() {
     const selectedSymbol = pairSelect.value;
-    const selected = (market?.pairs || []).find(p => p.symbol === selectedSymbol || p.pair === selectedSymbol);
     
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "manual_scan", symbol: selectedSymbol }));
+    }
+
+    const selected = (market?.pairs || []).find(p => p.symbol === selectedSymbol || p.pair === selectedSymbol);
     if (!selected || !selected.price) {
-      $("reason").textContent = "กำลังเร่งดึงข้อมูลสด กรุณากดอีกครั้งในไม่กี่วินาที";
+      $("reason").textContent = "กำลังดึงข้อมูลสดจากเซิร์ฟเวอร์...";
       return;
     }
 
     const a = selected.analysis || {};
     currentSignal = { signal: a.signal, symbol: selectedSymbol };
-    signalUntil = Date.now() + 40000;
+    signalUntil = Date.now() + 40000; // ล็อกสถานะออเดอร์ไว้ 40 วินาที
 
     showSignal(a.signal);
     $("lastSignal").textContent = a.signal;
@@ -371,6 +380,7 @@
   $("stop").onclick = () => {
     autoScan = false;
     currentSignal = null;
+    signalUntil = 0;
     $("auto").textContent = "▶ เปิดสแกนออโต้";
     $("scanStatus").textContent = "หยุดสแกนแล้ว";
     showSignal("STANDBY");
@@ -387,6 +397,9 @@
     currentSignal = null;
     signalUntil = 0;
     showSignal("STANDBY");
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "set_symbol", symbol: pairSelect.value }));
+    }
     render();
   };
 
@@ -394,6 +407,19 @@
     const now = Date.now();
     const remaining = 60 - Math.floor((now / 1000) % 60);
     $("countdown").textContent = `${remaining} วินาที`;
+
+    // แจ้งเตือนเสียงตามช่วงเวลา (10 วินาที และ 2 วินาทีสุดท้าย)
+    if (remaining !== lastBeepSecond) {
+      lastBeepSecond = remaining;
+      if (remaining === 10) {
+        beep(700, 120); // เตือน 10 วินาทีสุดท้ายก่อนจบแท่ง
+      } else if (remaining <= 2) {
+        beep(1200, 200); // เตือนเด็ดขาด 2 วินาทีสุดท้ายก่อนกดออเดอร์
+        if (autoScan && remaining === 1 && (!currentSignal || now >= signalUntil)) {
+          scanSelected(); // รันสแกนอัตโนมัติแท่งต่อแท่งถ้าเปิด Auto Scan ไว้
+        }
+      }
+    }
 
     if (currentSignal && now >= signalUntil) {
       currentSignal = null;
