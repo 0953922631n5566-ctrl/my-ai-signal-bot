@@ -150,7 +150,7 @@ const state = {
   pairs:{}, selected:"EUR/USD", socket:null, reconnect:null,
   auto:false, autoTimer:null, busy:false, sound:false,
   audio:null, lastWarning10:"", lastWarning3:"", lastSignalKey:"",
-  activeSignal: null, signalUntil: 0
+  activeSignal: null
 };
 
 function setMessage(s){ $("message").textContent=s; }
@@ -244,8 +244,8 @@ function updateTimer(){
     $("alertStatus").textContent="⚠️ เหลือ "+remaining+" วินาที";
   }
 
-  // ตรวจสอบเวลาล็อก 40 วินาทีของสัญญาณ
-  if(state.activeSignal && Date.now() >= state.signalUntil){
+  // หากเวลานับถอยหลังเหลือน้อยกว่าหรือเท่ากับ 20 วินาที ให้เคลียร์สัญญาณไฟกลับเป็น STANDBY ทันที
+  if(remaining <= 20 && state.activeSignal){
     state.activeSignal = null;
     renderSelected();
   }
@@ -267,10 +267,8 @@ function renderSelected(){
   const isNew=fresh(p);
   let s = "STANDBY";
   
-  if(state.activeSignal && Date.now() < state.signalUntil){
+  if(state.activeSignal){
     s = state.activeSignal;
-  } else {
-    state.activeSignal = null;
   }
 
   $("signalCircle").className="signal "+(s==="CALL"?"call":s==="PUT"?"put":"standby");
@@ -328,12 +326,11 @@ function handlePair(d){
   if(!s){applyState(d);return;}
   state.pairs[s]={...(state.pairs[s]||{}),...p};
   
-  // ตรวจสอบหากเป็นคู่ที่เลือกอยู่ และได้สัญญาณใหม่ ให้ล็อกค้างไว้ 40 วินาที
+  // ตรวจสอบหากเป็นคู่ที่เลือกอยู่ และได้สัญญาณใหม่ ให้เก็บสถานะไว้
   if(s === state.selected && fresh(state.pairs[s])){
     const detectedSig = signalOf(state.pairs[s]);
     if(detectedSig !== "STANDBY"){
       state.activeSignal = detectedSig;
-      state.signalUntil = Date.now() + 40000; // ล็อก 40 วินาที
     }
   }
   
