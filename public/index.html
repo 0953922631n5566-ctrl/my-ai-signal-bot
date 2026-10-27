@@ -100,7 +100,7 @@ button:disabled{opacity:.55}
 
 <script>
 const $=id=>document.getElementById(id);
-let ws=null, wsConnected=false, soundEnabled=false, audioCtx=null, autoTimer=null;
+let ws=null, soundEnabled=false, audioCtx=null, autoTimer=null;
 let activeSignal="STANDBY", holdUntil=0, latestPair=null, reconnectTimer=null;
 
 function beep(freq=800,duration=.12){
@@ -125,7 +125,6 @@ function triggerVibrate() {
 }
 
 function setConnection(ok,text){
-  wsConnected=ok;
   $("connDot").className="dot "+(ok?"on":"bad");
   $("connText").textContent=text;
   $("lostBanner").classList.toggle("show",!ok);
@@ -154,10 +153,6 @@ function connect(){
       }
     }
     if(m.type==="pair_update"){renderPair(m.pair);}
-    if(m.type==="scan_status"){
-      $("scanBtn").disabled=!!m.scanning;
-      $("scanBtn").textContent=m.scanning?"กำลังสแกน…":"สแกนตอนนี้";
-    }
     if(m.type==="error"){
       setConnection(false,m.error||"API ขัดข้อง");
     }
@@ -180,10 +175,9 @@ function renderPair(p){
 
   const sig = String(p.signal||"STANDBY").toUpperCase();
   
-  // ล็อกไฟเมื่อได้ CALL / PUT ใหม่ และยังไม่อยู่ในช่วงล็อก
   if(["CALL","PUT"].includes(sig) && activeSignal==="STANDBY" && holdUntil===0){
     activeSignal = sig;
-    holdUntil = Date.now() + 40000; // ล็อกค้างไว้ 40 วินาที
+    holdUntil = Date.now() + 40000;
     
     const light=$("signalLight");
     light.className="signal "+sig.toLowerCase();
@@ -203,7 +197,9 @@ function renderPair(p){
 
 async function post(url,body){
   const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  const j=await r.json();
+  const text = await r.text();
+  let j;
+  try { j = text ? JSON.parse(text) : {}; } catch(err) { throw new Error("เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง"); }
   if(!r.ok||j.ok===false)throw new Error(j.error||j.message||"คำขอไม่สำเร็จ");
   return j;
 }
@@ -267,18 +263,12 @@ $("autoBtn").onclick=()=>{
   }
 };
 
-// วงจรรอบเวลา 1 นาที และเงื่อนไขตามลำดับการทำงานที่ต้องการ
 setInterval(()=>{
   const now=Date.now(), remain=60-Math.floor((now%60000)/1000);
   const sec = remain === 60 ? 59 : remain - 1;
   $("countdown").textContent=`00:${String(remain===60?0:remain).padStart(2,"0")}`;
 
-  // 1. เหลือ 10 วินาที: แจ้งเตือนล่วงหน้า
-  if(sec===10){
-    beep(650,.1);
-  }
-
-  // 2. เหลือ 5 วินาที: สัญญาณเข้า order + สั่นเตือน
+  if(sec===10){ beep(650,.1); }
   if(sec===5){
     beep(1000,.14);
     if(activeSignal!=="STANDBY"){
@@ -288,7 +278,6 @@ setInterval(()=>{
     }
   }
 
-  // 3. ครบ 40 วินาที หรือจบรอบ (เหลือ <= 20 วินาที): กลับ Standby ดับไฟทันทีตามต้องการ
   if(holdUntil>0 && now>=holdUntil){
     activeSignal="STANDBY"; holdUntil=0;
     $("signalLight").className="signal";
