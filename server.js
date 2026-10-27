@@ -11,7 +11,8 @@ const wss = new WebSocket.Server({ server });
 const PORT = Number(process.env.PORT || 3000);
 const API_KEY = process.env.TWELVE_DATA_API_KEY || "";
 const POLL_INTERVAL_MS = Math.max(60000, Number(process.env.POLL_INTERVAL_MS || 60000));
-
+const MIN_CANDLES = 100;
+const STALE_AFTER_MS = 4 * 60 * 1000;
 let dynamicThreshold = 62;
 let activeClients = 0, scanInProgress = false, scanTimer = null;
 let lastScanAt = null, lastError = null, apiCreditsUsed = 28;
@@ -21,7 +22,6 @@ const pairsCache = new Map(PAIRS.map(symbol => [symbol, {
   symbol, name:symbol, signal:"STANDBY", score:0, confidence:0, price:null,
   candleTime:null, updatedAt:null, dataStatus:"WAITING", reason:"รอสแกนข้อมูล", indicators:{}
 }]));
-
 const state = {
   symbol:"EUR/USD", timeframe:"1min", signal:"STANDBY", score:0, confidence:0,
   price:null, candleTime:null, updatedAt:null, dataStatus:"WAITING",
@@ -31,7 +31,10 @@ const state = {
 app.use(express.json({limit:"100kb"}));
 app.use(express.static(path.join(__dirname,"public")));
 
+function clamp(n,min,max){ return Math.max(min,Math.min(max,n)); }
+function round(n,d=2){ if(!Number.isFinite(n)) return null; const f=10**d; return Math.round(n*f)/f; }
 function mean(a){ return a.length ? a.reduce((s,x)=>s+x,0)/a.length : NaN; }
+function stddev(a){ if(a.length<2)return 0; const m=mean(a); return Math.sqrt(mean(a.map(x=>(x-m)**2))); }
 function emaSeries(values,period){
   const out=Array(values.length).fill(null); if(values.length<period)return out;
   let e=mean(values.slice(0,period)); out[period-1]=e; const alpha=2/(period+1);
@@ -46,117 +49,121 @@ function rsiSeries(values,period=14){
   for(let i=period+1;i<values.length;i++){const ch=values[i]-values[i-1];ag=(ag*(period-1)+Math.max(0,ch))/period;al=(al*(period-1)+Math.max(0,-ch))/period;out[i]=al===0?(ag===0?50:100):100-100/(1+ag/al);}
   return out;
 }
-
-async function fetchCandles(symbol){
-  if(!API_KEY) throw new Error("ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY");
+function parseTime(v){
+  if(!v)return null; const s=String(v).trim().replace(" ","T");
+  const t=Date.parse(/(?:Z|[+-]\d{2}:\d{2})$/i.test(s)?s:s+"Z"); return Number.isFinite(t)?t:null;
+}
+async function fetchCandles(symbol, outputsize=200){
+  if(!API_KEY)throw new Error("ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY ใน Render");
   const url=new URL("https://api.twelvedata.com/time_series");
   url.searchParams.set("symbol",symbol); url.searchParams.set("interval","1min");
-  url.searchParams.set("outputsize","150"); url.searchParams.set("timezone","UTC");
-  url.searchParams.set("apikey",API_KEY);
-
+  url.searchParams.set("outputsize",String(clamp(Number(outputsize)||200,100,5000)));
+  url.searchParams.set("timezone","UTC"); url.searchParams.set("apikey",API_KEY);
+  
   apiCreditsUsed = (apiCreditsUsed + 1) % 800; // นับโควต้า API
 
-  const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),15000);
+  const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),20000);
   let response;
-  try{ response=await fetch(url,{signal:controller.signal}); }
-  catch(e){ throw new Error("เชื่อมต่อ Twelve Data ไม่สำเร็จ"); }
-  finally{ clearTimeout(timer); }
-
-  if(!response.ok) throw new Error(`HTTP ${response.status}`);
+  try{response=await fetch(url,{signal:controller.signal,headers:{Accept:"application/json"}});}
+  catch(e){throw new Error(e.name==="AbortError"?"Twelve Data ตอบกลับช้าเกินกำหนด":"เชื่อมต่อ Twelve Data ไม่สำเร็จ");}
+  finally{clearTimeout(timer);}
+  if(!response.ok)throw new Error(`Twelve Data HTTP ${response.status}`);
   const body=await response.json();
-  if(!Array.isArray(body.values)) throw new Error("รูปแบบข้อมูลผิดพลาด");
-
-  return body.values.map(x=>({
-    time: Date.parse(x.datetime.replace(" ","T")+"Z"),
-    open: Number(x.open), high: Number(x.high), low: Number(x.low), close: Number(x.close)
-  })).reverse();
+  if(body.status==="error"||body.code||(body.message&&!body.values))throw new Error(String(body.message||body.code||"Twelve Data API error").slice(0,200));
+  if(!Array.isArray(body.values))throw new Error("API ไม่ส่งข้อมูลแท่งเทียนกลับมา");
+  const list=body.values.map(x=>({time:parseTime(x.datetime),open:Number(x.open),high:Number(x.high),low:Number(x.low),close:Number(x.close),volume:Number(x.volume||0)}))
+   .filter(c=>c.time!==null&&[c.open,c.high,c.low,c.close].every(Number.isFinite)&&c.open>0&&c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)&&c.high>=c.low)
+   .sort((a,b)=>a.time-b.time);
+  const unique=new Map(); for(const c of list)unique.set(c.time,c); return [...unique.values()];
 }
-
-function analyzeCandles(candles){
-  const closes = candles.map(c=>c.close);
-  const latest = candles[candles.length-1];
-  const e5 = emaSeries(closes,5), e9 = emaSeries(closes,9), e21 = emaSeries(closes,21);
-  const rsi = rsiSeries(closes,14);
-  const rsiNow = rsi[rsi.length-1] || 50;
-
-  let bull=0, bear=0;
-  if(e5.at(-1) > e9.at(-1) && e9.at(-1) > e21.at(-1)) bull += 3;
-  if(e5.at(-1) < e9.at(-1) && e9.at(-1) < e21.at(-1)) bear += 3;
-  if(rsiNow >= 52) bull += 2;
-  if(rsiNow <= 48) bear += 2;
-  if(latest.close > latest.open) bull += 1;
-  if(latest.close < latest.open) bear += 1;
-
-  const total = bull + bear;
-  const score = total ? Math.round(100 * Math.max(bull,bear) / total) : 0;
-
-  let signal = "STANDBY";
-  if(score >= dynamicThreshold){
-    if(bull > bear && rsiNow < 70) signal = "CALL";
-    if(bear > bull && rsiNow > 30) signal = "PUT";
-  }
-
-  return {
-    signal, score,
-    indicators: {
-      rsi14: Math.round(rsiNow),
-      bullishPoints: bull,
-      bearishPoints: bear
-    }
-  };
+function analyzeCandles(candles, options={}){
+  if(!Array.isArray(candles)||candles.length<MIN_CANDLES)throw new Error(`ต้องมีข้อมูลอย่างน้อย ${MIN_CANDLES} แท่ง`);
+  const closes=candles.map(c=>c.close), latest=candles.at(-1);
+  const e5=emaSeries(closes,5),e9=emaSeries(closes,9),e21=emaSeries(closes,21),e50=emaSeries(closes,50),e100=emaSeries(closes,100),rsi=rsiSeries(closes,14);
+  const m12=emaSeries(closes,12),m26=emaSeries(closes,26);
+  const macd=closes.map((_,i)=>m12[i]!==null&&m26[i]!==null?m12[i]-m26[i]:null);
+  const macdValid=macd.filter(Number.isFinite),sigSeries=emaSeries(macdValid,9);
+  const macdNow=macd.at(-1), macdSignal=sigSeries.at(-1), rsiNow=rsi.at(-1);
+  const recent=closes.slice(-20), mid=mean(recent), sd=stddev(recent);
+  let bull=0,bear=0; const reasons=[];
+  const vote=(up,down,w,label)=>{if(up){bull+=w;reasons.push(label+": ขาขึ้น");}else if(down){bear+=w;reasons.push(label+": ขาลง");}};
+  vote(e5.at(-1)>e9.at(-1)&&e9.at(-1)>e21.at(-1),e5.at(-1)<e9.at(-1)&&e9.at(-1)<e21.at(-1),2,"EMA 5/9/21");
+  vote(e21.at(-1)>e50.at(-1),e21.at(-1)<e50.at(-1),2,"EMA 21/50");
+  vote(latest.close>e100.at(-1),latest.close<e100.at(-1),2,"EMA 100");
+  vote(rsiNow>=50&&rsiNow<72,rsiNow<=50&&rsiNow>28,1.5,"RSI");
+  vote(macdNow>macdSignal,macdNow<macdSignal,2,"MACD");
+  vote(latest.close>latest.open,latest.close<latest.open,1,"Price action");
+  vote(latest.close>mid,latest.close<mid,1,"Bollinger middle");
+  const total=bull+bear, winning=Math.max(bull,bear), score=total?Math.round(100*winning/total):0;
+  const agreement=total?winning/total:0;
+  const referenceTime=Number.isFinite(options.referenceTime)?options.referenceTime:Date.now();
+  const age=referenceTime-latest.time;
+  const fresh=options.backtest===true ? true : age>=-60000&&age<=STALE_AFTER_MS;
+  let signal="STANDBY",reason="ตัวชี้วัดยังไม่ยืนยันไปในทิศทางเดียวกัน";
+  if(!fresh)reason="ข้อมูลแท่งเทียนเก่าหรือเวลาไม่ตรง";
+  else if(score<dynamicThreshold||agreement<0.55)reason=`คะแนนไม่ถึงเกณฑ์ (${score}/${dynamicThreshold}%)`;
+  else if(bull>bear&&rsiNow<75){signal="CALL";reason="แนวโน้มและโมเมนตัมเอนเอียงขึ้น";}
+  else if(bear>bull&&rsiNow>25){signal="PUT";reason="แนวโน้มและโมเมนตัมเอนเอียงลง";}
+  return {signal,score,confidence:score,reason,reasons:reasons.slice(-8),indicators:{
+    ema5:round(e5.at(-1),6),ema9:round(e9.at(-1),6),ema21:round(e21.at(-1),6),ema50:round(e50.at(-1),6),ema100:round(e100.at(-1),6),
+    rsi14:round(rsiNow),macd:round(macdNow,6),macdSignal:round(macdSignal,6),bollingerMiddle:round(mid,6),
+    bullishPoints:round(bull),bearishPoints:round(bear),agreement:round(agreement*100,1),candleAgeSeconds:Math.max(0,Math.round(age/1000))
+  }};
 }
-
+function getPairs(){return PAIRS.map(s=>pairsCache.get(s));}
+function buildPayload(){return {type:"state",ok:true,configured:Boolean(API_KEY),scanning:scanInProgress,activeClients,lastScanAt,lastError,pollIntervalMs:POLL_INTERVAL_MS,state:{...state,threshold:dynamicThreshold,apiUsed:apiCreditsUsed},pairs:getPairs()};}
+function sendJSON(ws,d){if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(d));}
+function broadcast(d){const msg=JSON.stringify(d);for(const c of wss.clients)if(c.readyState===WebSocket.OPEN)c.send(msg);}
+function broadcastState(){broadcast(buildPayload());}
 async function scanPair(symbol){
+  if(!PAIRS.includes(symbol))throw new Error("ไม่รองรับคู่เงินนี้");
   try{
-    const candles = await fetchCandles(symbol);
-    const latest = candles[candles.length-1];
-    const analysis = analyzeCandles(candles);
-    const payload = {
-      symbol, signal: analysis.signal, score: analysis.score,
-      price: latest.close, updatedAt: new Date().toISOString(),
-      indicators: analysis.indicators, apiUsed: apiCreditsUsed
-    };
-    pairsCache.set(symbol, payload);
-    if(state.symbol === symbol) Object.assign(state, payload);
-    broadcast({ type: "pair_update", pair: payload });
-    return payload;
-  }catch(e){
-    const failed = { symbol, signal: "STANDBY", price: null, error: e.message, apiUsed: apiCreditsUsed };
-    pairsCache.set(symbol, failed);
-    broadcast({ type: "pair_update", pair: failed });
-    return failed;
-  }
+    const candles=await fetchCandles(symbol,200); if(candles.length<MIN_CANDLES)throw new Error(`ข้อมูลไม่เพียงพอ: ${candles.length} แท่ง`);
+    const latest=candles.at(-1),a=analyzeCandles(candles);
+    const p={symbol,name:symbol,timeframe:"1min",...a,price:latest.close,candleTime:new Date(latest.time).toISOString(),updatedAt:new Date().toISOString(),dataStatus:"LIVE_REFERENCE",source:"Twelve Data - reference market",candleCount:candles.length,apiUsed:apiCreditsUsed};
+    pairsCache.set(symbol,p);lastError=null;if(state.symbol===symbol)Object.assign(state,p,{threshold:dynamicThreshold,apiUsed:apiCreditsUsed});
+    broadcast({type:"pair_update",pair:p});return p;
+  }catch(e){lastError=e.message;const p={...pairsCache.get(symbol),signal:"STANDBY",dataStatus:"ERROR",reason:e.message,updatedAt:new Date().toISOString(),apiUsed:apiCreditsUsed};pairsCache.set(symbol,p);if(state.symbol===symbol)Object.assign(state,p);broadcast({type:"pair_update",pair:p});return p;}
+}
+async function scanAllPairs(){
+  if(scanInProgress)return {ok:false,message:"กำลังสแกนอยู่"};
+  if(!API_KEY){lastError="ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY";broadcastState();return {ok:false,message:lastError};}
+  scanInProgress=true;broadcast({type:"scan_status",scanning:true});
+  try{
+    const results=[];
+    for(const symbol of PAIRS){results.push(await scanPair(symbol));await new Promise(r=>setTimeout(r,1200));}
+    lastScanAt=new Date().toISOString();
+    const best=results.filter(x=>x.signal!=="STANDBY").sort((a,b)=>b.score-a.score)[0];
+    broadcast({type:"scan_complete",scanning:false,lastScanAt,pairs:getPairs(),bestPair:best?.symbol||null});
+    return {ok:true,lastScanAt,bestPair:best?.symbol||null,results};
+  }finally{scanInProgress=false;broadcast({type:"scan_status",scanning:false});broadcastState();}
 }
 
-function buildPayload(){ return { type: "state", configured: Boolean(API_KEY), state: { ...state, apiUsed: apiCreditsUsed } }; }
-function broadcast(d){ const msg=JSON.stringify(d); for(const c of wss.clients) if(c.readyState===1) c.send(msg); }
-
-app.post("/api/scan", async (req,res) => {
-  const symbol = req.body?.symbol || state.symbol;
-  const result = await scanPair(symbol);
-  res.json({ ok: true, pair: result });
+app.get("/api/health",(req,res)=>res.json({ok:true,configured:Boolean(API_KEY),activeClients,scanning:scanInProgress,lastScanAt,time:new Date().toISOString()}));
+app.get("/api/status",(req,res)=>res.json(buildPayload()));
+app.get("/api/pairs",(req,res)=>res.json({ok:true,pairs:getPairs()}));
+app.post("/api/scan",async(req,res)=>{
+  const now=Date.now();if(now-lastManualScanTime<5000)return res.status(429).json({ok:false,message:"กรุณารอสักครู่ก่อนสแกนใหม่"});lastManualScanTime=now;
+  try{const symbol=(req.body&&req.body.symbol)||state.symbol;const pair=await scanPair(symbol);res.json({ok:true,pair,pairs:getPairs()});}catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.post("/api/scan-all",async(req,res)=>{try{res.json(await scanAllPairs());}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post("/api/select",(req,res)=>{const symbol=req.body?.symbol;if(!PAIRS.includes(symbol))return res.status(400).json({ok:false,error:"คู่เงินไม่ถูกต้อง"});state.symbol=symbol;Object.assign(state,pairsCache.get(symbol),{symbol,timeframe:"1min",threshold:dynamicThreshold});broadcastState();res.json({ok:true,state:{...state}});});
+app.post("/api/threshold",(req,res)=>{const n=Number(req.body?.threshold);if(!Number.isFinite(n)||n<40||n>95)return res.status(400).json({ok:false,error:"ตั้งค่าได้ระหว่าง 40–95"});dynamicThreshold=Math.round(n);state.threshold=dynamicThreshold;broadcastState();res.json({ok:true,threshold:dynamicThreshold});});
 
-app.post("/api/select", (req,res) => {
-  const symbol = req.body?.symbol;
-  if(PAIRS.includes(symbol)) state.symbol = symbol;
-  broadcast(buildPayload());
-  res.json({ ok: true });
-});
-
-wss.on("connection", ws => {
-  activeClients++;
-  ws.send(JSON.stringify(buildPayload()));
-  ws.on("message", raw => {
-    let m; try{ m=JSON.parse(raw); }catch(e){ return; }
-    if(m.action === "get_state") ws.send(JSON.stringify(buildPayload()));
-    if(m.action === "set_symbol" && PAIRS.includes(m.symbol)) {
-      state.symbol = m.symbol;
-      broadcast(buildPayload());
-    }
+wss.on("connection",ws=>{
+  activeClients++;sendJSON(ws,buildPayload());
+  ws.on("message",async raw=>{
+    let m;try{m=JSON.parse(raw.toString());}catch{return sendJSON(ws,{type:"error",error:"รูปแบบข้อความไม่ถูกต้อง"});}
+    const action=String(m.action||m.type||"").toLowerCase();
+    if(["get_state","status"].includes(action))return sendJSON(ws,buildPayload());
+    if(["set_symbol","select_pair"].includes(action)){if(!PAIRS.includes(m.symbol))return sendJSON(ws,{type:"error",error:"ไม่รองรับคู่เงินนี้"});state.symbol=m.symbol;Object.assign(state,pairsCache.get(m.symbol),{symbol:m.symbol,timeframe:"1min",threshold:dynamicThreshold});return broadcastState();}
+    if(action==="set_threshold"){const n=Number(m.threshold);if(Number.isFinite(n)&&n>=40&&n<=95){dynamicThreshold=Math.round(n);state.threshold=dynamicThreshold;broadcastState();}return;}
+    if(["manual_scan","scan","rescan"].includes(action)){try{sendJSON(ws,{type:"scan_result",...await scanPair(m.symbol||state.symbol)});}catch(e){sendJSON(ws,{type:"error",error:e.message});}}
   });
-  ws.onclose = () => { activeClients = Math.max(0, activeClients - 1); };
+  ws.onclose=()=>{activeClients=Math.max(0,activeClients-1);};
 });
 
-app.use((req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
-server.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
+function startScheduler(){if(scanTimer)clearInterval(scanTimer);scanTimer=setInterval(()=>{if(activeClients>0&&!scanInProgress&&API_KEY)scanAllPairs().catch(e=>{lastError=e.message;broadcastState();});},POLL_INTERVAL_MS);}
+app.use((req,res)=>{if(req.method!=="GET")return res.status(404).json({ok:false,error:"ไม่พบ endpoint"});res.sendFile(path.join(__dirname,"public","index.html"),e=>{if(e&&!res.headersSent)res.status(404).send("AI Signal Radar is running.");});});
+server.listen(PORT,"0.0.0.0",()=>{console.log(`AI Signal Radar listening on ${PORT}`);startScheduler();});
+process.on("SIGTERM",()=>{if(scanTimer)clearInterval(scanTimer);server.close(()=>process.exit(0));});
