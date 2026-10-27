@@ -1,13 +1,14 @@
 services:
   - type: web
-    name: ai-real-time-signal
+    name: ai-signal-radar
     runtime: node
     plan: free
     buildCommand: npm install
     startCommand: npm start
-    healthCheckPath: /api/health
     envVars:
-      - key: NODE_ENV
-        value: production
+      - key: NODE_VERSION
+        value: 20
       - key: TWELVE_DATA_API_KEY
-        value: "ใส่ API Key ของลูกพี่ตรงนี้"
+        sync: false
+      - key: POLL_INTERVAL_MS
+        value: "60000"
