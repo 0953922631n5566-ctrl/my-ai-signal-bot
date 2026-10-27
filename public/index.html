@@ -172,7 +172,7 @@
   <section class="hero">
     <div class="radar"><span>◈</span></div>
     <div id="signal" class="signal STANDBY">STANDBY</div>
-    <div id="pairName" class="hero-sub">EUR/USD · กำลังรอข้อมูล</div>
+    <div id="pairName" class="hero-sub">EUR/USD · พร้อมสแกน</div>
     <div id="price" class="value">—</div>
     <div class="scoreline">
       <div class="row">
@@ -181,7 +181,7 @@
       </div>
       <div class="track"><div id="fill" class="fill"></div></div>
     </div>
-    <div id="reason" class="hero-sub">รอข้อมูลตลาดสด</div>
+    <div id="reason" class="hero-sub">กดสแกนทันทีเพื่อเริ่มวิเคราะห์</div>
   </section>
 
   <section class="bottom-grid">
@@ -195,7 +195,7 @@
     </div>
     <div class="panel">
       <div class="label">อัปเดตล่าสุด</div>
-      <div id="updated" class="small-value">รอข้อมูล...</div>
+      <div id="updated" class="small-value">รอการสแกน...</div>
     </div>
     <div class="panel">
       <div class="label">สัญญาณล่าสุด</div>
@@ -274,9 +274,7 @@
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     socket = new WebSocket(`${protocol}//${location.host}`);
 
-    socket.onopen = () => {
-      setConnection(true, true);
-    };
+    socket.onopen = () => setConnection(true, true);
 
     socket.onmessage = event => {
       let msg;
@@ -310,27 +308,34 @@
 
     if (!selected) return;
 
-    const a = selected.analysis || {};
     const fresh = selected.receivedAt && (Date.now() - selected.receivedAt < 300000);
 
-    $("pairName").textContent = `${selectedSymbol} · ${fresh ? "ตลาดสด" : "รออัปเดต"}`;
-    $("price").textContent = selected.price == null ? "—" : Number(selected.price).toFixed(5);
-    $("rsi").textContent = a.rsi == null ? "—" : Number(a.rsi).toFixed(2);
-    $("score").textContent = `${a.score || 0} / 100`;
-    $("fill").style.width = `${Math.max(0, Math.min(100, a.score || 0))}%`;
-    $("reason").textContent = a.reason || "รอจังหวะตลาด";
-    $("updated").textContent = fresh ? new Date(selected.receivedAt).toLocaleTimeString('th-TH') : "รอข้อมูลสด";
+    // แสดงราคาล่าสุดเมื่อมีข้อมูล
+    if (selected.price != null) {
+      $("price").textContent = Number(selected.price).toFixed(5);
+    }
 
+    // กรณีที่กำลังรันสถานะสัญญาณ 40 วินาทีจากการสแกน
     if (currentSignal && Date.now() < signalUntil) {
       showSignal(currentSignal.signal);
-    } else if (!currentSignal) {
-      showSignal(a.signal || "STANDBY");
+    } else {
+      // หากไม่ได้อยู่ในช่วงล็อก 40 วินาทีจากการกดสแกน ให้บังคับหน้าจอเป็น STANDBY ตลอดเวลา
+      resetToStandbyUI();
     }
   }
 
-    function showSignal(value) {
+  function showSignal(value) {
     $("signal").textContent = value === "WAIT" ? "STANDBY" : value;
     $("signal").className = "signal " + (value === "WAIT" ? "STANDBY" : value);
+  }
+
+  function resetToStandbyUI() {
+    currentSignal = null;
+    signalUntil = 0;
+    showSignal("STANDBY");
+    const selectedSymbol = pairSelect.value;
+    $("pairName").textContent = `${selectedSymbol} · พร้อมสแกน`;
+    $("reason").textContent = autoScan ? "ระบบสแกนอัตโนมัติกำลังทำงาน..." : "กดสแกนทันทีเพื่อเริ่มวิเคราะห์";
   }
 
   function scanSelected() {
@@ -348,10 +353,15 @@
 
     const a = selected.analysis || {};
     currentSignal = { signal: a.signal, symbol: selectedSymbol };
-    signalUntil = Date.now() + 40000;
+    signalUntil = Date.now() + 40000; // ล็อกสถานะออเดอร์ 40 วินาที
 
     showSignal(a.signal);
     $("lastSignal").textContent = a.signal;
+    $("rsi").textContent = a.rsi == null ? "—" : Number(a.rsi).toFixed(2);
+    $("score").textContent = `${a.score || 0} / 100`;
+    $("fill").style.width = `${Math.max(0, Math.min(100, a.score || 0))}%`;
+    $("reason").textContent = a.reason || "เรียบร้อย";
+    $("updated").textContent = new Date(selected.receivedAt || Date.now()).toLocaleTimeString('th-TH');
     $("history").innerHTML = `<span>ล่าสุด: ${selectedSymbol} · ${a.signal}</span><span>คะแนน ${a.score}</span>`;
     
     if (a.signal !== "STANDBY" && a.signal !== "WAIT") {
@@ -373,34 +383,26 @@
     $("auto").textContent = autoScan ? "■ ปิดออโต้" : "▶ เปิดออโต้";
     $("auto").classList.toggle("active", autoScan);
     $("scanStatus").textContent = autoScan ? "สแกนอัตโนมัติทำงาน" : "ปิดสแกนออโต้";
+    if (!autoScan) resetToStandbyUI();
   };
 
   $("scan").onclick = scanSelected;
 
   $("stop").onclick = () => {
     autoScan = false;
-    currentSignal = null;
-    signalUntil = 0;
     $("auto").textContent = "▶ เปิดออโต้";
+    $("auto").classList.remove("active");
     $("scanStatus").textContent = "หยุดสแกนแล้ว";
-    showSignal("STANDBY");
+    resetToStandbyUI();
   };
 
-  $("reset").onclick = () => {
-    currentSignal = null;
-    signalUntil = 0;
-    showSignal("STANDBY");
-    $("reason").textContent = "รอจังหวะใหม่";
-  };
+  $("reset").onclick = resetToStandbyUI;
 
   pairSelect.onchange = () => {
-    currentSignal = null;
-    signalUntil = 0;
-    showSignal("STANDBY");
+    resetToStandbyUI();
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "set_symbol", symbol: pairSelect.value }));
     }
-    render();
   };
 
   function tick() {
@@ -420,9 +422,9 @@
       }
     }
 
+    // เมื่อครบกำหนด 40 วินาทีจากการสแกน ให้เคลียร์กลับเป็น STANDBY อัตโนมัติทันที
     if (currentSignal && now >= signalUntil) {
-      currentSignal = null;
-      render();
+      resetToStandbyUI();
     }
   }
 
