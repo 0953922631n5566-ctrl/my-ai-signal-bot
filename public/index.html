@@ -14,7 +14,7 @@ body{height:100dvh;display:flex;flex-direction:column;padding:6px 8px;justify-co
 main{max-width:520px;width:100%;margin:auto;display:flex;flex-direction:column;gap:6px;height:100%;justify-content:space-between}
 
 .top{display:flex;justify-content:space-between;align-items:center}
-.brand{font-size:16px;font-weight:800;letter-spacing:.4px}
+.brand{font-size:16px;font-weight:800;letter-spacing:.4px;color:var(--cyan)}
 .sub{font-size:10px;color:var(--muted);margin-top:2px}
 .status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
 .dot{width:8px;height:8px;border-radius:50%;background:#64748b}
@@ -73,8 +73,8 @@ button:disabled{opacity:.55}
 </section>
 
 <section class="card hero">
- <div class="row between"><span class="label">สถานะระบบ: ออโต้สแกนทำงานอยู่</span><span class="label" id="quotaText">โควต้า: -- / 800</span></div>
- <div id="signalLight" class="signal"><strong id="signalText">STANDBY</strong><small id="signalSub">รอสัญญาณ</small></div>
+ <div class="row between"><span class="label" id="statusLabel">ช่วงรอสัญญาณ — STANDBY</span><span class="label" id="quotaText">โควต้า: -- / 800</span></div>
+ <div id="signalLight" class="signal"><strong id="signalText">STANDBY</strong><small id="signalSub">ไฟ CALL/PUT ดับ</small></div>
  <div class="row between"><span class="label">เกณฑ์สัญญาณ</span><strong id="thresholdText">62%</strong></div>
  <input id="threshold" type="range" min="40" max="95" value="62" style="width:100%;padding:0;accent-color:var(--cyan)">
  <div class="row between" style="margin-top:4px"><span class="label">คะแนนเทคนิค</span><strong id="score">— / 100</strong></div>
@@ -95,13 +95,13 @@ button:disabled{opacity:.55}
  </div>
 </section>
 
-<div class="small">ระบบออโต้สแกนอัตโนมัติ • สั่นเตือน 5 วิ • ดับไฟอัตโนมัติ 40 วิ</div>
+<div class="small">ระบบออโต้สแกน • เตือน 10 วิ • สั่น 5 วิ • ดับไฟกลับ STANDBY ครบ 40 วิ</div>
 </main>
 
 <script>
 const $=id=>document.getElementById(id);
 let ws=null, soundEnabled=true, audioCtx=null, autoTimer=null;
-let activeSignal="STANDBY", holdUntil=0, latestPair=null, reconnectTimer=null;
+let pendingSignal="STANDBY", activeSignal="STANDBY", holdUntil=0, latestPair=null, reconnectTimer=null;
 
 function beep(freq=800,duration=.12){
   if(!soundEnabled)return;
@@ -174,16 +174,10 @@ function renderPair(p){
   if(p.apiUsed!=null) $("quotaText").textContent="โควต้า: "+p.apiUsed+" / 800";
 
   const sig = String(p.signal||"STANDBY").toUpperCase();
-  
-  if(["CALL","PUT"].includes(sig) && activeSignal==="STANDBY" && holdUntil===0){
-    activeSignal = sig;
-    holdUntil = Date.now() + 40000;
-    
-    const light=$("signalLight");
-    light.className="signal "+sig.toLowerCase();
-    $("signalText").textContent=sig;
-    $("signalSub").textContent=sig==="CALL"?"สัญญาณซื้อขึ้น":"สัญญาณขายลง";
-    beep(sig==="CALL"?880:440,0.25);
+  if(["CALL","PUT"].includes(sig)){
+    pendingSignal = sig;
+  } else {
+    pendingSignal = "STANDBY";
   }
 
   $("score").textContent=(p.score??"—")+" / 100";
@@ -204,13 +198,20 @@ async function post(url,body){
   return j;
 }
 
+function resetToStandby(msg){
+  activeSignal = "STANDBY";
+  pendingSignal = "STANDBY";
+  holdUntil = 0;
+  const light = $("signalLight");
+  light.className = "signal";
+  $("signalText").textContent = "STANDBY";
+  $("signalSub").textContent = "ไฟ CALL/PUT ดับ";
+  $("statusLabel").textContent = msg || "ช่วงรอสัญญาณ — STANDBY";
+}
+
 $("symbol").addEventListener("change",async()=>{
   try{
-    activeSignal="STANDBY"; holdUntil=0;
-    $("signalLight").className="signal";
-    $("signalText").textContent="STANDBY";
-    $("signalSub").textContent="รอสัญญาณ";
-    
+    resetToStandby("สลับคู่เงิน");
     await post("/api/select",{symbol:$("symbol").value});
     if(ws?.readyState===1) ws.send(JSON.stringify({action:"set_symbol",symbol:$("symbol").value}));
     scanNow();
@@ -250,7 +251,6 @@ async function scanNow(){
 
 $("scanBtn").onclick=scanNow;
 
-// ระบบเริ่มต้นสแกนอัตโนมัติทันทีที่เปิดแอป (Auto-Run)
 function startAutoScanAlways(){
   if(autoTimer) clearInterval(autoTimer);
   autoTimer = setInterval(()=>{
@@ -258,33 +258,49 @@ function startAutoScanAlways(){
   }, 60000);
 }
 
+// วงจรรอบเวลานับถอยหลัง คุมจังหวะไฟติด/ดับตามสเปก 40 วินาทีเป๊ะๆ
+let lastSec = -1;
 setInterval(()=>{
   const now=Date.now(), remain=60-Math.floor((now%60000)/1000);
-  const sec = remain === 60 ? 59 : remain - 1;
+  const sec = remain === 60 ? 0 : remain;
   $("countdown").textContent=`00:${String(remain===60?0:remain).padStart(2,"0")}`;
 
-  if(sec===10){ beep(650,.1); }
-  if(sec===5){
-    beep(1000,.14);
-    if(activeSignal!=="STANDBY"){
-      triggerVibrate();
-      $("signalLight").classList.add("vibrate-active");
-      setTimeout(()=>$("signalLight").classList.remove("vibrate-active"), 1200);
-    }
+  // ตรวจสอบเงื่อนไขตัดกลับ STANDBY เมื่อครบ 40 วินาทีนับจากเวลาติดไฟ
+  if (holdUntil > 0 && now >= holdUntil) {
+    resetToStandby("ครบ 40 วินาที — กลับ STANDBY");
   }
 
-  if(holdUntil>0 && now>=holdUntil){
-    activeSignal="STANDBY"; holdUntil=0;
-    $("signalLight").className="signal";
-    $("signalText").textContent="STANDBY";
-    $("signalSub").textContent="รอสัญญาณ";
-  } else if(sec<=20 && activeSignal!=="STANDBY" && holdUntil===0){
-    activeSignal="STANDBY";
-    $("signalLight").className="signal";
-    $("signalText").textContent="STANDBY";
-    $("signalSub").textContent="รอสัญญาณ";
+  if(sec !== lastSec) {
+    lastSec = sec;
+
+    // 1. เหลือ 10 วินาที: แจ้งเตือนล่วงหน้า
+    if(sec === 10 && activeSignal === "STANDBY"){
+      beep(650,.1);
+      $("statusLabel").textContent = "เหลือ 10 วินาที (เตือนล่วงหน้า)";
+    }
+
+    // 2. เหลือ 5 วินาที: สัญญาณเข้า Order (ไฟสว่าง + สั่น)
+    if(sec === 5 && activeSignal === "STANDBY"){
+      if(pendingSignal !== "STANDBY"){
+        activeSignal = pendingSignal;
+        holdUntil = now + 40000; // กำหนดเวลาค้างไฟไว้ 40 วินาที
+        
+        const light = $("signalLight");
+        light.className = "signal " + activeSignal.toLowerCase();
+        $("signalText").textContent = activeSignal;
+        $("signalSub").textContent = activeSignal === "CALL" ? "BUY / CALL" : "SELL / PUT";
+        $("statusLabel").textContent = "เหลือ 5 วินาที — สัญญาณเข้า Order!";
+        
+        beep(activeSignal === "CALL" ? 880 : 440, 0.25);
+        triggerVibrate();
+        light.classList.add("vibrate-active");
+        setTimeout(()=>light.classList.remove("vibrate-active"), 1200);
+      } else {
+        $("statusLabel").textContent = "เหลือ 5 วินาที — ช่วงรอสัญญาณ";
+      }
+    }
   }
-},250);
+},100);
 
 window.addEventListener("online",()=>{if(ws?.readyState===1)setConnection(true,"ออนไลน์ / ออโต้สแกน");});
 window.addEventListener("offline",()=>{setConnection(false,"อินเทอร์เน็ตหลุด / สัญญาณขาดหาย");if(soundEnabled)beep(300,.35);});
