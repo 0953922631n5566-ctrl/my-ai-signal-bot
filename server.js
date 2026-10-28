@@ -1,557 +1,494 @@
-'use strict';
 
-const express = require('express');
-const path = require('path');
+const express = require("express");
+const path = require("path");
 
 const app = express();
-app.use(express.json({ limit: '50kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json({ limit: "32kb" }));
+app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = Number(process.env.PORT || 3000);
-const API_KEY = process.env.TWELVE_DATA_API_KEY || '';
-const TIMEFRAME = '1min';
+const API_KEY = (process.env.TWELVE_DATA_API_KEY || "").trim();
 
-const PAIRS = (process.env.FOREX_PAIRS ||
-  'EUR/USD,GBP/USD,USD/JPY')
-  .split(',')
-  .map(pair => pair.trim().toUpperCase())
+const PAIRS = (process.env.FOREX_PAIRS || "EUR/USD,GBP/USD,USD/JPY")
+  .split(",")
+  .map(x => x.trim())
   .filter(Boolean);
 
-const MIN_SIGNAL_SCORE = clamp(
-  Number(process.env.MIN_SIGNAL_SCORE || 68), 40, 95
-);
-const MAX_DATA_AGE_SECONDS = clamp(
-  Number(process.env.MAX_DATA_AGE_SECONDS || 180), 60, 600
-);
-const HOLD_SECONDS = 40;
-const WARNING_SECONDS = 10;
+const MIN_SCORE = clamp(Number(process.env.MIN_SIGNAL_SCORE || 68), 40, 95);
+const POLL_MS = clamp(Number(process.env.POLL_INTERVAL_MS || 25000), 15000, 120000);
+const MAX_AGE = clamp(Number(process.env.MAX_DATA_AGE_SECONDS || 180), 30, 600);
 
-const appCache = new Map();
-const lastCandleByPair = new Map();
-const latestSignalByPair = new Map();
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function round(n, digits = 6) {
+  return Number.isFinite(n) ? Number(n.toFixed(digits)) : null;
+}
+
+const results = {};
 const history = [];
-const manualRecords = [];
+let pairIndex = 0;
+let polling = false;
+let lastPollAt = null;
+let lastError = null;
 
-function clamp(value, min, max) {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalisePair(pair) {
-  const requested = String(pair || '').trim().toUpperCase();
-  return PAIRS.includes(requested) ? requested : PAIRS[0];
-}
-
-function average(values) {
-  if (!values.length) return null;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function ema(values, period) {
-  if (values.length < period) return null;
-
-  let current = average(values.slice(0, period));
-  const multiplier = 2 / (period + 1);
-
-  for (let i = period; i < values.length; i++) {
-    current = values[i] * multiplier +
-      current * (1 - multiplier);
-  }
-
-  return current;
-}
-
-function calculateRSI(closes, period = 14) {
-  if (closes.length < period + 1) return null;
-
-  let gains = 0;
-  let losses = 0;
-  const start = closes.length - period;
-
-  for (let i = start; i < closes.length; i++) {
-    const change = closes[i] - closes[i - 1];
-
-    if (change > 0) gains += change;
-    if (change < 0) losses += Math.abs(change);
-  }
-
-  if (losses === 0) return gains === 0 ? 50 : 100;
-
-  const relativeStrength = (gains / period) / (losses / period);
-  return 100 - (100 / (1 + relativeStrength));
-}
-
-function calculateATR(candles, period = 14) {
-  if (candles.length < period + 1) return null;
-
-  const ranges = [];
-
-  for (let i = 1; i < candles.length; i++) {
-    const candle = candles[i];
-    const previous = candles[i - 1];
-
-    ranges.push(Math.max(
-      candle.high - candle.low,
-      Math.abs(candle.high - previous.close),
-      Math.abs(candle.low - previous.close)
-    ));
-  }
-
-  return average(ranges.slice(-period));
-}
-
-function calculateIndicators(candles) {
-  const closes = candles.map(candle => candle.close);
-  const ema6 = ema(closes, 6);
-  const ema12 = ema(closes, 12);
-  const ema21 = ema(closes, 21);
-  const ema26 = ema(closes, 26);
-  const ema50 = ema(closes, 50);
-
-  return {
-    ema6,
-    ema12,
-    ema21,
-    ema26,
-    ema50,
-    rsi: calculateRSI(closes, 14),
-    macd: ema12 !== null && ema26 !== null
-      ? ema12 - ema26
-      : null,
-    atr: calculateATR(candles, 14)
+for (const pair of PAIRS) {
+  results[pair] = {
+    pair,
+    direction: "STANDBY",
+    stage: "WAITING",
+    score: 0,
+    price: null,
+    message: "Waiting for market data",
+    updatedAt: null,
+    signalId: null,
+    stale: true,
+    dataAgeSeconds: null,
+    indicators: null,
+    reasons: [],
+    early: null,
+    confirmed: null
   };
 }
 
-function analyseCandles(candles) {
-  const indicators = calculateIndicators(candles);
-  const last = candles[candles.length - 1];
-  const previous = candles[candles.length - 2];
+/* ---------- Technical indicators ---------- */
 
-  if (
-    !last ||
-    !previous ||
-    indicators.ema6 === null ||
-    indicators.ema21 === null ||
-    indicators.ema50 === null ||
-    indicators.rsi === null ||
-    indicators.macd === null
-  ) {
-    return {
-      signal: 'STANDBY',
-      score: 0,
-      callScore: 0,
-      putScore: 0,
-      trend: 'กำลังเก็บข้อมูล',
-      reason: 'แท่งเทียนยังไม่เพียงพอ',
-      indicators
-    };
+function average(values) {
+  if (!values.length) return null;
+  return values.reduce((sum, n) => sum + n, 0) / values.length;
+}
+
+function calculateEMA(values, period) {
+  if (values.length < period) return null;
+
+  const k = 2 / (period + 1);
+  let result = average(values.slice(0, period));
+
+  for (let i = period; i < values.length; i++) {
+    result = values[i] * k + result * (1 - k);
   }
 
-  let callScore = 0;
-  let putScore = 0;
-  const reasons = [];
+  return result;
+}
 
-  if (indicators.ema6 > indicators.ema21) {
-    callScore += 24;
-    reasons.push('EMA6 สูงกว่า EMA21');
-  } else if (indicators.ema6 < indicators.ema21) {
-    putScore += 24;
-    reasons.push('EMA6 ต่ำกว่า EMA21');
+function calculateRSI(values, period = 14) {
+  if (values.length < period + 1) return null;
+
+  let gains = 0;
+  let losses = 0;
+
+  for (let i = values.length - period; i < values.length; i++) {
+    const change = values[i] - values[i - 1];
+
+    if (change > 0) gains += change;
+    else losses -= change;
   }
 
-  if (indicators.ema21 > indicators.ema50) {
-    callScore += 22;
-    reasons.push('แนวโน้ม EMA ขาขึ้น');
-  } else if (indicators.ema21 < indicators.ema50) {
-    putScore += 22;
-    reasons.push('แนวโน้ม EMA ขาลง');
-  }
+  if (losses === 0) return 100;
 
-  if (indicators.macd > 0) {
-    callScore += 14;
-    reasons.push('MACD เป็นบวก');
-  } else if (indicators.macd < 0) {
-    putScore += 14;
-    reasons.push('MACD เป็นลบ');
-  }
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  const rs = avgGain / avgLoss;
 
-  if (indicators.rsi >= 52 && indicators.rsi <= 68) {
-    callScore += 18;
-    reasons.push('RSI สนับสนุน CALL');
-  } else if (indicators.rsi >= 32 && indicators.rsi <= 48) {
-    putScore += 18;
-    reasons.push('RSI สนับสนุน PUT');
-  }
+  return 100 - 100 / (1 + rs);
+}
 
-  if (last.close > last.open) {
-    callScore += 12;
-    reasons.push('แท่งล่าสุดปิดบวก');
-  } else if (last.close < last.open) {
-    putScore += 12;
-    reasons.push('แท่งล่าสุดปิดลบ');
-  }
+/* ---------- Twelve Data ---------- */
 
-  if (last.close > previous.close) callScore += 10;
-  if (last.close < previous.close) putScore += 10;
+function parseCandle(item) {
+  const raw = String(item.datetime || "").trim();
 
-  callScore = clamp(Math.round(callScore), 0, 100);
-  putScore = clamp(Math.round(putScore), 0, 100);
+  // We request UTC from Twelve Data.
+  const normalized = raw.includes("T")
+    ? (/[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : raw + "Z")
+    : raw.replace(" ", "T") + "Z";
 
-  let signal = 'STANDBY';
-
-  if (
-    callScore >= MIN_SIGNAL_SCORE &&
-    callScore >= putScore + 12
-  ) {
-    signal = 'CALL';
-  } else if (
-    putScore >= MIN_SIGNAL_SCORE &&
-    putScore >= callScore + 12
-  ) {
-    signal = 'PUT';
-  }
-
-  const trend =
-    indicators.ema21 > indicators.ema50 ? 'ขาขึ้น' :
-    indicators.ema21 < indicators.ema50 ? 'ขาลง' :
-    'ไม่ชัดเจน';
+  const time = Date.parse(normalized);
 
   return {
-    signal,
-    score: Math.max(callScore, putScore),
-    callScore,
-    putScore,
-    trend,
-    reason: reasons.join(' · ') || 'เงื่อนไขยังไม่ชัดเจน',
-    indicators
+    time,
+    datetime: raw,
+    open: Number(item.open),
+    high: Number(item.high),
+    low: Number(item.low),
+    close: Number(item.close)
   };
 }
 
 async function fetchCandles(pair) {
   if (!API_KEY) {
-    throw new Error(
-      'ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY ใน Render Environment'
-    );
+    throw new Error("Set TWELVE_DATA_API_KEY in Render Environment");
   }
 
-  const url = new URL('https://api.twelvedata.com/time_series');
-  url.searchParams.set('symbol', pair);
-  url.searchParams.set('interval', TIMEFRAME);
-  url.searchParams.set('outputsize', '120');
-  url.searchParams.set('timezone', 'UTC');
-  url.searchParams.set('apikey', API_KEY);
+  const url = new URL("https://api.twelvedata.com/time_series");
+  url.searchParams.set("symbol", pair);
+  url.searchParams.set("interval", "1min");
+  url.searchParams.set("outputsize", "100");
+  url.searchParams.set("timezone", "UTC");
+  url.searchParams.set("apikey", API_KEY);
 
   const response = await fetch(url, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(15000)
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(12000)
   });
-
-  if (!response.ok) {
-    throw new Error(`Twelve Data HTTP ${response.status}`);
-  }
 
   const body = await response.json();
 
-  if (body.status === 'error' || !Array.isArray(body.values)) {
-    throw new Error(
-      body.message || 'Twelve Data ไม่ส่งข้อมูลแท่งเทียนกลับมา'
-    );
+  if (!response.ok || body.status === "error" || !Array.isArray(body.values)) {
+    throw new Error(body.message || `Twelve Data HTTP ${response.status}`);
   }
 
-  const candles = body.values.map(item => {
-    const timeText = String(item.datetime || '').replace(' ', 'T');
-    const timestamp = Date.parse(`${timeText}Z`);
+  const candles = body.values
+    .map(parseCandle)
+    .filter(c =>
+      Number.isFinite(c.time) &&
+      Number.isFinite(c.open) &&
+      Number.isFinite(c.close)
+    )
+    .sort((a, b) => a.time - b.time);
 
-    return {
-      time: item.datetime,
-      timestamp,
-      open: Number(item.open),
-      high: Number(item.high),
-      low: Number(item.low),
-      close: Number(item.close)
-    };
-  }).filter(candle =>
-    Number.isFinite(candle.timestamp) &&
-    Number.isFinite(candle.open) &&
-    Number.isFinite(candle.high) &&
-    Number.isFinite(candle.low) &&
-    Number.isFinite(candle.close)
-  ).sort((a, b) => a.timestamp - b.timestamp);
-
-  if (candles.length < 55) {
-    throw new Error(
-      'ข้อมูลยังไม่พอคำนวณ EMA50 กรุณารอหรือเช็กแพ็กเกจ API'
-    );
-  }
+  if (!candles.length) throw new Error("No candle data received");
 
   return candles;
 }
 
-function makeStandby(data, extra = {}) {
+/* ---------- Signal scoring ---------- */
+
+function analyzeCandles(candles, isEarly = false) {
+  if (candles.length < 55) {
+    return {
+      direction: "STANDBY",
+      score: 0,
+      reasons: ["Waiting for at least 55 candles"],
+      indicators: null
+    };
+  }
+
+  const closes = candles.map(c => c.close);
+  const current = candles[candles.length - 1];
+  const previous = candles[candles.length - 2];
+
+  const ema6 = calculateEMA(closes, 6);
+  const ema12 = calculateEMA(closes, 12);
+  const ema21 = calculateEMA(closes, 21);
+  const ema26 = calculateEMA(closes, 26);
+  const ema50 = calculateEMA(closes, 50);
+  const rsi14 = calculateRSI(closes, 14);
+  const macd = ema12 !== null && ema26 !== null ? ema12 - ema26 : null;
+
+  let call = 0;
+  let put = 0;
+  const reasons = [];
+
+  if (ema6 !== null && ema21 !== null) {
+    if (ema6 > ema21) {
+      call += 24;
+      reasons.push("EMA6 above EMA21");
+    } else if (ema6 < ema21) {
+      put += 24;
+      reasons.push("EMA6 below EMA21");
+    }
+  }
+
+  if (ema21 !== null && ema50 !== null) {
+    if (ema21 > ema50) {
+      call += 20;
+      reasons.push("EMA21 above EMA50");
+    } else if (ema21 < ema50) {
+      put += 20;
+      reasons.push("EMA21 below EMA50");
+    }
+  }
+
+  if (macd !== null) {
+    if (macd > 0) {
+      call += 18;
+      reasons.push("MACD positive");
+    } else if (macd < 0) {
+      put += 18;
+      reasons.push("MACD negative");
+    }
+  }
+
+  if (rsi14 !== null) {
+    if (rsi14 >= 50 && rsi14 <= 68) {
+      call += 14;
+      reasons.push("RSI supports upward momentum");
+    } else if (rsi14 < 50 && rsi14 >= 32) {
+      put += 14;
+      reasons.push("RSI supports downward momentum");
+    } else {
+      reasons.push("RSI extreme or neutral; use caution");
+    }
+  }
+
+  if (current.close > current.open) {
+    call += 12;
+    reasons.push(isEarly ? "Forming candle is green" : "Closed candle is green");
+  } else if (current.close < current.open) {
+    put += 12;
+    reasons.push(isEarly ? "Forming candle is red" : "Closed candle is red");
+  }
+
+  if (current.close > previous.close) call += 12;
+  else if (current.close < previous.close) put += 12;
+
+  const score = Math.max(call, put);
+  const margin = Math.abs(call - put);
+
+  let direction = "STANDBY";
+
+  if (score >= MIN_SCORE && margin >= 12) {
+    direction = call > put ? "CALL" : "PUT";
+  }
+
   return {
-    ...data,
-    signal: 'STANDBY',
-    signalId: null,
-    signalCreatedAt: null,
-    ...extra
+    direction,
+    score,
+    callScore: call,
+    putScore: put,
+    reasons,
+    indicators: {
+      ema6: round(ema6),
+      ema21: round(ema21),
+      ema50: round(ema50),
+      rsi14: round(rsi14, 2),
+      macd: round(macd),
+      candleTime: current.datetime,
+      candleOpen: current.open,
+      candleClose: current.close
+    }
   };
 }
 
-async function getStatus(pair) {
-  pair = normalisePair(pair);
+/* ---------- Dual scan ---------- */
 
-  const cached = appCache.get(pair);
+function processCandles(pair, candles) {
   const now = Date.now();
+  const latest = candles[candles.length - 1];
 
-  // จำกัดการเรียก API เพื่อลดการใช้โควตาฟรี
-  if (cached && now - cached.cachedAt < 50000) {
-    const age = cached.data.signalCreatedAt
-      ? now - cached.data.signalCreatedAt
-      : 0;
+  // One 1-minute candle is considered closed when its start time + 60 seconds
+  // is earlier than the current server time. Provider delays can still occur.
+  const closedCandles = candles.filter(c => c.time + 60000 <= now);
+  const closedLast = closedCandles[closedCandles.length - 1];
 
-    if (
-      cached.data.signalId &&
-      age > HOLD_SECONDS * 1000
-    ) {
-      return makeStandby(cached.data);
-    }
+  const age = Math.max(0, Math.floor((now - latest.time) / 1000));
+  const stale = age > MAX_AGE;
 
-    return { ...cached.data };
+  const early = stale
+    ? { direction: "STANDBY", score: 0, reasons: ["Market data is stale"], indicators: null }
+    : analyzeCandles(candles, true);
+
+  const confirmed = closedCandles.length >= 55
+    ? analyzeCandles(closedCandles, false)
+    : { direction: "STANDBY", score: 0, reasons: ["Waiting for closed candles"], indicators: null };
+
+  // Early signal is used only when the newest candle appears to be forming.
+  const latestAppearsOpen = latest.time + 60000 > now;
+
+  let chosen;
+
+  if (!stale && latestAppearsOpen && early.direction !== "STANDBY") {
+    chosen = { ...early, stage: "EARLY" };
+  } else if (!stale && confirmed.direction !== "STANDBY") {
+    chosen = { ...confirmed, stage: "CONFIRMED" };
+  } else {
+    chosen = {
+      direction: "STANDBY",
+      score: Math.max(early.score || 0, confirmed.score || 0),
+      reasons: stale ? ["Market data is stale"] : ["No setup passed the filters"],
+      indicators: early.indicators || confirmed.indicators,
+      stage: "STANDBY"
+    };
   }
 
+  // Use the latest candle timestamp as part of the ID to avoid repeated
+  // notifications for the same pair, candle, direction, and scan stage.
+  const signalId = chosen.direction === "STANDBY"
+    ? null
+    : `${pair}|${latest.time}|${chosen.direction}|${chosen.stage}`;
+
+  const result = {
+    pair,
+    direction: chosen.direction,
+    stage: chosen.stage,
+    score: chosen.score || 0,
+    callScore: chosen.callScore ?? null,
+    putScore: chosen.putScore ?? null,
+    price: latest.close,
+    dataAgeSeconds: age,
+    stale,
+    candleTime: (closedLast || latest).datetime,
+    latestCandleTime: latest.datetime,
+    latestCandleAppearsOpen: latestAppearsOpen,
+    candleClosed: chosen.stage === "CONFIRMED",
+    updatedAt: new Date().toISOString(),
+    signalId,
+    source: "Twelve Data REST; not IQ Option feed",
+    message: stale
+      ? "ข้อมูลราคาเก่า กรุณารอสัญญาณใหม่"
+      : chosen.stage === "EARLY"
+        ? "สัญญาณเบื้องต้นจากแท่งที่กำลังวิ่ง ราคาอาจเปลี่ยนทิศ"
+        : chosen.stage === "CONFIRMED"
+          ? "สัญญาณจากแท่งที่ปิดแล้ว"
+          : "ยังไม่มีสัญญาณที่ผ่านเงื่อนไข",
+    reasons: chosen.reasons || [],
+    indicators: chosen.indicators,
+    early: {
+      direction: early.direction,
+      score: early.score,
+      reasons: early.reasons
+    },
+    confirmed: {
+      direction: confirmed.direction,
+      score: confirmed.score,
+      reasons: confirmed.reasons
+    }
+  };
+
+  const previous = results[pair];
+
+  if (signalId && (!previous || previous.signalId !== signalId)) {
+    history.unshift({
+      id: signalId,
+      pair,
+      direction: result.direction,
+      stage: result.stage,
+      score: result.score,
+      price: result.price,
+      candleTime: result.candleTime,
+      createdAt: result.updatedAt
+    });
+    history.splice(250);
+  }
+
+  results[pair] = result;
+  return result;
+}
+
+/* ---------- Polling ---------- */
+
+async function pollPair(pair) {
   try {
     const candles = await fetchCandles(pair);
-    const newest = candles[candles.length - 1];
-
-    // หากแท่งล่าสุดยังอยู่ในนาทีปัจจุบัน ให้ใช้แท่งก่อนหน้า
-    // เพื่อวิเคราะห์แท่งที่ปิดแล้ว ไม่ใช้แท่งที่ยังแกว่งอยู่
-    const candle = Date.now() - newest.timestamp < 60000
-      ? candles[candles.length - 2]
-      : newest;
-
-    const candleIndex = candles.findIndex(
-      item => item.time === candle.time
-    );
-    const closedCandles = candles.slice(0, candleIndex + 1);
-    const candleKey = `${pair}:${candle.time}`;
-    const dataAgeSeconds = Math.max(
-      0,
-      Math.floor((Date.now() - candle.timestamp) / 1000)
-    );
-    const stale = dataAgeSeconds > MAX_DATA_AGE_SECONDS;
-    const analysis = analyseCandles(closedCandles);
-
-    let activeSignal = null;
-
-    if (lastCandleByPair.get(pair) !== candleKey) {
-      lastCandleByPair.set(pair, candleKey);
-
-      if (
-        !stale &&
-        ['CALL', 'PUT'].includes(analysis.signal)
-      ) {
-        activeSignal = {
-          id: `${candleKey}:${analysis.signal}`,
-          pair,
-          signal: analysis.signal,
-          score: analysis.score,
-          callScore: analysis.callScore,
-          putScore: analysis.putScore,
-          candleTime: candle.time,
-          createdAt: Date.now(),
-          price: candle.close,
-          trend: analysis.trend,
-          reason: analysis.reason
-        };
-
-        latestSignalByPair.set(pair, activeSignal);
-        history.unshift(activeSignal);
-
-        if (history.length > 500) history.length = 500;
-      }
-    }
-
-    const lastSignal = latestSignalByPair.get(pair);
-    const signalStillActive = lastSignal &&
-      lastSignal.candleTime === candle.time &&
-      Date.now() - lastSignal.createdAt <= HOLD_SECONDS * 1000;
-
-    let signal = stale ? 'STANDBY' : analysis.signal;
-    let signalId = null;
-    let signalCreatedAt = null;
-
-    if (signalStillActive && !stale) {
-      signal = lastSignal.signal;
-      signalId = lastSignal.id;
-      signalCreatedAt = lastSignal.createdAt;
-    } else if (stale) {
-      signal = 'STANDBY';
-    } else if (
-      lastSignal &&
-      Date.now() - lastSignal.createdAt > HOLD_SECONDS * 1000
-    ) {
-      signal = 'STANDBY';
-    }
-
-    const result = {
-      ok: true,
-      pair,
-      timeframe: TIMEFRAME,
-      source: 'Twelve Data',
-      mode: 'Non-OTC reference data',
-      signal,
-      signalId,
-      signalCreatedAt,
-      holdSeconds: HOLD_SECONDS,
-      score: analysis.score,
-      callScore: analysis.callScore,
-      putScore: analysis.putScore,
-      rsi: analysis.indicators.rsi,
-      trend: analysis.trend,
-      reason: analysis.reason,
-      dataAgeSeconds,
-      latestCandleTime: candle.timestamp,
-      candleTime: candle.time,
-      price: candle.close,
-      currentPrice: candle.close,
-      stale,
-      indicators: analysis.indicators,
-      fetchedAt: Date.now()
-    };
-
-    appCache.set(pair, { data: result, cachedAt: Date.now() });
-    return result;
+    processCandles(pair, candles);
+    lastError = null;
   } catch (error) {
-    if (cached) {
-      return makeStandby(cached.data, {
-        ok: false,
-        stale: true,
-        error: error.message
-      });
-    }
-    throw error;
+    lastError = `${pair}: ${error.message}`;
+
+    results[pair] = {
+      ...results[pair],
+      direction: "STANDBY",
+      stage: "STANDBY",
+      signalId: null,
+      stale: true,
+      message: error.message,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  lastPollAt = new Date().toISOString();
+}
+
+async function pollCycle() {
+  if (polling || PAIRS.length === 0) return;
+
+  polling = true;
+
+  try {
+    // Rotate one pair per cycle to reduce API quota use.
+    const pair = PAIRS[pairIndex % PAIRS.length];
+    pairIndex = (pairIndex + 1) % PAIRS.length;
+    await pollPair(pair);
+  } finally {
+    polling = false;
   }
 }
 
-app.get('/api/health', (_req, res) => {
-  res.json({
-    ok: true,
-    service: 'AI Signal Radar',
-    apiKeyConfigured: Boolean(API_KEY),
-    timeframe: TIMEFRAME
-  });
-});
+/* ---------- API endpoints ---------- */
 
-app.get('/api/config', (_req, res) => {
-  res.json({
-    timeframe: TIMEFRAME,
-    pairs: PAIRS,
-    minSignalScore: MIN_SIGNAL_SCORE,
-    maxDataAgeSeconds: MAX_DATA_AGE_SECONDS,
-    holdSeconds: HOLD_SECONDS,
-    warningSeconds: WARNING_SECONDS,
-    source: 'Twelve Data',
-    mode: 'Non-OTC reference data'
-  });
-});
-
-app.get('/api/status', async (req, res) => {
-  try {
-    res.json(await getStatus(req.query.pair));
-  } catch (error) {
-    res.status(502).json({
-      ok: false,
-      signal: 'STANDBY',
-      stale: true,
-      error: error.message
-    });
-  }
-});
-
-app.get('/api/scan', async (_req, res) => {
-  const results = [];
-
-  // อ่านทีละคู่ เพื่อลดการกระหน่ำเรียก API พร้อมกัน
-  for (const pair of PAIRS) {
-    try {
-      results.push(await getStatus(pair));
-    } catch (error) {
-      results.push({
-        ok: false,
-        pair,
-        signal: 'STANDBY',
-        stale: true,
-        error: error.message
-      });
-    }
-  }
-
-  res.json({ ok: true, results, fetchedAt: Date.now() });
-});
-
-app.get('/api/history', (_req, res) => {
-  res.json({ ok: true, history: history.slice(0, 100) });
-});
-
-app.get('/api/history/stats', (_req, res) => {
-  const wins = manualRecords.filter(r => r.outcome === 'WIN').length;
-  const losses = manualRecords.filter(r => r.outcome === 'LOSS').length;
-
-  res.json({
-    ok: true,
-    recorded: manualRecords.length,
-    wins,
-    losses,
-    note: 'เป็นบันทึกผลที่ผู้ใช้กรอกเอง ไม่ใช่ผลทดสอบย้อนหลังอัตโนมัติ'
-  });
-});
-
-app.get('/api/diagnostics', (_req, res) => {
+app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     apiKeyConfigured: Boolean(API_KEY),
     pairs: PAIRS,
-    timeframe: TIMEFRAME,
-    cachedPairs: [...appCache.keys()],
-    minSignalScore: MIN_SIGNAL_SCORE,
-    maxDataAgeSeconds: MAX_DATA_AGE_SECONDS
+    minScore: MIN_SCORE,
+    pollIntervalMs: POLL_MS,
+    maxDataAgeSeconds: MAX_AGE,
+    lastPollAt,
+    lastError
   });
 });
 
-app.post('/api/record', (req, res) => {
-  const { signalId, outcome, note } = req.body || {};
-  const validOutcomes = ['WIN', 'LOSS', 'SKIP'];
+app.get("/api/config", (req, res) => {
+  res.json({
+    pairs: PAIRS,
+    pollIntervalMs: POLL_MS,
+    minScore: MIN_SCORE,
+    source: "Twelve Data REST"
+  });
+});
 
-  if (!signalId || !validOutcomes.includes(String(outcome).toUpperCase())) {
+app.get("/api/status", (req, res) => {
+  const pair = String(req.query.pair || PAIRS[0] || "");
+
+  if (!results[pair]) {
     return res.status(400).json({
-      ok: false,
-      error: 'ต้องส่ง signalId และ outcome เป็น WIN, LOSS หรือ SKIP'
+      error: "Unsupported pair",
+      pairs: PAIRS
     });
   }
 
-  const record = {
-    signalId: String(signalId),
-    outcome: String(outcome).toUpperCase(),
-    note: String(note || '').slice(0, 300),
-    recordedAt: Date.now()
-  };
-
-  manualRecords.unshift(record);
-  if (manualRecords.length > 500) manualRecords.length = 500;
-
-  res.json({ ok: true, record });
+  res.json(results[pair]);
 });
 
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+app.get("/api/radar", (req, res) => {
+  res.json({
+    results: PAIRS.map(pair => results[pair]),
+    lastPollAt,
+    lastError,
+    polling
+  });
+});
+
+app.get("/api/scan", async (req, res) => {
+  await pollCycle();
+
+  res.json({
+    ok: true,
+    results: PAIRS.map(pair => results[pair]),
+    lastPollAt,
+    lastError
+  });
+});
+
+app.get("/api/history", (req, res) => {
+  res.json(history);
+});
+
+app.get("/api/diagnostics", (req, res) => {
+  res.json({
+    now: new Date().toISOString(),
+    apiKeyConfigured: Boolean(API_KEY),
+    pairs: PAIRS,
+    lastPollAt,
+    lastError,
+    results
+  });
+});
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 app.listen(PORT, () => {
-  console.log(`AI Signal Radar started on port ${PORT}`);
-  console.log(`Pairs: ${PAIRS.join(', ')}`);
+  console.log(`AI Signal Radar listening on port ${PORT}`);
+  console.log(`Pairs: ${PAIRS.join(", ")}`);
+  console.log(`Twelve Data key configured: ${Boolean(API_KEY)}`);
 
-  if (!API_KEY) {
-    console.warn('TWELVE_DATA_API_KEY is not configured.');
-  }
+  pollCycle().catch(error => console.error(error.message));
+  setInterval(() => {
+    pollCycle().catch(error => console.error(error.message));
+  }, POLL_MS);
 });
