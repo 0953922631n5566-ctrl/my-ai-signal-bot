@@ -1,17 +1,17 @@
+
 {
-  "name": "ai-signal-radar-backtest",
+  "name": "ai-signal-radar",
   "version": "1.0.0",
   "private": true,
-  "description": "Twelve Data reference-market signal dashboard with historical backtest",
+  "description": "Forex M1 analysis Telegram Mini App",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "ws": "^8.18.0"
+    "express": "^4.21.2"
   }
 }
