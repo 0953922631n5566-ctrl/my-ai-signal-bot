@@ -3,8 +3,9 @@
 <html lang="th">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#090d17">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#080d18">
   <title>AI Signal Radar</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -12,114 +13,108 @@
 <body>
   <main class="app-shell">
     <header class="topbar">
-      <div class="brand-mark">AI<span>•</span></div>
-      <div class="brand-copy">
-        <strong>SIGNAL RADAR</strong>
-        <small>FOREX · 1 MINUTE</small>
+      <div class="brand">
+        <div class="brand-icon">AI</div>
+        <div>
+          <h1>AI SIGNAL RADAR</h1>
+          <p>FOREX · NON-OTC · M1</p>
+        </div>
       </div>
-      <div id="connection" class="connection">
-        <i></i><span>กำลังเชื่อมต่อ</span>
+      <div class="connection">
+        <span id="connectionDot" class="dot"></span>
+        <span id="connectionText">กำลังเชื่อมต่อ</span>
       </div>
     </header>
 
-    <section class="pair-row">
-      <label for="symbol">คู่เงิน</label>
-      <select id="symbol" aria-label="เลือกคู่เงิน">
-        <option>EUR/USD</option>
-        <option>GBP/USD</option>
-        <option>USD/JPY</option>
-        <option>AUD/USD</option>
-        <option>USD/CAD</option>
-        <option>NZD/USD</option>
-        <option>USD/CHF</option>
-        <option>EUR/JPY</option>
-        <option>GBP/JPY</option>
-        <option>EUR/GBP</option>
-        <option>EUR/CHF</option>
-        <option>AUD/JPY</option>
+    <section class="status-strip">
+      <div>
+        <span class="eyebrow">DATA STATUS</span>
+        <strong id="dataStatus">CHECKING</strong>
+      </div>
+      <div class="right">
+        <span class="eyebrow">API CALLS TODAY</span>
+        <strong id="quotaText">-- / --</strong>
+      </div>
+    </section>
+
+    <section class="market-row">
+      <label for="pairSelect">คู่เงิน</label>
+      <select id="pairSelect">
+        <option value="EURUSD">EUR/USD</option>
+        <option value="GBPUSD">GBP/USD</option>
+        <option value="USDJPY">USD/JPY</option>
+        <option value="AUDUSD">AUD/USD</option>
+        <option value="USDCAD">USD/CAD</option>
       </select>
-      <div class="tf-chip">M1</div>
+      <button id="refreshButton" class="small-button">สแกนใหม่</button>
     </section>
 
-    <section class="hero-panel">
-      <div class="hero-top">
-        <span>AI MARKET SIGNAL</span>
-        <span id="sourceLabel">TWELVE DATA</span>
-      </div>
+    <section id="alertBox" class="alert-box hidden" role="status">
+      <strong id="alertTitle">แจ้งเตือน</strong>
+      <span id="alertMessage"></span>
+    </section>
 
-      <div id="signalLight" class="signal-light standby">
-        <span id="signalWord">STANDBY</span>
+    <section class="price-card">
+      <div class="card-top">
+        <span class="eyebrow">LAST MARKET PRICE</span>
+        <span class="pill">1 MIN</span>
       </div>
-
-      <div id="signalSub" class="signal-sub">
-        รอข้อมูลตลาดและเงื่อนไขที่เหมาะสม
+      <div id="priceValue" class="price-value">--</div>
+      <div class="price-meta">
+        <span>แท่งปิดล่าสุด</span>
+        <strong id="candleTime">--</strong>
       </div>
-
-      <div class="price-row">
-        <span id="price">—</span>
-        <span class="muted">ราคาอ้างอิง</span>
+      <div class="price-meta">
+        <span>อายุข้อมูล</span>
+        <strong id="dataAge">--</strong>
       </div>
+    </section>
 
-      <div class="countdown-wrap">
-        <div>
-          <small>เวลาที่เหลือในนาทีนี้</small>
-          <strong id="countdown">00:--</strong>
+    <section id="signalCard" class="signal-card standby">
+      <div class="signal-heading">
+        <span class="eyebrow">AI SIGNAL</span>
+        <span id="signalScore" class="score-pill">Score --</span>
+      </div>
+      <div class="signal-center">
+        <div id="signalLight" class="signal-light">
+          <span id="signalArrow">●</span>
         </div>
-        <div class="score-box">
-          <small>คะแนนสัญญาณ</small>
-          <strong id="score">—</strong>
-        </div>
+        <h2 id="signalText">STANDBY</h2>
+        <p id="signalReason">รอข้อมูลตลาดที่ตรวจสอบแล้ว</p>
       </div>
+      <div class="countdown-row">
+        <span>นับถอยหลังแท่ง 1 นาที</span>
+        <strong id="countdown">01:00</strong>
+      </div>
+      <p class="disclaimer">
+        สัญญาณเป็นเพียงการวิเคราะห์ทางเทคนิค ไม่ใช่การรับประกันผลกำไร
+      </p>
+    </section>
 
-      <div class="progress-track">
-        <div id="minuteProgress" class="progress-fill"></div>
+    <section class="indicators">
+      <div class="indicator">
+        <span>RSI (14)</span>
+        <strong id="rsiValue">--</strong>
+      </div>
+      <div class="indicator">
+        <span>MACD</span>
+        <strong id="macdValue">--</strong>
+      </div>
+      <div class="indicator">
+        <span>EMA TREND</span>
+        <strong id="trendValue">--</strong>
       </div>
     </section>
 
-    <section class="metric-grid">
-      <div class="metric">
-        <small>RSI (14)</small>
-        <strong id="rsi">—</strong>
-        <em id="rsiState">รอข้อมูล</em>
-      </div>
-      <div class="metric">
-        <small>MACD</small>
-        <strong id="macd">—</strong>
-        <em id="macdState">รอข้อมูล</em>
-      </div>
-      <div class="metric">
-        <small>แนวโน้ม EMA</small>
-        <strong id="trend">—</strong>
-        <em id="trendState">รอข้อมูล</em>
-      </div>
+    <section class="control-row">
+      <button id="soundButton" class="secondary-button">เปิดเสียง</button>
+      <button id="scanButton" class="primary-button">เริ่มสแกน</button>
     </section>
 
-    <section class="bottom-panel">
-      <div class="section-head">
-        <strong>RADAR STATUS</strong>
-        <span id="updatedAt">ยังไม่มีข้อมูล</span>
-      </div>
-
-      <div id="reasonList" class="reason-list">
-        <div class="reason-item">กำลังรอข้อมูลแท่งเทียนที่ปิดสมบูรณ์</div>
-      </div>
-
-      <div class="quota-row">
-        <span>โควตาเรียก API วันนี้</span>
-        <strong id="quota">—</strong>
-      </div>
-
-      <div class="button-row">
-        <button id="soundBtn" class="secondary">เปิดเสียงเตือน</button>
-        <button id="scanBtn" class="primary">สแกนใหม่</button>
-      </div>
-
-      <div class="fine-print">
-        ใช้เพื่อประกอบการตัดสินใจ · ไม่มีการส่งคำสั่งซื้อขายอัตโนมัติ
-      </div>
-    </section>
-
-    <div id="toast" class="toast" role="status"></div>
+    <footer>
+      <span id="updatedAt">ยังไม่มีข้อมูลอัปเดต</span>
+      <span>NO AUTO-TRADING</span>
+    </footer>
   </main>
 
   <script src="/app.js"></script>
