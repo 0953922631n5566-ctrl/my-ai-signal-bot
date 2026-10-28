@@ -11,12 +11,18 @@ const API_KEY = (process.env.TWELVE_DATA_API_KEY || "").trim();
 
 const PAIRS = (process.env.FOREX_PAIRS || "EUR/USD,GBP/USD,USD/JPY")
   .split(",")
-  .map(x => x.trim())
+  .map(p => p.trim())
   .filter(Boolean);
 
-const MIN_SCORE = clamp(Number(process.env.MIN_SIGNAL_SCORE || 68), 40, 95);
-const POLL_MS = clamp(Number(process.env.POLL_INTERVAL_MS || 25000), 15000, 120000);
-const MAX_AGE = clamp(Number(process.env.MAX_DATA_AGE_SECONDS || 180), 30, 600);
+const MIN_SCORE = clamp(
+  Number(process.env.MIN_SIGNAL_SCORE || 68), 40, 95
+);
+const POLL_MS = clamp(
+  Number(process.env.POLL_INTERVAL_MS || 15000), 15000, 120000
+);
+const MAX_AGE = clamp(
+  Number(process.env.MAX_DATA_AGE_SECONDS || 180), 30, 600
+);
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -28,6 +34,8 @@ function round(n, digits = 6) {
 
 const results = {};
 const history = [];
+const pairLocks = new Set();
+
 let pairIndex = 0;
 let polling = false;
 let lastPollAt = null;
@@ -40,11 +48,13 @@ for (const pair of PAIRS) {
     stage: "WAITING",
     score: 0,
     price: null,
-    message: "Waiting for market data",
+    message: "กำลังรอข้อมูลตลาด",
     updatedAt: null,
+    lastFetchAt: null,
     signalId: null,
     stale: true,
     dataAgeSeconds: null,
+    candleAgeSeconds: null,
     indicators: null,
     reasons: [],
     early: null,
@@ -52,24 +62,24 @@ for (const pair of PAIRS) {
   };
 }
 
-/* ---------- Technical indicators ---------- */
+/* ---------- Indicators ---------- */
 
 function average(values) {
   if (!values.length) return null;
-  return values.reduce((sum, n) => sum + n, 0) / values.length;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function calculateEMA(values, period) {
   if (values.length < period) return null;
 
   const k = 2 / (period + 1);
-  let result = average(values.slice(0, period));
+  let ema = average(values.slice(0, period));
 
   for (let i = period; i < values.length; i++) {
-    result = values[i] * k + result * (1 - k);
+    ema = values[i] * k + ema * (1 - k);
   }
 
-  return result;
+  return ema;
 }
 
 function calculateRSI(values, period = 14) {
@@ -85,21 +95,20 @@ function calculateRSI(values, period = 14) {
     else losses -= change;
   }
 
+  if (losses === 0 && gains === 0) return 50;
   if (losses === 0) return 100;
+  if (gains === 0) return 0;
 
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  const rs = avgGain / avgLoss;
-
+  const rs = (gains / period) / (losses / period);
   return 100 - 100 / (1 + rs);
 }
 
-/* ---------- Twelve Data ---------- */
+/* ---------- Twelve Data REST ---------- */
 
 function parseCandle(item) {
   const raw = String(item.datetime || "").trim();
 
-  // We request UTC from Twelve Data.
+  // Twelve Data is requested in UTC.
   const normalized = raw.includes("T")
     ? (/[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : raw + "Z")
     : raw.replace(" ", "T") + "Z";
@@ -118,7 +127,7 @@ function parseCandle(item) {
 
 async function fetchCandles(pair) {
   if (!API_KEY) {
-    throw new Error("Set TWELVE_DATA_API_KEY in Render Environment");
+    throw new Error("ยังไม่ได้ตั้ง TWELVE_DATA_API_KEY ใน Render");
   }
 
   const url = new URL("https://api.twelvedata.com/time_series");
@@ -135,8 +144,11 @@ async function fetchCandles(pair) {
 
   const body = await response.json();
 
-  if (!response.ok || body.status === "error" || !Array.isArray(body.values)) {
-    throw new Error(body.message || `Twelve Data HTTP ${response.status}`);
+  if (!response.ok || body.status === "error" ||
+      !Array.isArray(body.values)) {
+    throw new Error(
+      body.message || `Twelve Data HTTP ${response.status}`
+    );
   }
 
   const candles = body.values
@@ -144,23 +156,29 @@ async function fetchCandles(pair) {
     .filter(c =>
       Number.isFinite(c.time) &&
       Number.isFinite(c.open) &&
+      Number.isFinite(c.high) &&
+      Number.isFinite(c.low) &&
       Number.isFinite(c.close)
     )
     .sort((a, b) => a.time - b.time);
 
-  if (!candles.length) throw new Error("No candle data received");
+  if (!candles.length) {
+    throw new Error("ไม่ได้รับข้อมูลแท่งเทียน");
+  }
 
   return candles;
 }
 
-/* ---------- Signal scoring ---------- */
+/* ---------- Signal analysis ---------- */
 
-function analyzeCandles(candles, isEarly = false) {
+function analyzeCandles(candles, label = "CLOSED") {
   if (candles.length < 55) {
     return {
       direction: "STANDBY",
       score: 0,
-      reasons: ["Waiting for at least 55 candles"],
+      callScore: 0,
+      putScore: 0,
+      reasons: ["ต้องการข้อมูลอย่างน้อย 55 แท่ง"],
       indicators: null
     };
   }
@@ -175,7 +193,9 @@ function analyzeCandles(candles, isEarly = false) {
   const ema26 = calculateEMA(closes, 26);
   const ema50 = calculateEMA(closes, 50);
   const rsi14 = calculateRSI(closes, 14);
-  const macd = ema12 !== null && ema26 !== null ? ema12 - ema26 : null;
+  const macd = ema12 !== null && ema26 !== null
+    ? ema12 - ema26
+    : null;
 
   let call = 0;
   let put = 0;
@@ -225,10 +245,14 @@ function analyzeCandles(candles, isEarly = false) {
 
   if (current.close > current.open) {
     call += 12;
-    reasons.push(isEarly ? "Forming candle is green" : "Closed candle is green");
+    reasons.push(
+      label === "EARLY" ? "Forming candle is green" : "Closed candle is green"
+    );
   } else if (current.close < current.open) {
     put += 12;
-    reasons.push(isEarly ? "Forming candle is red" : "Closed candle is red");
+    reasons.push(
+      label === "EARLY" ? "Forming candle is red" : "Closed candle is red"
+    );
   }
 
   if (current.close > previous.close) call += 12;
@@ -262,49 +286,75 @@ function analyzeCandles(candles, isEarly = false) {
   };
 }
 
-/* ---------- Dual scan ---------- */
+/* ---------- Closed candle / early scan ---------- */
 
-function processCandles(pair, candles) {
+function processCandles(pair, candles, fetchedAt) {
   const now = Date.now();
   const latest = candles[candles.length - 1];
 
-  // One 1-minute candle is considered closed when its start time + 60 seconds
-  // is earlier than the current server time. Provider delays can still occur.
+  // Candle age is measured from the candle's closing time.
+  const candleCloseTime = latest.time + 60000;
+  const candleAgeSeconds = Math.max(
+    0, Math.floor((now - candleCloseTime) / 1000)
+  );
+
+  // This is the age of our local receipt, NOT the provider's true feed delay.
+  const dataAgeSeconds = Math.max(
+    0, Math.floor((now - fetchedAt) / 1000)
+  );
+
+  const stale = candleAgeSeconds > MAX_AGE;
+  const latestAppearsOpen = latest.time <= now && now < candleCloseTime;
+
   const closedCandles = candles.filter(c => c.time + 60000 <= now);
-  const closedLast = closedCandles[closedCandles.length - 1];
 
-  const age = Math.max(0, Math.floor((now - latest.time) / 1000));
-  const stale = age > MAX_AGE;
-
-  const early = stale
-    ? { direction: "STANDBY", score: 0, reasons: ["Market data is stale"], indicators: null }
-    : analyzeCandles(candles, true);
+  const early = !stale && latestAppearsOpen
+    ? analyzeCandles(candles, "EARLY")
+    : {
+        direction: "STANDBY",
+        score: 0,
+        reasons: [
+          stale
+            ? "แท่งเทียนเก่าเกินเกณฑ์"
+            : "ผู้ให้บริการยังไม่ส่งแท่งที่กำลังก่อตัว"
+        ],
+        indicators: null
+      };
 
   const confirmed = closedCandles.length >= 55
-    ? analyzeCandles(closedCandles, false)
-    : { direction: "STANDBY", score: 0, reasons: ["Waiting for closed candles"], indicators: null };
-
-  // Early signal is used only when the newest candle appears to be forming.
-  const latestAppearsOpen = latest.time + 60000 > now;
+    ? analyzeCandles(closedCandles, "CLOSED")
+    : {
+        direction: "STANDBY",
+        score: 0,
+        reasons: ["กำลังรอแท่งเทียนที่ปิดแล้วให้เพียงพอ"],
+        indicators: null
+      };
 
   let chosen;
 
-  if (!stale && latestAppearsOpen && early.direction !== "STANDBY") {
+  if (stale) {
+    chosen = {
+      direction: "STANDBY",
+      stage: "STANDBY",
+      score: 0,
+      reasons: ["ข้อมูลแท่งเทียนเก่าเกินเกณฑ์"],
+      indicators: confirmed.indicators || null
+    };
+  } else if (latestAppearsOpen && early.direction !== "STANDBY") {
     chosen = { ...early, stage: "EARLY" };
-  } else if (!stale && confirmed.direction !== "STANDBY") {
+  } else if (confirmed.direction !== "STANDBY") {
     chosen = { ...confirmed, stage: "CONFIRMED" };
   } else {
     chosen = {
       direction: "STANDBY",
+      stage: "STANDBY",
       score: Math.max(early.score || 0, confirmed.score || 0),
-      reasons: stale ? ["Market data is stale"] : ["No setup passed the filters"],
-      indicators: early.indicators || confirmed.indicators,
-      stage: "STANDBY"
+      reasons: ["ยังไม่มีสัญญาณที่ผ่านเงื่อนไข"],
+      indicators: confirmed.indicators || early.indicators || null
     };
   }
 
-  // Use the latest candle timestamp as part of the ID to avoid repeated
-  // notifications for the same pair, candle, direction, and scan stage.
+  // Only alert once per pair, candle, direction and stage.
   const signalId = chosen.direction === "STANDBY"
     ? null
     : `${pair}|${latest.time}|${chosen.direction}|${chosen.stage}`;
@@ -317,24 +367,26 @@ function processCandles(pair, candles) {
     callScore: chosen.callScore ?? null,
     putScore: chosen.putScore ?? null,
     price: latest.close,
-    dataAgeSeconds: age,
+    dataAgeSeconds,
+    candleAgeSeconds,
     stale,
-    candleTime: (closedLast || latest).datetime,
+    candleTime: latest.datetime,
     latestCandleTime: latest.datetime,
     latestCandleAppearsOpen: latestAppearsOpen,
     candleClosed: chosen.stage === "CONFIRMED",
     updatedAt: new Date().toISOString(),
+    lastFetchAt: new Date(fetchedAt).toISOString(),
     signalId,
     source: "Twelve Data REST; not IQ Option feed",
     message: stale
-      ? "ข้อมูลราคาเก่า กรุณารอสัญญาณใหม่"
+      ? "ข้อมูลแท่งเทียนเก่า กรุณารอข้อมูลใหม่"
       : chosen.stage === "EARLY"
-        ? "สัญญาณเบื้องต้นจากแท่งที่กำลังวิ่ง ราคาอาจเปลี่ยนทิศ"
+        ? "สัญญาณเบื้องต้น ราคาอาจเปลี่ยนทิศได้"
         : chosen.stage === "CONFIRMED"
           ? "สัญญาณจากแท่งที่ปิดแล้ว"
           : "ยังไม่มีสัญญาณที่ผ่านเงื่อนไข",
     reasons: chosen.reasons || [],
-    indicators: chosen.indicators,
+    indicators: chosen.indicators || null,
     early: {
       direction: early.direction,
       score: early.score,
@@ -349,7 +401,7 @@ function processCandles(pair, candles) {
 
   const previous = results[pair];
 
-  if (signalId && (!previous || previous.signalId !== signalId)) {
+  if (signalId && previous.signalId !== signalId) {
     history.unshift({
       id: signalId,
       pair,
@@ -367,12 +419,23 @@ function processCandles(pair, candles) {
   return result;
 }
 
-/* ---------- Polling ---------- */
+/* ---------- Polling with per-pair lock ---------- */
 
 async function pollPair(pair) {
+  if (!PAIRS.includes(pair)) {
+    throw new Error("Unsupported pair");
+  }
+
+  if (pairLocks.has(pair)) {
+    return results[pair];
+  }
+
+  pairLocks.add(pair);
+  const fetchedAt = Date.now();
+
   try {
     const candles = await fetchCandles(pair);
-    processCandles(pair, candles);
+    processCandles(pair, candles, fetchedAt);
     lastError = null;
   } catch (error) {
     lastError = `${pair}: ${error.message}`;
@@ -384,11 +447,15 @@ async function pollPair(pair) {
       signalId: null,
       stale: true,
       message: error.message,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      lastFetchAt: new Date(fetchedAt).toISOString()
     };
+  } finally {
+    pairLocks.delete(pair);
+    lastPollAt = new Date().toISOString();
   }
 
-  lastPollAt = new Date().toISOString();
+  return results[pair];
 }
 
 async function pollCycle() {
@@ -397,7 +464,6 @@ async function pollCycle() {
   polling = true;
 
   try {
-    // Rotate one pair per cycle to reduce API quota use.
     const pair = PAIRS[pairIndex % PAIRS.length];
     pairIndex = (pairIndex + 1) % PAIRS.length;
     await pollPair(pair);
@@ -417,7 +483,9 @@ app.get("/api/health", (req, res) => {
     pollIntervalMs: POLL_MS,
     maxDataAgeSeconds: MAX_AGE,
     lastPollAt,
-    lastError
+    lastError,
+    polling,
+    lockedPairs: [...pairLocks]
   });
 });
 
@@ -426,7 +494,8 @@ app.get("/api/config", (req, res) => {
     pairs: PAIRS,
     pollIntervalMs: POLL_MS,
     minScore: MIN_SCORE,
-    source: "Twelve Data REST"
+    source: "Twelve Data REST",
+    timeframe: "1min"
   });
 });
 
@@ -452,11 +521,35 @@ app.get("/api/radar", (req, res) => {
   });
 });
 
+// /api/scan?pair=EUR%2FUSD scans the selected pair.
+// /api/scan without pair scans the next pair in rotation.
 app.get("/api/scan", async (req, res) => {
+  const requestedPair = String(req.query.pair || "");
+
+  if (requestedPair && !PAIRS.includes(requestedPair)) {
+    return res.status(400).json({
+      ok: false,
+      error: "Unsupported pair",
+      pairs: PAIRS
+    });
+  }
+
+  if (requestedPair) {
+    const result = await pollPair(requestedPair);
+    return res.json({
+      ok: true,
+      scannedPair: requestedPair,
+      result,
+      lastPollAt,
+      lastError
+    });
+  }
+
   await pollCycle();
 
   res.json({
     ok: true,
+    scannedPair: null,
     results: PAIRS.map(pair => results[pair]),
     lastPollAt,
     lastError
@@ -468,12 +561,15 @@ app.get("/api/history", (req, res) => {
 });
 
 app.get("/api/diagnostics", (req, res) => {
+  const now = Date.now();
+
   res.json({
-    now: new Date().toISOString(),
+    now: new Date(now).toISOString(),
     apiKeyConfigured: Boolean(API_KEY),
     pairs: PAIRS,
     lastPollAt,
     lastError,
+    polling,
     results
   });
 });
@@ -486,8 +582,10 @@ app.listen(PORT, () => {
   console.log(`AI Signal Radar listening on port ${PORT}`);
   console.log(`Pairs: ${PAIRS.join(", ")}`);
   console.log(`Twelve Data key configured: ${Boolean(API_KEY)}`);
+  console.log(`Poll interval: ${POLL_MS}ms`);
 
   pollCycle().catch(error => console.error(error.message));
+
   setInterval(() => {
     pollCycle().catch(error => console.error(error.message));
   }, POLL_MS);
