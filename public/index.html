@@ -22,22 +22,21 @@ main{max-width:520px;width:100%;margin:auto;display:flex;flex-direction:column;g
 .dot.bad{background:var(--red);box-shadow:0 0 12px var(--red)}
 
 .banner{display:none;border:1px solid #783d48;background:#351c2b;color:#ffd8de;padding:6px 10px;border-radius:8px;font-size:11px;text-align:center;font-weight:700}
-.banner.show{display:block;animation:pulseBad 1s infinite alternate}
-@keyframes pulseBad{from{opacity:.8}to{opacity:1}}
+.banner.show{display:block}
 
-/* ปุ่มแจ้งเตือนคู่เงินอื่นที่เข้าเกณฑ์ (Click-to-Switch) */
+/* ป้ายแจ้งเตือนเฉพาะคู่ที่เปอร์เซ็นต์สูงสุดตัวเดียว */
 .signal-alert-banner {
   display: none;
-  background: linear-gradient(90deg, #1d3557, #457b9d);
-  border: 1px solid var(--cyan);
-  color: #fff;
+  background: linear-gradient(90deg, #1d3557, #12d6a0);
+  border: 1px solid var(--green);
+  color: #04131c;
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   text-align: center;
   cursor: pointer;
-  box-shadow: 0 0 15px rgba(72, 200, 255, 0.4);
+  box-shadow: 0 0 15px rgba(18, 214, 160, 0.4);
   animation: alertPulse 0.8s infinite alternate;
 }
 .signal-alert-banner.show { display: block; }
@@ -84,9 +83,9 @@ button:disabled{opacity:.55}
 
 <div id="lostBanner" class="banner">🚨 การเชื่อมต่อขาดหาย / API ขัดข้อง — สัญญาณอาจไม่เป็นปัจจุบัน</div>
 
-<!-- ป้ายแจ้งเตือนคลิกเพื่อสลับคู่เงินอื่น -->
+<!-- ป้ายแจ้งเตือนเฉพาะคู่ที่เปอร์เซ็นต์สูงสุดตัวเดียว -->
 <div id="signalAlertBanner" class="signal-alert-banner" onclick="switchToAlertedPair()">
-  🚨 พบสัญญาณ <span id="alertPairName">GBP/USD</span> (<span id="alertPairSignal">CALL</span>) — คลิกเพื่อสลับหน้าจอทันที!
+  🔥 แนะนำที่สุด: <span id="alertPairName">GBP/USD</span> (<span id="alertPairSignal">CALL</span>) - <span id="alertPairScore">0</span>% — คลิกเพื่อสลับหน้าจอทันที!
 </div>
 
 <section class="card row between" style="padding:8px 10px;">
@@ -123,9 +122,9 @@ button:disabled{opacity:.55}
 
 <script>
 const $=id=>document.getElementById(id);
-let ws=null, soundEnabled=true, audioCtx=null, autoTimer=null;
+let ws=null, soundEnabled=true, audioCtx=null;
 let pendingSignal="STANDBY", activeSignal="STANDBY", holdUntil=0, reconnectTimer=null;
-let alertedSymbol = null; // เก็บชื่อคู่เงินที่เด้งเตือน
+let alertedSymbol = null;
 
 function beep(freq=800,duration=.12){
   if(!soundEnabled)return;
@@ -177,20 +176,24 @@ function connect(){
       }
     }
     if(m.type==="pair_update"){
-      const p = m.pair;
-      const currentSelected = $("symbol").value;
-      
-      // ถ้าข้อมูลที่อัปเดตเข้ามา เป็นคู่เงินที่กำลังเปิดดูอยู่
-      if(p.symbol === currentSelected){
-        renderPair(p);
-      } 
-      // ถ้าเป็นคู่เงินอื่น แล้วเกิดสัญญาณ CALL หรือ PUT ให้เด้งป้ายแจ้งเตือนขึ้นมาทันที!
-      else if(p.signal && ["CALL","PUT"].includes(p.signal.toUpperCase())){
-        alertedSymbol = p.symbol;
-        $("alertPairName").textContent = p.symbol;
-        $("alertPairSignal").textContent = p.signal.toUpperCase();
+      if(m.pair.symbol === $("symbol").value){
+        renderPair(m.pair);
+      }
+    }
+    // รับผลการสแกนรวมทั้งหมด และเลือกแสดงเฉพาะตัวที่เปอร์เซ็นต์สูงสุด
+    if(m.type==="multi_scan_result"){
+      if(m.bestPair){
+        alertedSymbol = m.bestPair.symbol;
+        $("alertPairName").textContent = m.bestPair.symbol;
+        $("alertPairSignal").textContent = m.bestPair.signal;
+        $("alertPairScore").textContent = m.bestPair.score;
         $("signalAlertBanner").classList.add("show");
         beep(950, 0.2);
+      } else {
+        $("signalAlertBanner").classList.remove("show");
+      }
+      if(m.allPairs && m.allPairs[$("symbol").value]){
+        renderPair(m.allPairs[$("symbol").value]);
       }
     }
     if(m.type==="error"){
@@ -208,15 +211,10 @@ function renderPair(p){
   if(!p)return;
   $("price").textContent=Number.isFinite(Number(p.price))?Number(p.price).toFixed(p.symbol.includes("JPY")?3:5):"—";
   $("updated").textContent=p.updatedAt?new Date(p.updatedAt).toLocaleTimeString("th-TH"):"รอข้อมูล";
-  
   if(p.apiUsed!=null) $("quotaText").textContent="โควต้า: "+p.apiUsed+" / 800";
 
   const sig = String(p.signal||"STANDBY").toUpperCase();
-  if(["CALL","PUT"].includes(sig)){
-    pendingSignal = sig;
-  } else {
-    pendingSignal = "STANDBY";
-  }
+  pendingSignal = ["CALL","PUT"].includes(sig) ? sig : "STANDBY";
 
   $("score").textContent=(p.score??"—")+" / 100";
   $("scoreBar").style.width=Math.max(0,Math.min(100,Number(p.score)||0))+"%";
@@ -227,7 +225,6 @@ function renderPair(p){
   if(p.updatedAt)$("lastScan").textContent=new Date(p.updatedAt).toLocaleTimeString("th-TH");
 }
 
-// ฟังก์ชันคลิกที่ป้ายแจ้งเตือนเพื่อสลับหน้าจอไปคู่เงินนั้นทันที
 async function switchToAlertedPair(){
   if(!alertedSymbol)return;
   $("symbol").value = alertedSymbol;
@@ -304,7 +301,6 @@ async function scanNow(){
 
 $("scanBtn").onclick=scanNow;
 
-// วงจรรอบเวลานับถอยหลัง คุมจังหวะไฟติด/ดับตามสเปก 40 วินาที
 let lastSec = -1;
 setInterval(()=>{
   const now=Date.now(), remain=60-Math.floor((now%60000)/1000);
@@ -342,9 +338,6 @@ setInterval(()=>{
     }
   }
 },100);
-
-window.addEventListener("online",()=>{if(ws?.readyState===1)setConnection(true,"ออนไลน์ / ออโต้สแกน");});
-window.addEventListener("offline",()=>{setConnection(false,"อินเทอร์เน็ตหลุด / สัญญาณขาดหาย");if(soundEnabled)beep(300,.35);});
 
 connect();
 scanNow();
