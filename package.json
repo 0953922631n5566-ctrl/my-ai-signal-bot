@@ -1,9 +1,9 @@
 
 {
   "name": "ai-signal-radar",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Forex M1 analysis Telegram Mini App",
+  "description": "Forex M1 Signal Radar with Twelve Data quota protection",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -12,6 +12,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^5.1.0"
   }
 }
