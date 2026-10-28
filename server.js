@@ -10,7 +10,6 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const PORT = Number(process.env.PORT || 3000);
 const API_KEY = process.env.TWELVE_DATA_API_KEY || "";
-const MIN_CANDLES = 100;
 let dynamicThreshold = 62;
 let activeClients = 0, apiCreditsUsed = 28;
 
@@ -29,8 +28,6 @@ const state = {
 app.use(express.json({limit:"100kb"}));
 app.use(express.static(path.join(__dirname,"public")));
 
-function clamp(n,min,max){ return Math.max(min,Math.min(max,n)); }
-function round(n,d=2){ if(!Number.isFinite(n)) return null; const f=10**d; return Math.round(n*f)/f; }
 function mean(a){ return a.length ? a.reduce((s,x)=>s+x,0)/a.length : NaN; }
 function emaSeries(values,period){
   const out=Array(values.length).fill(null); if(values.length<period)return out;
@@ -55,7 +52,7 @@ async function fetchCandles(symbol){
   if(!API_KEY)throw new Error("ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY");
   const url=new URL("https://api.twelvedata.com/time_series");
   url.searchParams.set("symbol",symbol); url.searchParams.set("interval","1min");
-  url.searchParams.set("outputsize","400"); // 400 แท่งตามที่ตกลง
+  url.searchParams.set("outputsize","400");
   url.searchParams.set("timezone","UTC");
   url.searchParams.set("apikey",API_KEY);
   
@@ -102,23 +99,36 @@ async function scanPair(symbol){
     const p={symbol,signal:a.signal,score:a.score,price:latest.close,updatedAt:new Date().toISOString(),indicators:a.indicators,apiUsed:apiCreditsUsed};
     pairsCache.set(symbol,p);
     if(state.symbol===symbol) Object.assign(state,p,{apiUsed:apiCreditsUsed});
-    broadcast({type:"pair_update",pair:p});
     return p;
   }catch(e){
     const errObj={symbol,signal:"STANDBY",price:null,reason:e.message,apiUsed:apiCreditsUsed};
-    broadcast({type:"pair_update",pair:errObj});
+    pairsCache.set(symbol,errObj);
     throw e;
   }
 }
 
-// ฟังก์ชันสแกนคู่เงินทั้งหมดแบบเบื้องหลัง (Background Multi-Scan)
+// สแกนทุกคู่ คัดกรองหาตัวที่มีเปอร์เซ็นต์สูงสุดส่งไปบอกลูกค้าทีเดียว
 async function scanAllPairs(){
+  let bestPair = null;
   for(const sym of PAIRS){
     try{
-      await scanPair(sym);
-      await new Promise(r => setTimeout(r, 1200)); // หน่วงเวลาเล็กน้อยป้องกันโควต้าชนเร็วเกินไป
+      const p = await scanPair(sym);
+      // หาคู่ที่สัญญาณเป็น CALL/PUT และมี score สูงที่สุด
+      if(p && ["CALL","PUT"].includes(p.signal)){
+        if(!bestPair || p.score > bestPair.score){
+          bestPair = p;
+        }
+      }
+      await new Promise(r => setTimeout(r, 1000));
     }catch(err){}
   }
+  
+  // ส่งข้อมูลอัปเดตทั้งหมด และส่งตัวที่ดีที่สุดไปให้หน้าจอแสดงผลเตือน
+  broadcast({
+    type: "multi_scan_result",
+    bestPair: bestPair,
+    allPairs: Object.fromEntries(pairsCache)
+  });
 }
 
 function buildPayload(){return {type:"state",configured:Boolean(API_KEY),state:{...state,apiUsed:apiCreditsUsed}};}
@@ -129,13 +139,13 @@ app.post("/api/scan",async(req,res)=>{
   try{
     const symbol=(req.body&&req.body.symbol)||state.symbol;
     const pair=await scanPair(symbol);
+    broadcast({type:"pair_update",pair});
     res.json({ok:true,pair});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
   }
 });
 
-// สแกนทุกคู่พร้อมกัน (Multi-Scan API)
 app.post("/api/scan_all",async(req,res)=>{
   scanAllPairs();
   res.json({ok:true,message:"Started multi-scan"});
@@ -172,7 +182,6 @@ wss.on("connection",ws=>{
   ws.onclose=()=>{activeClients=Math.max(0,activeClients-1);};
 });
 
-// รันออโต้สแกนทุกๆ 60 วินาที วนครบทุกคู่เงิน
 setInterval(()=>{
   if(activeClients > 0) scanAllPairs();
 }, 60000);
