@@ -6,32 +6,52 @@ const crypto = require('crypto');
 const path = require('path');
 
 const app = express();
+
 app.disable('x-powered-by');
 app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// =====================================================
+// 1. CONFIGURATION
+// =====================================================
+
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.TWELVE_DATA_API_KEY || '';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+
 const REQUIRE_AUTH =
   String(process.env.REQUIRE_TELEGRAM_AUTH || 'true').toLowerCase() === 'true';
 
 const MAX_CALLS = Math.max(
-  1, Number(process.env.MAX_API_CALLS_PER_DAY) || 700
-);
-const MIN_SCORE = Math.min(
-  90, Math.max(40, Number(process.env.MIN_SIGNAL_SCORE) || 68)
-);
-const HOLD_SECONDS = Math.max(
-  5, Math.min(120, Number(process.env.SIGNAL_HOLD_SECONDS) || 40)
+  1,
+  Number(process.env.MAX_API_CALLS_PER_DAY) || 700
 );
 
-const CACHE_MS = 15000;
-const GLOBAL_FETCH_GAP_MS = 12000;
+const MIN_SCORE = Math.min(
+  90,
+  Math.max(40, Number(process.env.MIN_SIGNAL_SCORE) || 68)
+);
+
+const HOLD_SECONDS = Math.max(
+  5,
+  Math.min(120, Number(process.env.SIGNAL_HOLD_SECONDS) || 40)
+);
+
+// Minimum time between provider API requests.
+const GLOBAL_FETCH_GAP_MS = Math.max(
+  1000,
+  Number(process.env.GLOBAL_FETCH_GAP_MS) || 12000
+);
+
+// Do not refetch a pair repeatedly while the same candle is current.
+const CACHE_FALLBACK_MS = 15000;
+const CANDLE_REFRESH_GRACE_MS = 2000;
+
 const MAX_CANDLE_CLOSE_AGE_MS = Math.max(
   75000,
   Number(process.env.MAX_CANDLE_AGE_MS) || 120000
 );
+
 const PROVIDER_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 12000;
 const HISTORY_LIMIT = 500;
@@ -44,6 +64,12 @@ const SYMBOLS = Object.freeze({
   USDCAD: 'USD/CAD'
 });
 
+// =====================================================
+// 2. RUNTIME STATE
+// =====================================================
+
+// These counters are local to this server process.
+// They reset when Render restarts the service.
 let dailyCalls = 0;
 let quotaDate = utcDate();
 let lastProviderCallAt = 0;
@@ -57,7 +83,6 @@ const inFlight = new Map();
 const signalHistory = [];
 const lastRecordedCandle = new Map();
 
-// Queue provider requests globally to respect the minimum call interval.
 let providerQueue = Promise.resolve();
 
 function utcDate() {
@@ -110,6 +135,10 @@ function quotaState() {
   };
 }
 
+// =====================================================
+// 3. TELEGRAM MINI APP AUTHENTICATION
+// =====================================================
+
 function verifyTelegramInitData(initData) {
   if (!BOT_TOKEN || !initData || typeof initData !== 'string') {
     return false;
@@ -119,11 +148,14 @@ function verifyTelegramInitData(initData) {
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
 
-    if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) return false;
+    if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) {
+      return false;
+    }
 
     const authDate = Number(params.get('auth_date'));
     const nowSeconds = Math.floor(Date.now() / 1000);
 
+    // Retain the existing 24-hour window for compatibility.
     if (
       !Number.isFinite(authDate) ||
       authDate > nowSeconds + 30 ||
@@ -151,8 +183,10 @@ function verifyTelegramInitData(initData) {
 
     const actual = Buffer.from(hash, 'hex');
 
-    return actual.length === expected.length &&
-      crypto.timingSafeEqual(actual, expected);
+    return (
+      actual.length === expected.length &&
+      crypto.timingSafeEqual(actual, expected)
+    );
   } catch {
     return false;
   }
@@ -174,18 +208,23 @@ function requireTelegram(req, res, next) {
   next();
 }
 
+// =====================================================
+// 4. CANDLE DATA NORMALIZATION
+// =====================================================
+
 function parseCandleTime(value) {
   const text = String(value || '').trim();
 
   if (!text) return NaN;
 
-  // Twelve Data is requested in UTC. Interpret timezone-less
-  // timestamps as UTC, not as the Render server's local timezone.
+  // Twelve Data is requested in UTC.
+  // Treat timestamps without a timezone as UTC.
   const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)
     ? text
     : `${text.replace(' ', 'T')}Z`;
 
   const ms = Date.parse(normalized);
+
   return Number.isFinite(ms) ? ms : NaN;
 }
 
@@ -211,26 +250,35 @@ function normalizeCandles(values) {
       c.high >= Math.max(c.open, c.close, c.low) &&
       c.low <= Math.min(c.open, c.close, c.high)
     )
-    // Only use candles whose full one-minute interval has ended.
+    // Only use fully closed one-minute candles.
     .filter(c => c.time + 60000 <= now)
     .sort((a, b) => a.time - b.time);
 
   const result = [];
 
-  for (const c of sorted) {
-    if (!result.length || c.time > result[result.length - 1].time) {
-      result.push(c);
+  for (const candle of sorted) {
+    if (
+      !result.length ||
+      candle.time > result[result.length - 1].time
+    ) {
+      result.push(candle);
     }
   }
 
   return result;
 }
 
+// =====================================================
+// 5. TECHNICAL INDICATORS
+// =====================================================
+
 function emaSeries(values, period) {
   if (values.length < period) return [];
 
   const k = 2 / (period + 1);
-  let value = values.slice(0, period)
+
+  let value = values
+    .slice(0, period)
     .reduce((sum, n) => sum + n, 0) / period;
 
   const result = Array(period - 1).fill(null);
@@ -244,21 +292,17 @@ function emaSeries(values, period) {
   return result;
 }
 
-function ema(values, period) {
-  const series = emaSeries(values, period);
-  return series.length ? series[series.length - 1] : null;
-}
-
-// Wilder RSI: seed with simple averages, then use Wilder smoothing.
 function rsiSeries(values, period = 14) {
   if (values.length < period + 1) return [];
 
   const result = Array(values.length).fill(null);
+
   let gain = 0;
   let loss = 0;
 
   for (let i = 1; i <= period; i++) {
     const change = values[i] - values[i - 1];
+
     gain += Math.max(0, change);
     loss += Math.max(0, -change);
   }
@@ -267,9 +311,10 @@ function rsiSeries(values, period = 14) {
   let avgLoss = loss / period;
 
   function calculate(g, l) {
-    if (l === 0 && g === 0) return 50;
+    if (g === 0 && l === 0) return 50;
     if (l === 0) return 100;
     if (g === 0) return 0;
+
     return 100 - 100 / (1 + g / l);
   }
 
@@ -280,6 +325,7 @@ function rsiSeries(values, period = 14) {
 
     avgGain =
       (avgGain * (period - 1) + Math.max(0, change)) / period;
+
     avgLoss =
       (avgLoss * (period - 1) + Math.max(0, -change)) / period;
 
@@ -289,22 +335,17 @@ function rsiSeries(values, period = 14) {
   return result;
 }
 
-function rsi(values, period = 14) {
-  const series = rsiSeries(values, period);
-  return series.length ? series[series.length - 1] : null;
-}
-
 function trueRangeSeries(candles) {
   const result = [];
 
   for (let i = 1; i < candles.length; i++) {
-    const c = candles[i];
+    const current = candles[i];
     const previousClose = candles[i - 1].close;
 
     result.push(Math.max(
-      c.high - c.low,
-      Math.abs(c.high - previousClose),
-      Math.abs(c.low - previousClose)
+      current.high - current.low,
+      Math.abs(current.high - previousClose),
+      Math.abs(current.low - previousClose)
     ));
   }
 
@@ -316,8 +357,8 @@ function atr(candles, period = 14) {
 
   if (ranges.length < period) return null;
 
-  // Wilder-smoothed ATR.
-  let value = ranges.slice(0, period)
+  let value = ranges
+    .slice(0, period)
     .reduce((sum, n) => sum + n, 0) / period;
 
   for (let i = period; i < ranges.length; i++) {
@@ -344,6 +385,10 @@ function calculateEfficiencyRatio(values, period = 10) {
   return Math.abs(values[end] - values[start]) / totalMovement;
 }
 
+// =====================================================
+// 6. SIGNAL ANALYSIS
+// =====================================================
+
 function analyze(candles) {
   const empty = {
     signal: 'STANDBY',
@@ -356,130 +401,166 @@ function analyze(candles) {
   if (candles.length < 100) {
     return {
       ...empty,
-      reason: 'ต้องมีแท่งเทียนอย่างน้อย 100 แท่ง'
+      reason: 'ต้องมีแท่งเทียนที่ปิดแล้วอย่างน้อย 100 แท่ง'
     };
   }
 
   const closes = candles.map(c => c.close);
-  const e8s = emaSeries(closes, 8);
-  const e21s = emaSeries(closes, 21);
-  const e50s = emaSeries(closes, 50);
-  const e8 = e8s.at(-1);
-  const e21 = e21s.at(-1);
-  const e50 = e50s.at(-1);
-  const rv = rsi(closes, 14);
 
-  const macdLine = emaSeries(closes, 12).map((v, i) =>
-    v === null ? null : v - emaSeries(closes, 26)[i]
-  );
+  const ema8Series = emaSeries(closes, 8);
+  const ema21Series = emaSeries(closes, 21);
+  const ema50Series = emaSeries(closes, 50);
 
-  const validMacd = macdLine
-    .map((v, i) => ({ v, i }))
-    .filter(item => Number.isFinite(item.v));
+  const ema8 = ema8Series.at(-1);
+  const ema21 = ema21Series.at(-1);
+  const ema50 = ema50Series.at(-1);
 
-  if (validMacd.length < 35 || !Number.isFinite(rv)) {
-    return {
-      ...empty,
-      reason: 'คำนวณ Indicator ไม่ครบ'
-    };
+  const rsiValues = rsiSeries(closes, 14);
+  const rsiValue = rsiValues.at(-1);
+
+  // IMPORTANT:
+  // Compute EMA12 and EMA26 only once.
+  // Do not subtract null EMA26 values from valid EMA12 values.
+  const ema12Series = emaSeries(closes, 12);
+  const ema26Series = emaSeries(closes, 26);
+
+  const macdValues = [];
+
+  for (let i = 0; i < closes.length; i++) {
+    const fast = ema12Series[i];
+    const slow = ema26Series[i];
+
+    if (Number.isFinite(fast) && Number.isFinite(slow)) {
+      macdValues.push(fast - slow);
+    }
   }
 
-  // Build MACD signal line only from valid MACD values.
-  const macdValues = validMacd.map(item => item.v);
-  const signalValues = emaSeries(macdValues, 9);
-  const macd = macdValues.at(-1);
-  const macdSignal = signalValues.at(-1);
-  const macdHist = macd - macdSignal;
+  // The MACD signal EMA is calculated from valid MACD values only.
+  const macdSignalSeries = emaSeries(macdValues, 9);
 
-  const av = atr(candles, 14);
-  const er = calculateEfficiencyRatio(closes, 10);
+  const macd = macdValues.at(-1);
+  const macdSignal = macdSignalSeries.at(-1);
+
+  const macdHistogram =
+    Number.isFinite(macd) && Number.isFinite(macdSignal)
+      ? macd - macdSignal
+      : null;
+
+  const atrValue = atr(candles, 14);
+  const efficiencyRatio = calculateEfficiencyRatio(closes, 10);
+
+  const required = [
+    ema8,
+    ema21,
+    ema50,
+    rsiValue,
+    macd,
+    macdSignal,
+    macdHistogram,
+    atrValue,
+    efficiencyRatio,
+    ema8Series.at(-4)
+  ];
 
   if (
-    ![e8, e21, e50, macd, macdSignal, macdHist, av, er]
-      .every(Number.isFinite) ||
-    av <= 0
+    !required.every(Number.isFinite) ||
+    atrValue <= 0
   ) {
     return {
       ...empty,
-      reason: 'ข้อมูลไม่พร้อมสำหรับการคำนวณ'
+      reason: 'ข้อมูลไม่พร้อมสำหรับการคำนวณ Indicator'
     };
   }
 
   const last = candles.at(-1);
-  const prev = candles.at(-2);
+  const previous = candles.at(-2);
+
   const range = last.high - last.low;
   const body = Math.abs(last.close - last.open);
+
   const bodyRatio = range > 0 ? body / range : 0;
-  const upperWick = last.high - Math.max(last.open, last.close);
-  const lowerWick = Math.min(last.open, last.close) - last.low;
+
+  const upperWick =
+    last.high - Math.max(last.open, last.close);
+
+  const lowerWick =
+    Math.min(last.open, last.close) - last.low;
+
   const closePosition = range > 0
     ? (last.close - last.low) / range
     : 0.5;
 
-  const emaSpreadATR = Math.abs(e8 - e50) / av;
-  const emaSlopeATR = (e8 - e8s.at(-4)) / av;
-  const momentumATR = (last.close - closes.at(-4)) / av;
+  const emaSpreadATR = Math.abs(ema8 - ema50) / atrValue;
+  const emaSlopeATR = (ema8 - ema8Series.at(-4)) / atrValue;
+  const momentumATR = (last.close - closes.at(-4)) / atrValue;
 
-  const sideways = er < 0.18 && emaSpreadATR < 0.65;
-  const spike = range > av * 2.5;
-  const flatMarket = av / last.close < 0.000005;
+  const sideways =
+    efficiencyRatio < 0.18 &&
+    emaSpreadATR < 0.65;
+
+  const spike = range > atrValue * 2.5;
+
+  const flatMarket =
+    atrValue / last.close < 0.000005;
 
   let call = 0;
   let put = 0;
+
   const bullish = [];
   const bearish = [];
   const warnings = [];
 
-  // 1. Trend: EMA alignment and slope.
-  if (e8 > e21 && e21 > e50) {
+  // 1. Trend alignment.
+  if (ema8 > ema21 && ema21 > ema50) {
     call += 25;
     bullish.push('EMA เรียงตัวขาขึ้น');
-  } else if (e8 < e21 && e21 < e50) {
+  } else if (ema8 < ema21 && ema21 < ema50) {
     put += 25;
     bearish.push('EMA เรียงตัวขาลง');
   } else {
-    warnings.push('EMA ยังไม่เรียงตัว');
+    warnings.push('EMA ยังไม่เรียงตัวชัดเจน');
   }
 
+  // 2. Short-term EMA slope.
   if (emaSlopeATR > 0.08) {
     call += 8;
-    bullish.push('EMA ระยะสั้นมีความชันบวก');
+    bullish.push('ความชัน EMA เป็นบวก');
   } else if (emaSlopeATR < -0.08) {
     put += 8;
-    bearish.push('EMA ระยะสั้นมีความชันลบ');
+    bearish.push('ความชัน EMA เป็นลบ');
   }
 
-  // 2. MACD: histogram direction, not just MACD above/below zero.
-  if (macdHist > 0 && macd > 0) {
+  // 3. MACD and histogram confirmation.
+  if (macdHistogram > 0 && macd > 0) {
     call += 18;
     bullish.push('MACD สนับสนุนขาขึ้น');
-  } else if (macdHist < 0 && macd < 0) {
+  } else if (macdHistogram < 0 && macd < 0) {
     put += 18;
     bearish.push('MACD สนับสนุนขาลง');
-  } else if (macdHist > 0) {
+  } else if (macdHistogram > 0) {
     call += 8;
     bullish.push('MACD Histogram เป็นบวก');
-  } else if (macdHist < 0) {
+  } else if (macdHistogram < 0) {
     put += 8;
     bearish.push('MACD Histogram เป็นลบ');
   }
 
-  // 3. RSI: momentum confirmation without chasing extremes.
-  if (rv >= 52 && rv <= 68) {
+  // 4. RSI confirmation without chasing extremes.
+  if (rsiValue >= 52 && rsiValue <= 68) {
     call += 15;
     bullish.push('RSI สนับสนุนแรงซื้อ');
-  } else if (rv >= 32 && rv <= 48) {
+  } else if (rsiValue >= 32 && rsiValue <= 48) {
     put += 15;
     bearish.push('RSI สนับสนุนแรงขาย');
-  } else if (rv > 68) {
+  } else if (rsiValue > 68) {
     warnings.push('RSI สูง ระวังไล่ราคา');
-  } else if (rv < 32) {
+  } else if (rsiValue < 32) {
     warnings.push('RSI ต่ำ ระวังแรงเด้งกลับ');
   } else {
     warnings.push('RSI ยังไม่ยืนยันทิศทาง');
   }
 
-  // 4. Normalized momentum.
+  // 5. Normalized momentum.
   if (momentumATR > 0.15) {
     call += 10;
     bullish.push('Momentum เป็นบวก');
@@ -488,7 +569,7 @@ function analyze(candles) {
     bearish.push('Momentum เป็นลบ');
   }
 
-  // 5. Candle confirmation and close location.
+  // 6. Closed-candle confirmation.
   if (
     last.close > last.open &&
     bodyRatio >= 0.45 &&
@@ -507,16 +588,19 @@ function analyze(candles) {
     bearish.push('แท่งแดงปิดใกล้จุดต่ำ');
   }
 
-  // 6. Price location relative to short EMA.
-  if (last.close > e8 && last.close > prev.close) {
+  // 7. Price position relative to EMA8.
+  if (last.close > ema8 && last.close > previous.close) {
     call += 5;
-    bullish.push('ราคาปิดอยู่เหนือ EMA8');
-  } else if (last.close < e8 && last.close < prev.close) {
+    bullish.push('ราคาปิดเหนือ EMA8');
+  } else if (
+    last.close < ema8 &&
+    last.close < previous.close
+  ) {
     put += 5;
-    bearish.push('ราคาปิดอยู่ใต้ EMA8');
+    bearish.push('ราคาปิดใต้ EMA8');
   }
 
-  // 7. Market quality gate.
+  // 8. Market quality filters.
   const marketRegime = sideways
     ? 'SIDEWAYS'
     : spike
@@ -560,16 +644,16 @@ function analyze(candles) {
     reason: reasons.join(' · '),
     marketRegime,
     indicators: {
-      ema8: e8,
-      ema21: e21,
-      ema50: e50,
+      ema8,
+      ema21,
+      ema50,
       emaSlopeATR,
-      rsi: rv,
+      rsi: rsiValue,
       macd,
       macdSignal,
-      macdHistogram: macdHist,
-      atr: av,
-      efficiencyRatio: er,
+      macdHistogram,
+      atr: atrValue,
+      efficiencyRatio,
       emaSpreadATR,
       momentumATR,
       bodyRatio,
@@ -583,16 +667,22 @@ function analyze(candles) {
   };
 }
 
-function isQuotaError(message, status) {
-  const t = String(message || '').toLowerCase();
+// =====================================================
+// 7. PROVIDER ERROR HANDLING
+// =====================================================
 
-  return status === 429 ||
-    t.includes('api credits') ||
-    t.includes('credit') ||
-    t.includes('rate limit') ||
-    t.includes('run out') ||
-    t.includes('limit exceeded') ||
-    t.includes('quota');
+function isQuotaError(message, status) {
+  const text = String(message || '').toLowerCase();
+
+  return (
+    status === 429 ||
+    text.includes('api credits') ||
+    text.includes('credit') ||
+    text.includes('rate limit') ||
+    text.includes('run out') ||
+    text.includes('limit exceeded') ||
+    text.includes('quota')
+  );
 }
 
 function unavailable(symbol, code, message, previous) {
@@ -625,6 +715,7 @@ function unavailable(symbol, code, message, previous) {
 
 function checkCached(symbol) {
   const previous = cache.get(symbol);
+
   if (!previous) return null;
 
   const closeMs = Date.parse(previous.candleCloseTime);
@@ -650,13 +741,16 @@ function checkCached(symbol) {
   };
 }
 
-function rememberSignal(data) {
-  // Record at most one result per completed candle and pair.
-  const key = `${data.symbol}:${data.candleTime}`;
+// =====================================================
+// 8. SIGNAL HISTORY — ONE RECORD PER PAIR AND CANDLE
+// =====================================================
 
-  if (lastRecordedCandle.get(data.symbol) === data.candleTime) {
-    return;
-  }
+function rememberSignal(data) {
+  if (!data.ok || !data.candleTime) return;
+
+  const lastTime = lastRecordedCandle.get(data.symbol);
+
+  if (lastTime === data.candleTime) return;
 
   lastRecordedCandle.set(data.symbol, data.candleTime);
 
@@ -680,6 +774,10 @@ function rememberSignal(data) {
   }
 }
 
+// =====================================================
+// 9. PROVIDER QUEUE — GLOBAL REQUEST THROTTLING
+// =====================================================
+
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -689,9 +787,11 @@ function enqueueProviderRequest(task) {
     const elapsed = Date.now() - lastProviderCallAt;
     const remaining = GLOBAL_FETCH_GAP_MS - elapsed;
 
-    if (remaining > 0) await wait(remaining);
+    if (remaining > 0) {
+      await wait(remaining);
+    }
 
-    // Recheck after waiting: another request may have used the quota.
+    // Recheck after waiting, before consuming a local call.
     const quota = quotaState();
 
     if (!quota.ok) {
@@ -706,12 +806,21 @@ function enqueueProviderRequest(task) {
     return task();
   });
 
+  // Keep the queue usable even if a request fails.
   providerQueue = job.catch(() => {});
+
   return job;
 }
 
+// =====================================================
+// 10. TWELVE DATA REQUEST
+// =====================================================
+
 async function requestTwelveData(symbol) {
-  const url = new URL('https://api.twelvedata.com/time_series');
+  const url = new URL(
+    'https://api.twelvedata.com/time_series'
+  );
+
   url.searchParams.set('symbol', SYMBOLS[symbol]);
   url.searchParams.set('interval', '1min');
   url.searchParams.set('outputsize', '120');
@@ -723,28 +832,43 @@ async function requestTwelveData(symbol) {
   });
 
   const raw = await response.text();
+
   let body;
 
   try {
     body = JSON.parse(raw);
   } catch {
-    throw new Error(`ผู้ให้บริการส่งข้อมูลที่อ่านไม่ได้ (HTTP ${response.status})`);
+    throw new Error(
+      `ผู้ให้บริการส่งข้อมูลที่อ่านไม่ได้ (HTTP ${response.status})`
+    );
   }
 
-  if (!response.ok || body.status === 'error' || body.code) {
+  if (
+    !response.ok ||
+    body.status === 'error' ||
+    body.code
+  ) {
     const message = body.message || `HTTP ${response.status}`;
 
     if (isQuotaError(message, response.status)) {
       providerBlockedUntil = Date.now() + PROVIDER_COOLDOWN_MS;
       providerBlockReason =
-        'ผู้ให้บริการจำกัดโควตาหรือความถี่ พักการเรียก API ชั่วคราว';
+        'ผู้ให้บริการจำกัดโควตาหรือความถี่ ระบบพักการเรียก API ชั่วคราว';
     }
 
     throw new Error(message);
   }
 
+  if (!Array.isArray(body.values)) {
+    throw new Error('ไม่พบรายการแท่งเทียนจาก Twelve Data');
+  }
+
   return body;
 }
+
+// =====================================================
+// 11. MARKET FETCH — CACHE + IN-FLIGHT DEDUPLICATION
+// =====================================================
 
 async function fetchMarket(symbol) {
   resetDailyCounterIfNeeded();
@@ -752,16 +876,38 @@ async function fetchMarket(symbol) {
   const cached = cache.get(symbol);
   const now = Date.now();
 
-  if (cached && now - cached.fetchedAt < CACHE_MS) {
-    return checkCached(symbol);
+  if (cached) {
+    const closeMs = Date.parse(cached.candleCloseTime);
+    const ageMs = now - closeMs;
+
+    const stillFresh =
+      Number.isFinite(closeMs) &&
+      ageMs >= 0 &&
+      ageMs <= MAX_CANDLE_CLOSE_AGE_MS;
+
+    // Reuse the cached candle until the next minute should be
+    // available. This prevents every UI refresh from spending API calls.
+    const refreshAfter = cached._refreshAfter || 0;
+
+    if (stillFresh && now < refreshAfter) {
+      return checkCached(symbol);
+    }
   }
 
-  if (inFlight.has(symbol)) return inFlight.get(symbol);
+  // If the same pair is already being fetched, share that request.
+  if (inFlight.has(symbol)) {
+    return inFlight.get(symbol);
+  }
 
   const quota = quotaState();
 
   if (!quota.ok) {
-    return unavailable(symbol, quota.code, quota.message, cached);
+    return unavailable(
+      symbol,
+      quota.code,
+      quota.message,
+      cached
+    );
   }
 
   const job = (async () => {
@@ -773,18 +919,23 @@ async function fetchMarket(symbol) {
       const candles = normalizeCandles(body.values);
 
       if (candles.length < 100) {
-        throw new Error('มีแท่งเทียนที่ปิดแล้วไม่ถึง 100 แท่ง');
+        throw new Error(
+          'มีแท่งเทียนที่ปิดแล้วไม่ถึง 100 แท่ง'
+        );
       }
 
       const last = candles.at(-1);
       const closeMs = last.time + 60000;
       const ageMs = Date.now() - closeMs;
 
-      if (ageMs < 0 || ageMs > MAX_CANDLE_CLOSE_AGE_MS) {
+      if (
+        ageMs < 0 ||
+        ageMs > MAX_CANDLE_CLOSE_AGE_MS
+      ) {
         throw new Error('ข้อมูลแท่งเทียนเก่าเกินเกณฑ์');
       }
 
-      const result = analyze(candles);
+      const analysis = analyze(candles);
 
       const data = {
         ok: true,
@@ -797,11 +948,11 @@ async function fetchMarket(symbol) {
         fetchedAt: Date.now(),
         dataAgeSeconds: Math.floor(ageMs / 1000),
         dataFresh: true,
-        signal: result.signal,
-        score: result.score,
-        reason: result.reason,
-        marketRegime: result.marketRegime,
-        indicators: result.indicators,
+        signal: analysis.signal,
+        score: analysis.score,
+        reason: analysis.reason,
+        marketRegime: analysis.marketRegime,
+        indicators: analysis.indicators,
         candles: candles.slice(-30).map(c => ({
           time: new Date(c.time).toISOString(),
           open: c.open,
@@ -811,27 +962,53 @@ async function fetchMarket(symbol) {
         }))
       };
 
-      cache.set(symbol, data);
+      // Refresh shortly after the next one-minute candle closes.
+      // Each pair normally needs only one request per candle cycle.
+      const refreshAfter =
+        closeMs + 60000 + CANDLE_REFRESH_GRACE_MS;
+
+      cache.set(symbol, {
+        ...data,
+        _refreshAfter: refreshAfter
+      });
+
       rememberSignal(data);
+
       lastApiError = '';
       lastSuccessfulRequestAt = Date.now();
 
       return data;
     } catch (error) {
-      lastApiError = String(error.message || 'API request failed');
+      const message = String(
+        error.message || 'API request failed'
+      );
+
+      lastApiError = message;
 
       const code = error.code ||
-        (isQuotaError(lastApiError, 0) ? 'API_LIMIT' : 'DATA_STALE');
+        (isQuotaError(message, 0)
+          ? 'API_LIMIT'
+          : 'DATA_STALE');
 
-      return unavailable(symbol, code, lastApiError, cache.get(symbol));
+      return unavailable(
+        symbol,
+        code,
+        message,
+        cache.get(symbol)
+      );
     } finally {
       inFlight.delete(symbol);
     }
   })();
 
   inFlight.set(symbol, job);
+
   return job;
 }
+
+// =====================================================
+// 12. HTTP ENDPOINTS
+// =====================================================
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -851,6 +1028,7 @@ app.get('/api/config', requireTelegram, (req, res) => {
     prepareBeepSeconds: 10,
     entrySignalSeconds: 5,
     maxCallsPerDay: MAX_CALLS,
+    globalFetchGapMs: GLOBAL_FETCH_GAP_MS,
     source: 'Twelve Data',
     market: 'Forex Non-OTC',
     automaticTrading: false
@@ -859,29 +1037,38 @@ app.get('/api/config', requireTelegram, (req, res) => {
 
 app.get('/api/status', requireTelegram, (req, res) => {
   resetDailyCounterIfNeeded();
-  const q = quotaState();
+
+  const quota = quotaState();
 
   res.json({
     ok: true,
     apiConfigured: Boolean(API_KEY),
-    status: q.code,
-    message: q.message,
+    status: quota.code,
+    message: quota.message,
     dailyCalls,
     maxCallsPerDay: MAX_CALLS,
-    remainingLocalCalls: Math.max(0, MAX_CALLS - dailyCalls),
+    remainingLocalCalls: Math.max(
+      0,
+      MAX_CALLS - dailyCalls
+    ),
     quotaDateUTC: quotaDate,
+    globalFetchGapMs: GLOBAL_FETCH_GAP_MS,
     lastProviderCallAt: lastProviderCallAt || null,
     lastSuccessfulRequestAt,
     lastApiError,
     providerBlockedUntil:
-      providerBlockedUntil > Date.now() ? providerBlockedUntil : null,
+      providerBlockedUntil > Date.now()
+        ? providerBlockedUntil
+        : null,
     cachedSymbols: [...cache.keys()],
     queuedOrRunningSymbols: [...inFlight.keys()]
   });
 });
 
 app.get('/api/market', requireTelegram, async (req, res) => {
-  const symbol = String(req.query.symbol || 'EURUSD').toUpperCase();
+  const symbol = String(
+    req.query.symbol || 'EURUSD'
+  ).toUpperCase();
 
   if (!Object.hasOwn(SYMBOLS, symbol)) {
     return res.status(400).json({
@@ -895,7 +1082,7 @@ app.get('/api/market', requireTelegram, async (req, res) => {
   try {
     const result = await fetchMarket(symbol);
     res.status(200).json(result);
-  } catch (error) {
+  } catch {
     res.status(500).json({
       ok: false,
       code: 'INTERNAL_ERROR',
@@ -916,11 +1103,15 @@ app.get('/api/signals/history', requireTelegram, (req, res) => {
     ok: true,
     persistent: false,
     items: signalHistory.slice(0, limit),
-    message: 'ประวัตินี้เก็บในหน่วยความจำและจะหายเมื่อเซิร์ฟเวอร์เริ่มใหม่'
+    message:
+      'ประวัตินี้เก็บในหน่วยความจำและจะหายเมื่อเซิร์ฟเวอร์เริ่มใหม่'
   });
 });
 
-// Catch-all for the Mini App.
+// =====================================================
+// 13. MINI APP FALLBACK AND SERVER START
+// =====================================================
+
 app.get(/.*/, (req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({
@@ -939,7 +1130,10 @@ app.get(/.*/, (req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`AI Signal Radar running on port ${PORT}`);
-  console.log(`Telegram authentication: ${REQUIRE_AUTH ? 'ON' : 'OFF'}`);
-  console.log(`Market source: Twelve Data Forex Non-OTC`);
+  console.log(
+    `Telegram authentication: ${REQUIRE_AUTH ? 'ON' : 'OFF'}`
+  );
+  console.log('Market source: Twelve Data Forex Non-OTC');
   console.log(`Minimum signal score: ${MIN_SCORE}`);
+  console.log(`Provider request gap: ${GLOBAL_FETCH_GAP_MS}ms`);
 });
