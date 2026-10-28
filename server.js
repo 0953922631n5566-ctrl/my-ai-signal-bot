@@ -10,34 +10,39 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.TWELVE_DATA_API_KEY || '';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const REQUIRE_AUTH =
-  String(process.env.REQUIRE_TELEGRAM_AUTH || 'true') === 'true';
+  String(process.env.REQUIRE_TELEGRAM_AUTH || 'true').toLowerCase() === 'true';
 
 const MAX_CALLS = Math.max(
-  1, Number(process.env.MAX_API_CALLS_PER_DAY || 700)
+  1, Number(process.env.MAX_API_CALLS_PER_DAY) || 700
 );
 const MIN_SCORE = Math.min(
-  90, Math.max(40, Number(process.env.MIN_SIGNAL_SCORE || 68))
+  90, Math.max(40, Number(process.env.MIN_SIGNAL_SCORE) || 68)
 );
 const HOLD_SECONDS = Math.max(
-  5, Math.min(120, Number(process.env.SIGNAL_HOLD_SECONDS || 40))
+  5, Math.min(120, Number(process.env.SIGNAL_HOLD_SECONDS) || 40)
 );
 
 const CACHE_MS = 15000;
 const GLOBAL_FETCH_GAP_MS = 12000;
-const MAX_CANDLE_CLOSE_AGE_MS = 75000;
+const MAX_CANDLE_CLOSE_AGE_MS = Math.max(
+  75000,
+  Number(process.env.MAX_CANDLE_AGE_MS) || 120000
+);
 const PROVIDER_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 12000;
+const HISTORY_LIMIT = 500;
 
-const SYMBOLS = {
+const SYMBOLS = Object.freeze({
   EURUSD: 'EUR/USD',
   GBPUSD: 'GBP/USD',
   USDJPY: 'USD/JPY',
   AUDUSD: 'AUD/USD',
   USDCAD: 'USD/CAD'
-};
+});
 
 let dailyCalls = 0;
 let quotaDate = utcDate();
@@ -49,6 +54,11 @@ let lastSuccessfulRequestAt = null;
 
 const cache = new Map();
 const inFlight = new Map();
+const signalHistory = [];
+const lastRecordedCandle = new Map();
+
+// Queue provider requests globally to respect the minimum call interval.
+let providerQueue = Promise.resolve();
 
 function utcDate() {
   return new Date().toISOString().slice(0, 10);
@@ -81,7 +91,7 @@ function quotaState() {
     return {
       ok: false,
       code: 'API_LIMIT',
-      message: 'ถึงเพดาน API ที่ตั้งไว้ในแอปแล้ว'
+      message: 'ถึงเพดาน API รายวันที่ตั้งไว้ในแอปแล้ว'
     };
   }
 
@@ -93,15 +103,11 @@ function quotaState() {
     };
   }
 
-  if (Date.now() - lastProviderCallAt < GLOBAL_FETCH_GAP_MS) {
-    return {
-      ok: false,
-      code: 'WAITING',
-      message: 'กำลังจำกัดความถี่การเรียก API'
-    };
-  }
-
-  return { ok: true, code: 'OK', message: 'พร้อมดึงข้อมูล' };
+  return {
+    ok: true,
+    code: 'OK',
+    message: 'พร้อมดึงข้อมูล'
+  };
 }
 
 function verifyTelegramInitData(initData) {
@@ -161,7 +167,7 @@ function requireTelegram(req, res, next) {
     return res.status(401).json({
       ok: false,
       code: 'AUTH_REQUIRED',
-      message: 'กรุณาเปิด Mini App ผ่านปุ่มใน Telegram'
+      message: 'กรุณาเปิด Mini App ผ่าน Telegram'
     });
   }
 
@@ -169,11 +175,15 @@ function requireTelegram(req, res, next) {
 }
 
 function parseCandleTime(value) {
-  const text = String(value || '');
-  const normalized =
-    /(?:Z|[+-]\d{2}:\d{2})$/i.test(text)
-      ? text
-      : `${text.replace(' ', 'T')}Z`;
+  const text = String(value || '').trim();
+
+  if (!text) return NaN;
+
+  // Twelve Data is requested in UTC. Interpret timezone-less
+  // timestamps as UTC, not as the Render server's local timezone.
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)
+    ? text
+    : `${text.replace(' ', 'T')}Z`;
 
   const ms = Date.parse(normalized);
   return Number.isFinite(ms) ? ms : NaN;
@@ -181,7 +191,8 @@ function parseCandleTime(value) {
 
 function normalizeCandles(values) {
   const now = Date.now();
-  const sorted = (values || [])
+
+  const sorted = (Array.isArray(values) ? values : [])
     .map(c => ({
       time: parseCandleTime(c.datetime),
       open: Number(c.open),
@@ -195,8 +206,12 @@ function normalizeCandles(values) {
       Number.isFinite(c.open) &&
       Number.isFinite(c.high) &&
       Number.isFinite(c.low) &&
-      Number.isFinite(c.close)
+      Number.isFinite(c.close) &&
+      c.open > 0 &&
+      c.high >= Math.max(c.open, c.close, c.low) &&
+      c.low <= Math.min(c.open, c.close, c.high)
     )
+    // Only use candles whose full one-minute interval has ended.
     .filter(c => c.time + 60000 <= now)
     .sort((a, b) => a.time - b.time);
 
@@ -211,153 +226,359 @@ function normalizeCandles(values) {
   return result;
 }
 
-function ema(values, period) {
-  if (values.length < period) return null;
+function emaSeries(values, period) {
+  if (values.length < period) return [];
 
   const k = 2 / (period + 1);
   let value = values.slice(0, period)
     .reduce((sum, n) => sum + n, 0) / period;
 
+  const result = Array(period - 1).fill(null);
+  result.push(value);
+
   for (let i = period; i < values.length; i++) {
     value = values[i] * k + value * (1 - k);
+    result.push(value);
+  }
+
+  return result;
+}
+
+function ema(values, period) {
+  const series = emaSeries(values, period);
+  return series.length ? series[series.length - 1] : null;
+}
+
+// Wilder RSI: seed with simple averages, then use Wilder smoothing.
+function rsiSeries(values, period = 14) {
+  if (values.length < period + 1) return [];
+
+  const result = Array(values.length).fill(null);
+  let gain = 0;
+  let loss = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const change = values[i] - values[i - 1];
+    gain += Math.max(0, change);
+    loss += Math.max(0, -change);
+  }
+
+  let avgGain = gain / period;
+  let avgLoss = loss / period;
+
+  function calculate(g, l) {
+    if (l === 0 && g === 0) return 50;
+    if (l === 0) return 100;
+    if (g === 0) return 0;
+    return 100 - 100 / (1 + g / l);
+  }
+
+  result[period] = calculate(avgGain, avgLoss);
+
+  for (let i = period + 1; i < values.length; i++) {
+    const change = values[i] - values[i - 1];
+
+    avgGain =
+      (avgGain * (period - 1) + Math.max(0, change)) / period;
+    avgLoss =
+      (avgLoss * (period - 1) + Math.max(0, -change)) / period;
+
+    result[i] = calculate(avgGain, avgLoss);
+  }
+
+  return result;
+}
+
+function rsi(values, period = 14) {
+  const series = rsiSeries(values, period);
+  return series.length ? series[series.length - 1] : null;
+}
+
+function trueRangeSeries(candles) {
+  const result = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i];
+    const previousClose = candles[i - 1].close;
+
+    result.push(Math.max(
+      c.high - c.low,
+      Math.abs(c.high - previousClose),
+      Math.abs(c.low - previousClose)
+    ));
+  }
+
+  return result;
+}
+
+function atr(candles, period = 14) {
+  const ranges = trueRangeSeries(candles);
+
+  if (ranges.length < period) return null;
+
+  // Wilder-smoothed ATR.
+  let value = ranges.slice(0, period)
+    .reduce((sum, n) => sum + n, 0) / period;
+
+  for (let i = period; i < ranges.length; i++) {
+    value = (value * (period - 1) + ranges[i]) / period;
   }
 
   return value;
 }
 
-function rsi(values, period = 14) {
+function calculateEfficiencyRatio(values, period = 10) {
   if (values.length < period + 1) return null;
 
-  let gain = 0;
-  let loss = 0;
+  const end = values.length - 1;
+  const start = end - period;
 
-  for (let i = values.length - period; i < values.length; i++) {
-    const change = values[i] - values[i - 1];
-    if (change > 0) gain += change;
-    else loss -= change;
+  let totalMovement = 0;
+
+  for (let i = start + 1; i <= end; i++) {
+    totalMovement += Math.abs(values[i] - values[i - 1]);
   }
 
-  const avgGain = gain / period;
-  const avgLoss = loss / period;
+  if (totalMovement === 0) return 0;
 
-  if (avgLoss === 0) return 100;
-  return 100 - 100 / (1 + avgGain / avgLoss);
-}
-
-function atr(candles, period = 14) {
-  if (candles.length < period + 1) return null;
-
-  const ranges = [];
-
-  for (let i = 1; i < candles.length; i++) {
-    const c = candles[i];
-    const p = candles[i - 1];
-
-    ranges.push(Math.max(
-      c.high - c.low,
-      Math.abs(c.high - p.close),
-      Math.abs(c.low - p.close)
-    ));
-  }
-
-  const values = ranges.slice(-period);
-  return values.reduce((sum, n) => sum + n, 0) / values.length;
+  return Math.abs(values[end] - values[start]) / totalMovement;
 }
 
 function analyze(candles) {
-  if (candles.length < 60) {
+  const empty = {
+    signal: 'STANDBY',
+    score: 0,
+    reason: 'ข้อมูลไม่เพียงพอ',
+    marketRegime: 'UNKNOWN',
+    indicators: {}
+  };
+
+  if (candles.length < 100) {
     return {
-      signal: 'STANDBY',
-      score: 0,
-      reason: 'ข้อมูลไม่ครบ 60 แท่ง',
-      indicators: {}
+      ...empty,
+      reason: 'ต้องมีแท่งเทียนอย่างน้อย 100 แท่ง'
     };
   }
 
   const closes = candles.map(c => c.close);
-  const e8 = ema(closes, 8);
-  const e21 = ema(closes, 21);
-  const e50 = ema(closes, 50);
+  const e8s = emaSeries(closes, 8);
+  const e21s = emaSeries(closes, 21);
+  const e50s = emaSeries(closes, 50);
+  const e8 = e8s.at(-1);
+  const e21 = e21s.at(-1);
+  const e50 = e50s.at(-1);
   const rv = rsi(closes, 14);
-  const fast = ema(closes, 12);
-  const slow = ema(closes, 26);
-  const macd = fast - slow;
-  const av = atr(candles, 14);
 
-  if ([e8, e21, e50, rv, macd, av].some(v => !Number.isFinite(v))) {
+  const macdLine = emaSeries(closes, 12).map((v, i) =>
+    v === null ? null : v - emaSeries(closes, 26)[i]
+  );
+
+  const validMacd = macdLine
+    .map((v, i) => ({ v, i }))
+    .filter(item => Number.isFinite(item.v));
+
+  if (validMacd.length < 35 || !Number.isFinite(rv)) {
     return {
-      signal: 'STANDBY',
-      score: 0,
-      reason: 'คำนวณตัวชี้วัดไม่ครบ',
-      indicators: {}
+      ...empty,
+      reason: 'คำนวณ Indicator ไม่ครบ'
     };
   }
 
-  const last = candles[candles.length - 1];
-  const prev = candles[candles.length - 2];
-  const range = Math.max(last.high - last.low, 1e-10);
-  const bodyRatio = Math.abs(last.close - last.open) / range;
-  const momentum = closes.at(-1) - closes.at(-4);
+  // Build MACD signal line only from valid MACD values.
+  const macdValues = validMacd.map(item => item.v);
+  const signalValues = emaSeries(macdValues, 9);
+  const macd = macdValues.at(-1);
+  const macdSignal = signalValues.at(-1);
+  const macdHist = macd - macdSignal;
+
+  const av = atr(candles, 14);
+  const er = calculateEfficiencyRatio(closes, 10);
+
+  if (
+    ![e8, e21, e50, macd, macdSignal, macdHist, av, er]
+      .every(Number.isFinite) ||
+    av <= 0
+  ) {
+    return {
+      ...empty,
+      reason: 'ข้อมูลไม่พร้อมสำหรับการคำนวณ'
+    };
+  }
+
+  const last = candles.at(-1);
+  const prev = candles.at(-2);
+  const range = last.high - last.low;
+  const body = Math.abs(last.close - last.open);
+  const bodyRatio = range > 0 ? body / range : 0;
+  const upperWick = last.high - Math.max(last.open, last.close);
+  const lowerWick = Math.min(last.open, last.close) - last.low;
+  const closePosition = range > 0
+    ? (last.close - last.low) / range
+    : 0.5;
+
+  const emaSpreadATR = Math.abs(e8 - e50) / av;
+  const emaSlopeATR = (e8 - e8s.at(-4)) / av;
+  const momentumATR = (last.close - closes.at(-4)) / av;
+
+  const sideways = er < 0.18 && emaSpreadATR < 0.65;
+  const spike = range > av * 2.5;
+  const flatMarket = av / last.close < 0.000005;
 
   let call = 0;
   let put = 0;
-  const reasons = [];
+  const bullish = [];
+  const bearish = [];
+  const warnings = [];
 
+  // 1. Trend: EMA alignment and slope.
   if (e8 > e21 && e21 > e50) {
-    call += 30;
-    reasons.push('EMA ขาขึ้น');
+    call += 25;
+    bullish.push('EMA เรียงตัวขาขึ้น');
   } else if (e8 < e21 && e21 < e50) {
-    put += 30;
-    reasons.push('EMA ขาลง');
+    put += 25;
+    bearish.push('EMA เรียงตัวขาลง');
+  } else {
+    warnings.push('EMA ยังไม่เรียงตัว');
   }
 
-  if (macd > 0) call += 15;
-  else if (macd < 0) put += 15;
+  if (emaSlopeATR > 0.08) {
+    call += 8;
+    bullish.push('EMA ระยะสั้นมีความชันบวก');
+  } else if (emaSlopeATR < -0.08) {
+    put += 8;
+    bearish.push('EMA ระยะสั้นมีความชันลบ');
+  }
 
-  if (rv >= 52 && rv <= 68) call += 15;
-  else if (rv <= 48 && rv >= 32) put += 15;
+  // 2. MACD: histogram direction, not just MACD above/below zero.
+  if (macdHist > 0 && macd > 0) {
+    call += 18;
+    bullish.push('MACD สนับสนุนขาขึ้น');
+  } else if (macdHist < 0 && macd < 0) {
+    put += 18;
+    bearish.push('MACD สนับสนุนขาลง');
+  } else if (macdHist > 0) {
+    call += 8;
+    bullish.push('MACD Histogram เป็นบวก');
+  } else if (macdHist < 0) {
+    put += 8;
+    bearish.push('MACD Histogram เป็นลบ');
+  }
 
-  if (momentum > 0) call += 15;
-  else if (momentum < 0) put += 15;
+  // 3. RSI: momentum confirmation without chasing extremes.
+  if (rv >= 52 && rv <= 68) {
+    call += 15;
+    bullish.push('RSI สนับสนุนแรงซื้อ');
+  } else if (rv >= 32 && rv <= 48) {
+    put += 15;
+    bearish.push('RSI สนับสนุนแรงขาย');
+  } else if (rv > 68) {
+    warnings.push('RSI สูง ระวังไล่ราคา');
+  } else if (rv < 32) {
+    warnings.push('RSI ต่ำ ระวังแรงเด้งกลับ');
+  } else {
+    warnings.push('RSI ยังไม่ยืนยันทิศทาง');
+  }
 
-  if (last.close > last.open && bodyRatio >= 0.45) call += 10;
-  else if (last.close < last.open && bodyRatio >= 0.45) put += 10;
+  // 4. Normalized momentum.
+  if (momentumATR > 0.15) {
+    call += 10;
+    bullish.push('Momentum เป็นบวก');
+  } else if (momentumATR < -0.15) {
+    put += 10;
+    bearish.push('Momentum เป็นลบ');
+  }
 
-  if (last.close > prev.close) call += 5;
-  else if (last.close < prev.close) put += 5;
+  // 5. Candle confirmation and close location.
+  if (
+    last.close > last.open &&
+    bodyRatio >= 0.45 &&
+    closePosition >= 0.65 &&
+    upperWick <= body * 0.8
+  ) {
+    call += 10;
+    bullish.push('แท่งเขียวปิดใกล้จุดสูง');
+  } else if (
+    last.close < last.open &&
+    bodyRatio >= 0.45 &&
+    closePosition <= 0.35 &&
+    lowerWick <= body * 0.8
+  ) {
+    put += 10;
+    bearish.push('แท่งแดงปิดใกล้จุดต่ำ');
+  }
 
-  // RSI สุดโต่ง: หลีกเลี่ยงการไล่ราคาที่อาจกลับตัว
-  if (rv > 72) call = Math.min(call, 45);
-  if (rv < 28) put = Math.min(put, 45);
+  // 6. Price location relative to short EMA.
+  if (last.close > e8 && last.close > prev.close) {
+    call += 5;
+    bullish.push('ราคาปิดอยู่เหนือ EMA8');
+  } else if (last.close < e8 && last.close < prev.close) {
+    put += 5;
+    bearish.push('ราคาปิดอยู่ใต้ EMA8');
+  }
+
+  // 7. Market quality gate.
+  const marketRegime = sideways
+    ? 'SIDEWAYS'
+    : spike
+      ? 'HIGH_VOLATILITY'
+      : flatMarket
+        ? 'LOW_VOLATILITY'
+        : 'TRENDING_OR_MIXED';
+
+  if (sideways) warnings.push('ตลาดแกว่งออกข้าง');
+  if (spike) warnings.push('แท่งล่าสุดผันผวนผิดปกติ');
+  if (flatMarket) warnings.push('ความผันผวนต่ำมาก');
 
   let signal = 'STANDBY';
   let score = Math.max(call, put);
 
-  if (call >= MIN_SCORE && call > put + 10) {
-    signal = 'CALL';
-    score = call;
-  } else if (put >= MIN_SCORE && put > call + 10) {
-    signal = 'PUT';
-    score = put;
+  if (!sideways && !spike && !flatMarket) {
+    if (call >= MIN_SCORE && call >= put + 12) {
+      signal = 'CALL';
+      score = call;
+    } else if (put >= MIN_SCORE && put >= call + 12) {
+      signal = 'PUT';
+      score = put;
+    }
+  } else {
+    score = 0;
   }
 
-  if (av <= 0) {
-    signal = 'STANDBY';
-    score = 0;
+  const reasons = signal === 'CALL'
+    ? bullish
+    : signal === 'PUT'
+      ? bearish
+      : warnings;
+
+  if (signal === 'STANDBY' && reasons.length === 0) {
+    reasons.push('คะแนนหรือทิศทางยังไม่ผ่านเกณฑ์');
   }
 
   return {
     signal,
     score: Math.min(100, Math.round(score)),
-    reason: reasons.join(' · ') || 'ทิศทางยังไม่ชัดเจน',
+    reason: reasons.join(' · '),
+    marketRegime,
     indicators: {
       ema8: e8,
       ema21: e21,
       ema50: e50,
+      emaSlopeATR,
       rsi: rv,
       macd,
+      macdSignal,
+      macdHistogram: macdHist,
       atr: av,
-      bodyRatio
+      efficiencyRatio: er,
+      emaSpreadATR,
+      momentumATR,
+      bodyRatio,
+      closePosition,
+      upperWick,
+      lowerWick,
+      bullishPoints: call,
+      bearishPoints: put,
+      warnings
     }
   };
 }
@@ -375,6 +596,10 @@ function isQuotaError(message, status) {
 }
 
 function unavailable(symbol, code, message, previous) {
+  const closeMs = previous?.candleCloseTime
+    ? Date.parse(previous.candleCloseTime)
+    : NaN;
+
   return {
     ok: false,
     code,
@@ -386,14 +611,13 @@ function unavailable(symbol, code, message, previous) {
     candleTime: previous?.candleTime ?? null,
     candleCloseTime: previous?.candleCloseTime ?? null,
     fetchedAt: previous?.fetchedAt ?? null,
-    dataAgeSeconds: previous?.candleCloseTime
-      ? Math.max(0, Math.floor(
-          (Date.now() - Date.parse(previous.candleCloseTime)) / 1000
-        ))
+    dataAgeSeconds: Number.isFinite(closeMs)
+      ? Math.max(0, Math.floor((Date.now() - closeMs) / 1000))
       : null,
     signal: 'STANDBY',
     score: 0,
     reason: 'ข้อมูลไม่พร้อม — หยุดสัญญาณใหม่',
+    marketRegime: 'UNKNOWN',
     indicators: previous?.indicators ?? {},
     candles: previous?.candles ?? []
   };
@@ -406,12 +630,15 @@ function checkCached(symbol) {
   const closeMs = Date.parse(previous.candleCloseTime);
   const ageMs = Date.now() - closeMs;
 
-  if (!Number.isFinite(closeMs) || ageMs < 0 ||
-      ageMs > MAX_CANDLE_CLOSE_AGE_MS) {
+  if (
+    !Number.isFinite(closeMs) ||
+    ageMs < 0 ||
+    ageMs > MAX_CANDLE_CLOSE_AGE_MS
+  ) {
     return unavailable(
       symbol,
       'DATA_STALE',
-      'ข้อมูลแท่งเทียนเกินอายุที่อนุญาต',
+      'ข้อมูลแท่งเทียนเก่าเกินเกณฑ์',
       previous
     );
   }
@@ -421,6 +648,102 @@ function checkCached(symbol) {
     dataAgeSeconds: Math.floor(ageMs / 1000),
     dataFresh: true
   };
+}
+
+function rememberSignal(data) {
+  // Record at most one result per completed candle and pair.
+  const key = `${data.symbol}:${data.candleTime}`;
+
+  if (lastRecordedCandle.get(data.symbol) === data.candleTime) {
+    return;
+  }
+
+  lastRecordedCandle.set(data.symbol, data.candleTime);
+
+  signalHistory.unshift({
+    id: crypto.randomUUID(),
+    symbol: data.symbol,
+    pair: data.pair,
+    candleTime: data.candleTime,
+    candleCloseTime: data.candleCloseTime,
+    createdAt: new Date().toISOString(),
+    signal: data.signal,
+    score: data.score,
+    price: data.price,
+    reason: data.reason,
+    marketRegime: data.marketRegime,
+    outcome: null
+  });
+
+  if (signalHistory.length > HISTORY_LIMIT) {
+    signalHistory.length = HISTORY_LIMIT;
+  }
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function enqueueProviderRequest(task) {
+  const job = providerQueue.then(async () => {
+    const elapsed = Date.now() - lastProviderCallAt;
+    const remaining = GLOBAL_FETCH_GAP_MS - elapsed;
+
+    if (remaining > 0) await wait(remaining);
+
+    // Recheck after waiting: another request may have used the quota.
+    const quota = quotaState();
+
+    if (!quota.ok) {
+      const error = new Error(quota.message);
+      error.code = quota.code;
+      throw error;
+    }
+
+    lastProviderCallAt = Date.now();
+    dailyCalls += 1;
+
+    return task();
+  });
+
+  providerQueue = job.catch(() => {});
+  return job;
+}
+
+async function requestTwelveData(symbol) {
+  const url = new URL('https://api.twelvedata.com/time_series');
+  url.searchParams.set('symbol', SYMBOLS[symbol]);
+  url.searchParams.set('interval', '1min');
+  url.searchParams.set('outputsize', '120');
+  url.searchParams.set('timezone', 'UTC');
+  url.searchParams.set('apikey', API_KEY);
+
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+
+  const raw = await response.text();
+  let body;
+
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    throw new Error(`ผู้ให้บริการส่งข้อมูลที่อ่านไม่ได้ (HTTP ${response.status})`);
+  }
+
+  if (!response.ok || body.status === 'error' || body.code) {
+    const message = body.message || `HTTP ${response.status}`;
+
+    if (isQuotaError(message, response.status)) {
+      providerBlockedUntil = Date.now() + PROVIDER_COOLDOWN_MS;
+      providerBlockReason =
+        'ผู้ให้บริการจำกัดโควตาหรือความถี่ พักการเรียก API ชั่วคราว';
+    }
+
+    throw new Error(message);
+  }
+
+  return body;
 }
 
 async function fetchMarket(symbol) {
@@ -436,47 +759,24 @@ async function fetchMarket(symbol) {
   if (inFlight.has(symbol)) return inFlight.get(symbol);
 
   const quota = quotaState();
+
   if (!quota.ok) {
     return unavailable(symbol, quota.code, quota.message, cached);
   }
 
   const job = (async () => {
     try {
-      const url = new URL('https://api.twelvedata.com/time_series');
-      url.searchParams.set('symbol', SYMBOLS[symbol]);
-      url.searchParams.set('interval', '1min');
-      url.searchParams.set('outputsize', '100');
-      url.searchParams.set('timezone', 'UTC');
-      url.searchParams.set('apikey', API_KEY);
-
-      lastProviderCallAt = Date.now();
-      dailyCalls += 1;
-
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(12000)
-      });
-
-      const body = await response.json();
-
-      if (!response.ok || body.status === 'error' || body.code) {
-        const message = body.message || `HTTP ${response.status}`;
-
-        if (isQuotaError(message, response.status)) {
-          providerBlockedUntil = Date.now() + PROVIDER_COOLDOWN_MS;
-          providerBlockReason =
-            'ผู้ให้บริการจำกัดโควต้าหรือความถี่ พัก API ชั่วคราว';
-        }
-
-        throw new Error(message);
-      }
+      const body = await enqueueProviderRequest(
+        () => requestTwelveData(symbol)
+      );
 
       const candles = normalizeCandles(body.values);
 
-      if (candles.length < 60) {
-        throw new Error('มีแท่งเทียนที่ปิดแล้วไม่ถึง 60 แท่ง');
+      if (candles.length < 100) {
+        throw new Error('มีแท่งเทียนที่ปิดแล้วไม่ถึง 100 แท่ง');
       }
 
-      const last = candles[candles.length - 1];
+      const last = candles.at(-1);
       const closeMs = last.time + 60000;
       const ageMs = Date.now() - closeMs;
 
@@ -500,6 +800,7 @@ async function fetchMarket(symbol) {
         signal: result.signal,
         score: result.score,
         reason: result.reason,
+        marketRegime: result.marketRegime,
         indicators: result.indicators,
         candles: candles.slice(-30).map(c => ({
           time: new Date(c.time).toISOString(),
@@ -511,6 +812,7 @@ async function fetchMarket(symbol) {
       };
 
       cache.set(symbol, data);
+      rememberSignal(data);
       lastApiError = '';
       lastSuccessfulRequestAt = Date.now();
 
@@ -518,9 +820,8 @@ async function fetchMarket(symbol) {
     } catch (error) {
       lastApiError = String(error.message || 'API request failed');
 
-      const code = isQuotaError(lastApiError, 0)
-        ? 'API_LIMIT'
-        : 'DATA_STALE';
+      const code = error.code ||
+        (isQuotaError(lastApiError, 0) ? 'API_LIMIT' : 'DATA_STALE');
 
       return unavailable(symbol, code, lastApiError, cache.get(symbol));
     } finally {
@@ -544,11 +845,15 @@ app.get('/api/config', requireTelegram, (req, res) => {
   res.json({
     ok: true,
     symbols: Object.keys(SYMBOLS),
+    interval: '1min',
     minimumScore: MIN_SCORE,
     signalHoldSeconds: HOLD_SECONDS,
     prepareBeepSeconds: 10,
     entrySignalSeconds: 5,
-    maxCallsPerDay: MAX_CALLS
+    maxCallsPerDay: MAX_CALLS,
+    source: 'Twelve Data',
+    market: 'Forex Non-OTC',
+    automaticTrading: false
   });
 });
 
@@ -569,7 +874,9 @@ app.get('/api/status', requireTelegram, (req, res) => {
     lastSuccessfulRequestAt,
     lastApiError,
     providerBlockedUntil:
-      providerBlockedUntil > Date.now() ? providerBlockedUntil : null
+      providerBlockedUntil > Date.now() ? providerBlockedUntil : null,
+    cachedSymbols: [...cache.keys()],
+    queuedOrRunningSymbols: [...inFlight.keys()]
   });
 });
 
@@ -580,26 +887,46 @@ app.get('/api/market', requireTelegram, async (req, res) => {
     return res.status(400).json({
       ok: false,
       code: 'INVALID_SYMBOL',
-      message: 'ไม่รองรับคู่เงินนี้'
+      message: 'ไม่รองรับคู่เงินนี้',
+      supportedSymbols: Object.keys(SYMBOLS)
     });
   }
 
-  const result = await fetchMarket(symbol);
-  res.status(200).json(result);
+  try {
+    const result = await fetchMarket(symbol);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+      message: 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์',
+      signal: 'STANDBY',
+      score: 0
+    });
+  }
 });
 
 app.get('/api/signals/history', requireTelegram, (req, res) => {
+  const limit = Math.min(
+    100,
+    Math.max(1, Number(req.query.limit) || 50)
+  );
+
   res.json({
     ok: true,
-    items: [],
-    message: 'ยังไม่มีประวัติผลการเทรดที่บันทึกไว้'
+    persistent: false,
+    items: signalHistory.slice(0, limit),
+    message: 'ประวัตินี้เก็บในหน่วยความจำและจะหายเมื่อเซิร์ฟเวอร์เริ่มใหม่'
   });
 });
 
-// Express 5 compatible catch-all
+// Catch-all for the Mini App.
 app.get(/.*/, (req, res, next) => {
   if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ ok: false, code: 'NOT_FOUND' });
+    return res.status(404).json({
+      ok: false,
+      code: 'NOT_FOUND'
+    });
   }
 
   res.sendFile(
@@ -613,4 +940,6 @@ app.get(/.*/, (req, res, next) => {
 app.listen(PORT, () => {
   console.log(`AI Signal Radar running on port ${PORT}`);
   console.log(`Telegram authentication: ${REQUIRE_AUTH ? 'ON' : 'OFF'}`);
+  console.log(`Market source: Twelve Data Forex Non-OTC`);
+  console.log(`Minimum signal score: ${MIN_SCORE}`);
 });
