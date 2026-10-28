@@ -17,21 +17,18 @@ const REQUIRE_AUTH =
   String(process.env.REQUIRE_TELEGRAM_AUTH || 'true') === 'true';
 
 const MAX_CALLS = Math.max(
-  1,
-  Number(process.env.MAX_API_CALLS_PER_DAY || 700)
+  1, Number(process.env.MAX_API_CALLS_PER_DAY || 700)
 );
 const MIN_SCORE = Math.min(
-  90,
-  Math.max(40, Number(process.env.MIN_SIGNAL_SCORE || 68))
+  90, Math.max(40, Number(process.env.MIN_SIGNAL_SCORE || 68))
 );
 const HOLD_SECONDS = Math.max(
-  5,
-  Math.min(120, Number(process.env.SIGNAL_HOLD_SECONDS || 40))
+  5, Math.min(120, Number(process.env.SIGNAL_HOLD_SECONDS || 40))
 );
 
-const CACHE_MS = 55000;
+const CACHE_MS = 15000;
 const GLOBAL_FETCH_GAP_MS = 12000;
-const MAX_CANDLE_AGE_MS = 150000;
+const MAX_CANDLE_CLOSE_AGE_MS = 75000;
 const PROVIDER_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 const SYMBOLS = {
@@ -92,7 +89,7 @@ function quotaState() {
     return {
       ok: false,
       code: 'API_LIMIT',
-      message: providerBlockReason || 'API ถูกพักชั่วคราว'
+      message: providerBlockReason
     };
   }
 
@@ -100,15 +97,11 @@ function quotaState() {
     return {
       ok: false,
       code: 'WAITING',
-      message: 'จำกัดความถี่การเรียก API เพื่อประหยัดโควต้า'
+      message: 'กำลังจำกัดความถี่การเรียก API'
     };
   }
 
-  return {
-    ok: true,
-    code: 'OK',
-    message: 'พร้อมดึงข้อมูล'
-  };
+  return { ok: true, code: 'OK', message: 'พร้อมดึงข้อมูล' };
 }
 
 function verifyTelegramInitData(initData) {
@@ -120,9 +113,7 @@ function verifyTelegramInitData(initData) {
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
 
-    if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) {
-      return false;
-    }
+    if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) return false;
 
     const authDate = Number(params.get('auth_date'));
     const nowSeconds = Math.floor(Date.now() / 1000);
@@ -137,27 +128,25 @@ function verifyTelegramInitData(initData) {
 
     params.delete('hash');
 
-    const dataCheckString = [...params.entries()]
+    const checkString = [...params.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
 
-    const secretKey = crypto
+    const secret = crypto
       .createHmac('sha256', 'WebAppData')
       .update(BOT_TOKEN)
       .digest();
 
-    const calculatedHash = crypto
-      .createHmac('sha256', secretKey)
-      .update(dataCheckString)
+    const expected = crypto
+      .createHmac('sha256', secret)
+      .update(checkString)
       .digest();
 
-    const receivedHash = Buffer.from(hash, 'hex');
+    const actual = Buffer.from(hash, 'hex');
 
-    return (
-      receivedHash.length === calculatedHash.length &&
-      crypto.timingSafeEqual(receivedHash, calculatedHash)
-    );
+    return actual.length === expected.length &&
+      crypto.timingSafeEqual(actual, expected);
   } catch {
     return false;
   }
@@ -172,7 +161,7 @@ function requireTelegram(req, res, next) {
     return res.status(401).json({
       ok: false,
       code: 'AUTH_REQUIRED',
-      message: 'กรุณาเปิด Mini App ผ่าน Telegram'
+      message: 'กรุณาเปิด Mini App ผ่านปุ่มใน Telegram'
     });
   }
 
@@ -181,20 +170,17 @@ function requireTelegram(req, res, next) {
 
 function parseCandleTime(value) {
   const text = String(value || '');
-
   const normalized =
     /(?:Z|[+-]\d{2}:\d{2})$/i.test(text)
       ? text
       : `${text.replace(' ', 'T')}Z`;
 
-  const time = Date.parse(normalized);
-
-  return Number.isFinite(time) ? time : NaN;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : NaN;
 }
 
 function normalizeCandles(values) {
   const now = Date.now();
-
   const sorted = (values || [])
     .map(c => ({
       time: parseCandleTime(c.datetime),
@@ -211,77 +197,71 @@ function normalizeCandles(values) {
       Number.isFinite(c.low) &&
       Number.isFinite(c.close)
     )
-    // ใช้เฉพาะแท่งที่ปิดแล้ว ไม่ใช้แท่งที่กำลังก่อตัว
     .filter(c => c.time + 60000 <= now)
     .sort((a, b) => a.time - b.time);
 
-  const unique = [];
+  const result = [];
 
-  for (const candle of sorted) {
-    if (!unique.length || candle.time > unique[unique.length - 1].time) {
-      unique.push(candle);
+  for (const c of sorted) {
+    if (!result.length || c.time > result[result.length - 1].time) {
+      result.push(c);
     }
   }
 
-  return unique;
+  return result;
 }
 
 function ema(values, period) {
   if (values.length < period) return null;
 
   const k = 2 / (period + 1);
-
-  let result = values
-    .slice(0, period)
+  let value = values.slice(0, period)
     .reduce((sum, n) => sum + n, 0) / period;
 
   for (let i = period; i < values.length; i++) {
-    result = values[i] * k + result * (1 - k);
+    value = values[i] * k + value * (1 - k);
   }
 
-  return result;
+  return value;
 }
 
-function calculateRSI(values, period = 14) {
+function rsi(values, period = 14) {
   if (values.length < period + 1) return null;
 
-  let gains = 0;
-  let losses = 0;
+  let gain = 0;
+  let loss = 0;
 
   for (let i = values.length - period; i < values.length; i++) {
     const change = values[i] - values[i - 1];
-
-    if (change > 0) gains += change;
-    else losses -= change;
+    if (change > 0) gain += change;
+    else loss -= change;
   }
 
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
+  const avgGain = gain / period;
+  const avgLoss = loss / period;
 
   if (avgLoss === 0) return 100;
-
   return 100 - 100 / (1 + avgGain / avgLoss);
 }
 
-function calculateATR(candles, period = 14) {
+function atr(candles, period = 14) {
   if (candles.length < period + 1) return null;
 
   const ranges = [];
 
   for (let i = 1; i < candles.length; i++) {
     const c = candles[i];
-    const prev = candles[i - 1];
+    const p = candles[i - 1];
 
     ranges.push(Math.max(
       c.high - c.low,
-      Math.abs(c.high - prev.close),
-      Math.abs(c.low - prev.close)
+      Math.abs(c.high - p.close),
+      Math.abs(c.low - p.close)
     ));
   }
 
-  const selected = ranges.slice(-period);
-
-  return selected.reduce((sum, n) => sum + n, 0) / selected.length;
+  const values = ranges.slice(-period);
+  return values.reduce((sum, n) => sum + n, 0) / values.length;
 }
 
 function analyze(candles) {
@@ -289,7 +269,7 @@ function analyze(candles) {
     return {
       signal: 'STANDBY',
       score: 0,
-      reason: 'ข้อมูลแท่งเทียนไม่เพียงพอ',
+      reason: 'ข้อมูลไม่ครบ 60 แท่ง',
       indicators: {}
     };
   }
@@ -298,13 +278,13 @@ function analyze(candles) {
   const e8 = ema(closes, 8);
   const e21 = ema(closes, 21);
   const e50 = ema(closes, 50);
-  const rsi = calculateRSI(closes, 14);
+  const rv = rsi(closes, 14);
   const fast = ema(closes, 12);
   const slow = ema(closes, 26);
-  const macd = fast !== null && slow !== null ? fast - slow : null;
-  const atr = calculateATR(candles, 14);
+  const macd = fast - slow;
+  const av = atr(candles, 14);
 
-  if ([e8, e21, e50, rsi, macd, atr].some(v => v === null)) {
+  if ([e8, e21, e50, rv, macd, av].some(v => !Number.isFinite(v))) {
     return {
       signal: 'STANDBY',
       score: 0,
@@ -314,10 +294,10 @@ function analyze(candles) {
   }
 
   const last = candles[candles.length - 1];
-  const previous = candles[candles.length - 2];
+  const prev = candles[candles.length - 2];
   const range = Math.max(last.high - last.low, 1e-10);
   const bodyRatio = Math.abs(last.close - last.open) / range;
-  const momentum = last.close - closes[closes.length - 4];
+  const momentum = closes.at(-1) - closes.at(-4);
 
   let call = 0;
   let put = 0;
@@ -325,29 +305,30 @@ function analyze(candles) {
 
   if (e8 > e21 && e21 > e50) {
     call += 30;
-    reasons.push('EMA เรียงตัวขาขึ้น');
+    reasons.push('EMA ขาขึ้น');
   } else if (e8 < e21 && e21 < e50) {
     put += 30;
-    reasons.push('EMA เรียงตัวขาลง');
+    reasons.push('EMA ขาลง');
   }
 
   if (macd > 0) call += 15;
-  if (macd < 0) put += 15;
+  else if (macd < 0) put += 15;
 
-  if (rsi >= 52 && rsi <= 68) call += 15;
-  if (rsi <= 48 && rsi >= 32) put += 15;
+  if (rv >= 52 && rv <= 68) call += 15;
+  else if (rv <= 48 && rv >= 32) put += 15;
 
   if (momentum > 0) call += 15;
-  if (momentum < 0) put += 15;
+  else if (momentum < 0) put += 15;
 
   if (last.close > last.open && bodyRatio >= 0.45) call += 10;
-  if (last.close < last.open && bodyRatio >= 0.45) put += 10;
+  else if (last.close < last.open && bodyRatio >= 0.45) put += 10;
 
-  if (last.close > previous.close) call += 5;
-  if (last.close < previous.close) put += 5;
+  if (last.close > prev.close) call += 5;
+  else if (last.close < prev.close) put += 5;
 
-  if (rsi > 72) call = Math.min(call, 45);
-  if (rsi < 28) put = Math.min(put, 45);
+  // RSI สุดโต่ง: หลีกเลี่ยงการไล่ราคาที่อาจกลับตัว
+  if (rv > 72) call = Math.min(call, 45);
+  if (rv < 28) put = Math.min(put, 45);
 
   let signal = 'STANDBY';
   let score = Math.max(call, put);
@@ -360,7 +341,7 @@ function analyze(candles) {
     score = put;
   }
 
-  if (atr <= 0) {
+  if (av <= 0) {
     signal = 'STANDBY';
     score = 0;
   }
@@ -368,32 +349,32 @@ function analyze(candles) {
   return {
     signal,
     score: Math.min(100, Math.round(score)),
-    reason: reasons.join(' · ') || 'เงื่อนไขยังไม่ชัดเจน',
+    reason: reasons.join(' · ') || 'ทิศทางยังไม่ชัดเจน',
     indicators: {
       ema8: e8,
       ema21: e21,
       ema50: e50,
-      rsi,
+      rsi: rv,
       macd,
-      atr,
+      atr: av,
       bodyRatio
     }
   };
 }
 
 function isQuotaError(message, status) {
-  const text = String(message || '').toLowerCase();
+  const t = String(message || '').toLowerCase();
 
   return status === 429 ||
-    text.includes('api credits') ||
-    text.includes('credit') ||
-    text.includes('rate limit') ||
-    text.includes('run out') ||
-    text.includes('limit exceeded') ||
-    text.includes('quota');
+    t.includes('api credits') ||
+    t.includes('credit') ||
+    t.includes('rate limit') ||
+    t.includes('run out') ||
+    t.includes('limit exceeded') ||
+    t.includes('quota');
 }
 
-function makeUnavailable(symbol, code, message, previous) {
+function unavailable(symbol, code, message, previous) {
   return {
     ok: false,
     code,
@@ -403,44 +384,65 @@ function makeUnavailable(symbol, code, message, previous) {
     dataFresh: false,
     price: previous?.price ?? null,
     candleTime: previous?.candleTime ?? null,
+    candleCloseTime: previous?.candleCloseTime ?? null,
     fetchedAt: previous?.fetchedAt ?? null,
-    dataAgeSeconds: previous?.candleTime
-      ? Math.floor(
-          (Date.now() - Date.parse(previous.candleTime)) / 1000
-        )
+    dataAgeSeconds: previous?.candleCloseTime
+      ? Math.max(0, Math.floor(
+          (Date.now() - Date.parse(previous.candleCloseTime)) / 1000
+        ))
       : null,
     signal: 'STANDBY',
     score: 0,
-    reason: 'หยุดสัญญาณจนกว่าข้อมูลจะสด',
+    reason: 'ข้อมูลไม่พร้อม — หยุดสัญญาณใหม่',
     indicators: previous?.indicators ?? {},
     candles: previous?.candles ?? []
+  };
+}
+
+function checkCached(symbol) {
+  const previous = cache.get(symbol);
+  if (!previous) return null;
+
+  const closeMs = Date.parse(previous.candleCloseTime);
+  const ageMs = Date.now() - closeMs;
+
+  if (!Number.isFinite(closeMs) || ageMs < 0 ||
+      ageMs > MAX_CANDLE_CLOSE_AGE_MS) {
+    return unavailable(
+      symbol,
+      'DATA_STALE',
+      'ข้อมูลแท่งเทียนเกินอายุที่อนุญาต',
+      previous
+    );
+  }
+
+  return {
+    ...previous,
+    dataAgeSeconds: Math.floor(ageMs / 1000),
+    dataFresh: true
   };
 }
 
 async function fetchMarket(symbol) {
   resetDailyCounterIfNeeded();
 
-  const now = Date.now();
   const cached = cache.get(symbol);
+  const now = Date.now();
 
   if (cached && now - cached.fetchedAt < CACHE_MS) {
-    return cached;
+    return checkCached(symbol);
   }
 
-  if (inFlight.has(symbol)) {
-    return inFlight.get(symbol);
-  }
+  if (inFlight.has(symbol)) return inFlight.get(symbol);
 
   const quota = quotaState();
-
   if (!quota.ok) {
-    return makeUnavailable(symbol, quota.code, quota.message, cached);
+    return unavailable(symbol, quota.code, quota.message, cached);
   }
 
-  const promise = (async () => {
+  const job = (async () => {
     try {
       const url = new URL('https://api.twelvedata.com/time_series');
-
       url.searchParams.set('symbol', SYMBOLS[symbol]);
       url.searchParams.set('interval', '1min');
       url.searchParams.set('outputsize', '100');
@@ -454,13 +456,7 @@ async function fetchMarket(symbol) {
         signal: AbortSignal.timeout(12000)
       });
 
-      let body;
-
-      try {
-        body = await response.json();
-      } catch {
-        throw new Error('API ตอบกลับไม่ใช่ JSON');
-      }
+      const body = await response.json();
 
       if (!response.ok || body.status === 'error' || body.code) {
         const message = body.message || `HTTP ${response.status}`;
@@ -468,7 +464,7 @@ async function fetchMarket(symbol) {
         if (isQuotaError(message, response.status)) {
           providerBlockedUntil = Date.now() + PROVIDER_COOLDOWN_MS;
           providerBlockReason =
-            'Twelve Data จำกัดโควต้าหรือความถี่ พัก API ชั่วคราว';
+            'ผู้ให้บริการจำกัดโควต้าหรือความถี่ พัก API ชั่วคราว';
         }
 
         throw new Error(message);
@@ -480,29 +476,31 @@ async function fetchMarket(symbol) {
         throw new Error('มีแท่งเทียนที่ปิดแล้วไม่ถึง 60 แท่ง');
       }
 
-      const latest = candles[candles.length - 1];
-      const ageMs = Date.now() - latest.time;
+      const last = candles[candles.length - 1];
+      const closeMs = last.time + 60000;
+      const ageMs = Date.now() - closeMs;
 
-      if (ageMs < 0 || ageMs > MAX_CANDLE_AGE_MS) {
+      if (ageMs < 0 || ageMs > MAX_CANDLE_CLOSE_AGE_MS) {
         throw new Error('ข้อมูลแท่งเทียนเก่าเกินเกณฑ์');
       }
 
-      const resultAnalysis = analyze(candles);
+      const result = analyze(candles);
 
-      const result = {
+      const data = {
         ok: true,
         code: 'OK',
         symbol,
         pair: SYMBOLS[symbol],
-        price: latest.close,
-        candleTime: new Date(latest.time).toISOString(),
+        price: last.close,
+        candleTime: new Date(last.time).toISOString(),
+        candleCloseTime: new Date(closeMs).toISOString(),
         fetchedAt: Date.now(),
         dataAgeSeconds: Math.floor(ageMs / 1000),
         dataFresh: true,
-        signal: resultAnalysis.signal,
-        score: resultAnalysis.score,
-        reason: resultAnalysis.reason,
-        indicators: resultAnalysis.indicators,
+        signal: result.signal,
+        score: result.score,
+        reason: result.reason,
+        indicators: result.indicators,
         candles: candles.slice(-30).map(c => ({
           time: new Date(c.time).toISOString(),
           open: c.open,
@@ -512,11 +510,11 @@ async function fetchMarket(symbol) {
         }))
       };
 
-      cache.set(symbol, result);
+      cache.set(symbol, data);
       lastApiError = '';
       lastSuccessfulRequestAt = Date.now();
 
-      return result;
+      return data;
     } catch (error) {
       lastApiError = String(error.message || 'API request failed');
 
@@ -524,19 +522,14 @@ async function fetchMarket(symbol) {
         ? 'API_LIMIT'
         : 'DATA_STALE';
 
-      return makeUnavailable(
-        symbol,
-        code,
-        lastApiError,
-        cache.get(symbol)
-      );
+      return unavailable(symbol, code, lastApiError, cache.get(symbol));
     } finally {
       inFlight.delete(symbol);
     }
   })();
 
-  inFlight.set(symbol, promise);
-  return promise;
+  inFlight.set(symbol, job);
+  return job;
 }
 
 app.get('/api/health', (req, res) => {
@@ -554,22 +547,20 @@ app.get('/api/config', requireTelegram, (req, res) => {
     minimumScore: MIN_SCORE,
     signalHoldSeconds: HOLD_SECONDS,
     prepareBeepSeconds: 10,
-    entryBeepSeconds: 2,
+    entrySignalSeconds: 5,
     maxCallsPerDay: MAX_CALLS
   });
 });
 
 app.get('/api/status', requireTelegram, (req, res) => {
   resetDailyCounterIfNeeded();
-
-  const quota = quotaState();
-  const now = Date.now();
+  const q = quotaState();
 
   res.json({
     ok: true,
     apiConfigured: Boolean(API_KEY),
-    status: quota.code,
-    message: quota.message,
+    status: q.code,
+    message: q.message,
     dailyCalls,
     maxCallsPerDay: MAX_CALLS,
     remainingLocalCalls: Math.max(0, MAX_CALLS - dailyCalls),
@@ -578,14 +569,14 @@ app.get('/api/status', requireTelegram, (req, res) => {
     lastSuccessfulRequestAt,
     lastApiError,
     providerBlockedUntil:
-      providerBlockedUntil > now ? providerBlockedUntil : null
+      providerBlockedUntil > Date.now() ? providerBlockedUntil : null
   });
 });
 
 app.get('/api/market', requireTelegram, async (req, res) => {
   const symbol = String(req.query.symbol || 'EURUSD').toUpperCase();
 
-  if (!Object.prototype.hasOwnProperty.call(SYMBOLS, symbol)) {
+  if (!Object.hasOwn(SYMBOLS, symbol)) {
     return res.status(400).json({
       ok: false,
       code: 'INVALID_SYMBOL',
@@ -605,13 +596,10 @@ app.get('/api/signals/history', requireTelegram, (req, res) => {
   });
 });
 
-// Express 5: ใช้ RegExp route เพื่อส่งหน้าเว็บสำหรับเส้นทางที่ไม่ใช่ API
+// Express 5 compatible catch-all
 app.get(/.*/, (req, res, next) => {
   if (req.path.startsWith('/api/')) {
-    return res.status(404).json({
-      ok: false,
-      code: 'NOT_FOUND'
-    });
+    return res.status(404).json({ ok: false, code: 'NOT_FOUND' });
   }
 
   res.sendFile(
