@@ -16,31 +16,32 @@ const state = {
   running: true,
   soundEnabled: false,
   busy: false,
-  timer: null,
-  statusTimer: null,
   current: null,
   activeSignal: 'STANDBY',
   signalExpiresAt: 0,
-  lastSignalKey: '',
-  lastBeeps: new Set(),
+  lastWarningMinute: null,
+  lastEntryMinute: null,
   audioContext: null,
-  lastApiStatus: null
+  lastStatus: null,
+  lastSignalCandle: null
 };
 
-function telegramHeaders() {
-  const headers = {};
+const HOLD_SECONDS = 40;
+const WARNING_SECONDS = 10;
+const ENTRY_SECONDS = 5;
+const MAX_DATA_AGE_SECONDS = 75;
 
+function headers() {
+  const result = {};
   if (tg?.initData) {
-    headers['x-telegram-init-data'] = tg.initData;
+    result['x-telegram-init-data'] = tg.initData;
   }
-
-  return headers;
+  return result;
 }
 
 async function getJSON(url) {
   const response = await fetch(url, {
-    method: 'GET',
-    headers: telegramHeaders(),
+    headers: headers(),
     cache: 'no-store'
   });
 
@@ -53,7 +54,7 @@ async function getJSON(url) {
   }
 
   if (response.status === 401 || data.code === 'AUTH_REQUIRED') {
-    throw new Error('กรุณาเปิด Mini App จากปุ่มใน Telegram');
+    throw new Error('กรุณาเปิด Mini App ผ่านปุ่มใน Telegram');
   }
 
   if (!response.ok) {
@@ -63,25 +64,13 @@ async function getJSON(url) {
   return data;
 }
 
-function formatPrice(value) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
-    return '--';
-  }
-
-  const number = Number(value);
-  return number >= 100
-    ? number.toFixed(3)
-    : number.toFixed(5);
-}
-
 function formatTime(value) {
   if (!value) return '--';
 
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return '--';
 
-  return date.toLocaleString('th-TH', {
+  return date.toLocaleTimeString('th-TH', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -89,22 +78,29 @@ function formatTime(value) {
   });
 }
 
-function showAlert(title, message) {
+function formatPrice(value) {
+  if (!Number.isFinite(Number(value))) return '--';
+
+  const n = Number(value);
+  return n >= 100 ? n.toFixed(3) : n.toFixed(5);
+}
+
+function alertBox(title, message) {
   $('alertBox').classList.remove('hidden');
   $('alertTitle').textContent = title;
   $('alertMessage').textContent = message;
 }
 
-function hideAlert() {
+function clearAlert() {
   $('alertBox').classList.add('hidden');
 }
 
-function setConnection(good, text) {
-  $('connectionDot').className = `dot ${good ? 'good' : 'bad'}`;
+function connection(ready, text) {
+  $('connectionDot').className = `dot ${ready ? 'good' : 'bad'}`;
   $('connectionText').textContent = text;
 }
 
-function setStandby(reason) {
+function standby(reason = 'รอสัญญาณรอบถัดไป') {
   state.activeSignal = 'STANDBY';
   state.signalExpiresAt = 0;
 
@@ -112,12 +108,24 @@ function setStandby(reason) {
   $('signalText').textContent = 'STANDBY';
   $('signalArrow').textContent = '●';
   $('signalScore').textContent = 'Score --';
-  $('signalReason').textContent =
-    reason || 'รอสัญญาณที่ผ่านการตรวจสอบ';
+  $('signalReason').textContent = reason;
 }
 
-function setDataStatus(code, message, fresh) {
-  const statusText = {
+function showSignal(signal, score, reason) {
+  const isCall = signal === 'CALL';
+
+  state.activeSignal = signal;
+  state.signalExpiresAt = Date.now() + HOLD_SECONDS * 1000;
+
+  $('signalCard').className = `signal-card ${isCall ? 'call' : 'put'}`;
+  $('signalText').textContent = signal;
+  $('signalArrow').textContent = isCall ? '↑' : '↓';
+  $('signalScore').textContent = `Score ${score}`;
+  $('signalReason').textContent = reason || 'ผ่านเงื่อนไขวิเคราะห์';
+}
+
+function setDataState(code, message, fresh) {
+  const labels = {
     OK: 'LIVE DATA',
     API_LIMIT: 'API LIMIT',
     DATA_STALE: 'DATA STALE',
@@ -126,119 +134,99 @@ function setDataStatus(code, message, fresh) {
     AUTH_REQUIRED: 'AUTH REQUIRED'
   };
 
-  $('dataStatus').textContent = statusText[code] || code || 'UNKNOWN';
-  setConnection(Boolean(fresh), fresh ? 'ข้อมูลพร้อม' : 'ข้อมูลไม่พร้อม');
+  $('dataStatus').textContent = labels[code] || code || 'UNKNOWN';
+  connection(fresh, fresh ? 'ข้อมูลพร้อม' : 'ข้อมูลไม่พร้อม');
 
   if (!fresh) {
-    setStandby(message || 'ข้อมูลไม่สด — หยุดสัญญาณ');
-    if (message) showAlert($('dataStatus').textContent, message);
+    standby(message || 'ข้อมูลไม่สด — หยุดสัญญาณใหม่');
+    if (message) alertBox($('dataStatus').textContent, message);
   } else {
-    hideAlert();
+    clearAlert();
   }
 }
 
-function renderMarket(data) {
-  state.current = data;
+function renderIndicators(data) {
+  const i = data.indicators || {};
 
   $('priceValue').textContent = formatPrice(data.price);
   $('candleTime').textContent = formatTime(data.candleTime);
-  $('dataAge').textContent =
-    Number.isFinite(data.dataAgeSeconds)
-      ? `${data.dataAgeSeconds} วินาที`
-      : '--';
+  $('dataAge').textContent = Number.isFinite(data.dataAgeSeconds)
+    ? `${data.dataAgeSeconds} วินาทีหลังแท่งปิด`
+    : '--';
 
   $('updatedAt').textContent =
     `รับข้อมูลล่าสุด ${formatTime(data.fetchedAt)}`;
 
-  const indicators = data.indicators || {};
+  $('rsiValue').textContent = Number.isFinite(i.rsi)
+    ? Number(i.rsi).toFixed(1)
+    : '--';
 
-  $('rsiValue').textContent =
-    Number.isFinite(indicators.rsi)
-      ? Number(indicators.rsi).toFixed(1)
-      : '--';
-
-  $('macdValue').textContent =
-    Number.isFinite(indicators.macd)
-      ? Number(indicators.macd).toPrecision(4)
-      : '--';
+  $('macdValue').textContent = Number.isFinite(i.macd)
+    ? Number(i.macd).toPrecision(4)
+    : '--';
 
   if (
-    Number.isFinite(indicators.ema8) &&
-    Number.isFinite(indicators.ema21) &&
-    Number.isFinite(indicators.ema50)
+    Number.isFinite(i.ema8) &&
+    Number.isFinite(i.ema21) &&
+    Number.isFinite(i.ema50)
   ) {
-    const trend =
-      indicators.ema8 > indicators.ema21 &&
-      indicators.ema21 > indicators.ema50
+    $('trendValue').textContent =
+      i.ema8 > i.ema21 && i.ema21 > i.ema50
         ? 'ขาขึ้น'
-        : indicators.ema8 < indicators.ema21 &&
-          indicators.ema21 < indicators.ema50
+        : i.ema8 < i.ema21 && i.ema21 < i.ema50
           ? 'ขาลง'
           : 'ไม่ชัดเจน';
-
-    $('trendValue').textContent = trend;
   } else {
     $('trendValue').textContent = '--';
   }
+}
 
-  if (!data.ok || data.dataFresh !== true) {
-    setDataStatus(data.code || 'DATA_STALE', data.message, false);
+function isFresh(data) {
+  return Boolean(
+    data &&
+    data.ok === true &&
+    data.dataFresh === true &&
+    Number.isFinite(data.dataAgeSeconds) &&
+    data.dataAgeSeconds >= 0 &&
+    data.dataAgeSeconds <= MAX_DATA_AGE_SECONDS &&
+    (data.signal === 'CALL' ||
+      data.signal === 'PUT' ||
+      data.signal === 'STANDBY')
+  );
+}
+
+function renderMarket(data) {
+  state.current = data;
+  renderIndicators(data);
+
+  if (!isFresh(data)) {
+    setDataState(
+      data.code || 'DATA_STALE',
+      data.message || 'ข้อมูลไม่สด — งดสัญญาณ',
+      false
+    );
     return;
   }
 
-  setDataStatus('OK', '', true);
-
-  const key = `${data.symbol}:${data.candleTime}`;
-
-  // Only accept a signal once for each newly observed closed candle.
-  if (key !== state.lastSignalKey) {
-    state.lastSignalKey = key;
-
-    if (
-      (data.signal === 'CALL' || data.signal === 'PUT') &&
-      Number(data.score) >= 1
-    ) {
-      state.activeSignal = data.signal;
-      state.signalExpiresAt =
-        Date.now() + Number(window.signalHoldSeconds || 40) * 1000;
-
-      renderSignal(data.signal, data.score, data.reason);
-    } else {
-      setStandby(data.reason || 'คะแนนไม่ถึงเกณฑ์');
-    }
-  } else if (Date.now() >= state.signalExpiresAt) {
-    setStandby('ครบเวลาสัญญาณแล้ว — รอรอบใหม่');
-  }
-}
-
-function renderSignal(signal, score, reason) {
-  const isCall = signal === 'CALL';
-  $('signalCard').className = `signal-card ${isCall ? 'call' : 'put'}`;
-  $('signalText').textContent = signal;
-  $('signalArrow').textContent = isCall ? '↑' : '↓';
-  $('signalScore').textContent = `Score ${score}`;
-  $('signalReason').textContent = reason || 'ผ่านเกณฑ์วิเคราะห์';
+  setDataState('OK', '', true);
 }
 
 async function refreshStatus() {
   try {
     const data = await getJSON('/api/status');
-    state.lastApiStatus = data;
+    state.lastStatus = data;
 
     $('quotaText').textContent =
       `${data.dailyCalls} / ${data.maxCallsPerDay}`;
 
     if (!data.apiConfigured) {
-      setDataStatus('CONFIG_ERROR', data.message, false);
-      return;
-    }
-
-    if (data.status === 'API_LIMIT') {
-      setDataStatus('API_LIMIT', data.message, false);
+      setDataState('CONFIG_ERROR', 'ยังไม่ได้ตั้งค่า API Key บน Render', false);
+    } else if (data.status === 'API_LIMIT') {
+      setDataState('API_LIMIT', data.message, false);
     }
   } catch (error) {
-    if (String(error.message).includes('Mini App')) {
-      setDataStatus('AUTH_REQUIRED', error.message, false);
+    if (String(error.message).includes('Telegram')) {
+      setDataState('AUTH_REQUIRED', error.message, false);
     } else {
       $('quotaText').textContent = '-- / --';
     }
@@ -260,142 +248,236 @@ async function scanMarket() {
     renderMarket(data);
     await refreshStatus();
   } catch (error) {
-    setDataStatus('DATA STALE', error.message, false);
+    state.current = null;
+    setDataState('DATA_STALE', error.message, false);
   } finally {
     state.busy = false;
     $('refreshButton').disabled = false;
   }
 }
 
-function getSecondsToMinuteBoundary() {
-  const now = Date.now();
-  const elapsed = now % 60000;
-  return Math.ceil((60000 - elapsed) / 1000);
+function prepareAudio() {
+  const AudioContextClass =
+    window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContextClass) {
+    throw new Error('เบราว์เซอร์ไม่รองรับเสียง');
+  }
+
+  if (!state.audioContext) {
+    state.audioContext = new AudioContextClass();
+  }
+
+  return state.audioContext.resume();
 }
 
-function updateCountdown() {
-  const seconds = getSecondsToMinuteBoundary();
-  const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
-  const ss = String(seconds % 60).padStart(2, '0');
-
-  $('countdown').textContent = `${mm}:${ss}`;
-
-  if (Date.now() >= state.signalExpiresAt) {
-    if (state.activeSignal !== 'STANDBY') {
-      setStandby('ครบเวลาสัญญาณแล้ว — รอรอบใหม่');
-    }
-  }
-
-  const current = state.current;
-  const fresh = current?.ok === true && current?.dataFresh === true;
-  const active =
-    state.activeSignal === 'CALL' || state.activeSignal === 'PUT';
-
-  if (!state.soundEnabled || !fresh || !active) return;
-
-  const minuteKey = Math.floor(Date.now() / 60000);
-  const key10 = `${minuteKey}:10`;
-  const key2 = `${minuteKey}:2`;
-
-  if (seconds === 10 && !state.lastBeeps.has(key10)) {
-    state.lastBeeps.add(key10);
-    beep(660, 160);
-  }
-
-  if (seconds === 2 && !state.lastBeeps.has(key2)) {
-    state.lastBeeps.add(key2);
-    beep(880, 220);
-  }
-
-  if (state.lastBeeps.size > 20) {
-    state.lastBeeps.clear();
-  }
-}
-
-async function enableSound() {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-
-    if (!AudioCtx) {
-      showAlert('เสียงไม่พร้อม', 'เบราว์เซอร์นี้ไม่รองรับเสียงแจ้งเตือน');
-      return;
-    }
-
-    if (!state.audioContext) {
-      state.audioContext = new AudioCtx();
-    }
-
-    await state.audioContext.resume();
-    state.soundEnabled = true;
-    $('soundButton').textContent = 'ปิดเสียง';
-    beep(740, 120);
-    hideAlert();
-  } catch {
-    showAlert('เสียงไม่พร้อม', 'แตะเปิดเสียงอีกครั้ง');
-  }
-}
-
-function beep(frequency, duration) {
+function beep(frequency = 740, duration = 180) {
   if (!state.soundEnabled || !state.audioContext) return;
 
   try {
-    const oscillator = state.audioContext.createOscillator();
-    const gain = state.audioContext.createGain();
+    const ctx = state.audioContext;
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
 
     oscillator.type = 'sine';
     oscillator.frequency.value = frequency;
-    gain.gain.value = 0.06;
+
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02);
+    gain.gain.setValueAtTime(
+      0.12,
+      ctx.currentTime + duration / 1000 * 0.65
+    );
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      ctx.currentTime + duration / 1000
+    );
 
     oscillator.connect(gain);
-    gain.connect(state.audioContext.destination);
+    gain.connect(ctx.destination);
 
     oscillator.start();
-    oscillator.stop(state.audioContext.currentTime + duration / 1000);
+    oscillator.stop(ctx.currentTime + duration / 1000);
+  } catch (error) {
+    console.warn('เสียงแจ้งเตือนไม่พร้อม:', error);
+  }
+}
+
+function entryVibration() {
+  // Telegram's native haptic feedback, when supported.
+  try {
+    tg?.HapticFeedback?.impactOccurred('heavy');
+    tg?.HapticFeedback?.notificationOccurred('warning');
   } catch {
-    // Sound failure must not affect market-data safety.
+    // Continue to browser fallback.
+  }
+
+  // Android WebView vibration fallback.
+  try {
+    if (typeof navigator.vibrate === 'function') {
+      navigator.vibrate([180, 100, 250]);
+    }
+  } catch {
+    // Some WebViews do not allow vibration.
+  }
+}
+
+async function toggleSound() {
+  if (state.soundEnabled) {
+    state.soundEnabled = false;
+    $('soundButton').textContent = 'เปิดเสียง';
+    return;
+  }
+
+  try {
+    await prepareAudio();
+    state.soundEnabled = true;
+    $('soundButton').textContent = 'ปิดเสียง';
+
+    // Test beep confirms audio was unlocked by the user's tap.
+    beep(740, 180);
+    clearAlert();
+  } catch (error) {
+    alertBox('เปิดเสียงไม่สำเร็จ', error.message);
+  }
+}
+
+function triggerEntrySignal(minuteKey) {
+  if (state.lastEntryMinute === minuteKey) return;
+  state.lastEntryMinute = minuteKey;
+
+  const data = state.current;
+
+  if (!isFresh(data)) {
+    standby('ข้อมูลไม่สด — ยกเลิกสัญญาณรอบนี้');
+    return;
+  }
+
+  if (
+    data.signal !== 'CALL' &&
+    data.signal !== 'PUT'
+  ) {
+    standby('คะแนนไม่ผ่านเกณฑ์ — ไม่มีสัญญาณเข้าออเดอร์');
+    return;
+  }
+
+  if (!Number.isFinite(data.score) || data.score < 68) {
+    standby('คะแนนต่ำกว่าเกณฑ์ — รอรอบใหม่');
+    return;
+  }
+
+  // Avoid repeated signals from the same candle.
+  const candleKey = `${data.symbol}:${data.candleTime}`;
+
+  if (state.lastSignalCandle === candleKey) {
+    standby('แท่งนี้แจ้งสัญญาณไปแล้ว — รอแท่งใหม่');
+    return;
+  }
+
+  state.lastSignalCandle = candleKey;
+
+  showSignal(data.signal, data.score, data.reason);
+
+  // Entry alert: sound and vibration only when a valid signal is accepted.
+  if (state.soundEnabled) {
+    beep(data.signal === 'CALL' ? 880 : 440, 260);
+
+    setTimeout(() => {
+      if (state.soundEnabled) {
+        beep(data.signal === 'CALL' ? 1040 : 350, 220);
+      }
+    }, 300);
+  }
+
+  entryVibration();
+}
+
+function tick() {
+  const now = Date.now();
+  const remainingMs = 60000 - (now % 60000);
+  const seconds = Math.ceil(remainingMs / 1000);
+  const minuteKey = Math.floor(now / 60000);
+
+  $('countdown').textContent =
+    `00:${String(seconds).padStart(2, '0')}`;
+
+  // A signal is never allowed to remain on after its hold period.
+  if (
+    state.activeSignal !== 'STANDBY' &&
+    now >= state.signalExpiresAt
+  ) {
+    standby('ครบ 40 วินาที — กลับ STANDBY');
+  }
+
+  if (!state.running || !isFresh(state.current)) return;
+
+  // Warning in the last 10 seconds, even when there is no CALL/PUT.
+  if (
+    remainingMs <= WARNING_SECONDS * 1000 &&
+    remainingMs > ENTRY_SECONDS * 1000 &&
+    state.lastWarningMinute !== minuteKey
+  ) {
+    state.lastWarningMinute = minuteKey;
+
+    if (state.soundEnabled) {
+      beep(660, 220);
+      setTimeout(() => beep(660, 220), 280);
+    }
+  }
+
+  // At 5 seconds, show a signal only if the latest analysis passes.
+  if (
+    remainingMs <= ENTRY_SECONDS * 1000 &&
+    remainingMs > 0 &&
+    state.lastEntryMinute !== minuteKey
+  ) {
+    triggerEntrySignal(minuteKey);
   }
 }
 
 function toggleScanning() {
   state.running = !state.running;
-
-  $('scanButton').textContent = state.running
-    ? 'หยุดสแกน'
-    : 'เริ่มสแกน';
+  $('scanButton').textContent = state.running ? 'หยุดสแกน' : 'เริ่มสแกน';
 
   if (state.running) {
     scanMarket();
   } else {
-    setStandby('หยุดสแกนตามคำสั่งผู้ใช้');
+    standby('หยุดสแกนตามคำสั่งผู้ใช้');
   }
 }
 
-$('refreshButton').addEventListener('click', scanMarket);
+$('soundButton').addEventListener('click', toggleSound);
 $('scanButton').addEventListener('click', toggleScanning);
+$('refreshButton').addEventListener('click', scanMarket);
 
 $('pairSelect').addEventListener('change', () => {
-  state.lastSignalKey = '';
   state.current = null;
-  setStandby('กำลังโหลดข้อมูลคู่เงินที่เลือก');
+  state.lastSignalCandle = null;
+  state.lastEntryMinute = null;
+  standby('กำลังโหลดข้อมูลคู่เงินใหม่');
   scanMarket();
 });
 
-$('soundButton').addEventListener('click', async () => {
-  if (state.soundEnabled) {
-    state.soundEnabled = false;
-    $('soundButton').textContent = 'เปิดเสียง';
-  } else {
-    await enableSound();
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.running) {
+    scanMarket();
   }
 });
 
 (async function init() {
   try {
     const config = await getJSON('/api/config');
-    window.signalHoldSeconds = config.signalHoldSeconds || 40;
+
+    if (Number.isFinite(config.signalHoldSeconds)) {
+      // Server setting takes precedence when present.
+      state.holdSeconds = Math.max(
+        5,
+        Math.min(120, config.signalHoldSeconds)
+      );
+    }
   } catch (error) {
-    if (String(error.message).includes('Mini App')) {
-      setDataStatus('AUTH_REQUIRED', error.message, false);
+    if (String(error.message).includes('Telegram')) {
+      setDataState('AUTH_REQUIRED', error.message, false);
       $('scanButton').disabled = true;
       $('refreshButton').disabled = true;
       return;
@@ -405,11 +487,8 @@ $('soundButton').addEventListener('click', async () => {
   await refreshStatus();
   await scanMarket();
 
-  state.timer = setInterval(() => {
-    updateCountdown();
-    scanMarket();
-  }, 15000);
-
-  state.statusTimer = setInterval(refreshStatus, 30000);
-  setInterval(updateCountdown, 250);
+  // Client checks timing often; server-side cache prevents excessive API calls.
+  setInterval(tick, 100);
+  setInterval(scanMarket, 15000);
+  setInterval(refreshStatus, 30000);
 })();
