@@ -25,6 +25,24 @@ main{max-width:520px;width:100%;margin:auto;display:flex;flex-direction:column;g
 .banner.show{display:block;animation:pulseBad 1s infinite alternate}
 @keyframes pulseBad{from{opacity:.8}to{opacity:1}}
 
+/* ปุ่มแจ้งเตือนคู่เงินอื่นที่เข้าเกณฑ์ (Click-to-Switch) */
+.signal-alert-banner {
+  display: none;
+  background: linear-gradient(90deg, #1d3557, #457b9d);
+  border: 1px solid var(--cyan);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 0 15px rgba(72, 200, 255, 0.4);
+  animation: alertPulse 0.8s infinite alternate;
+}
+.signal-alert-banner.show { display: block; }
+@keyframes alertPulse { from { transform: scale(1); } to { transform: scale(1.02); } }
+
 .card{background:linear-gradient(145deg,#0e2035,#0a1728);border:1px solid var(--line);border-radius:12px;padding:10px}
 .row{display:flex;align-items:center;gap:8px}
 .between{justify-content:space-between}
@@ -66,6 +84,11 @@ button:disabled{opacity:.55}
 
 <div id="lostBanner" class="banner">🚨 การเชื่อมต่อขาดหาย / API ขัดข้อง — สัญญาณอาจไม่เป็นปัจจุบัน</div>
 
+<!-- ป้ายแจ้งเตือนคลิกเพื่อสลับคู่เงินอื่น -->
+<div id="signalAlertBanner" class="signal-alert-banner" onclick="switchToAlertedPair()">
+  🚨 พบสัญญาณ <span id="alertPairName">GBP/USD</span> (<span id="alertPairSignal">CALL</span>) — คลิกเพื่อสลับหน้าจอทันที!
+</div>
+
 <section class="card row between" style="padding:8px 10px;">
  <div><div class="label">คู่เงิน</div><select id="symbol"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option><option>NZD/USD</option><option>EUR/GBP</option></select></div>
  <div><div class="label">ราคาอ้างอิง</div><div class="value" id="price">—</div><div class="label" id="updated">รอข้อมูล</div></div>
@@ -101,7 +124,8 @@ button:disabled{opacity:.55}
 <script>
 const $=id=>document.getElementById(id);
 let ws=null, soundEnabled=true, audioCtx=null, autoTimer=null;
-let pendingSignal="STANDBY", activeSignal="STANDBY", holdUntil=0, latestPair=null, reconnectTimer=null;
+let pendingSignal="STANDBY", activeSignal="STANDBY", holdUntil=0, reconnectTimer=null;
+let alertedSymbol = null; // เก็บชื่อคู่เงินที่เด้งเตือน
 
 function beep(freq=800,duration=.12){
   if(!soundEnabled)return;
@@ -152,7 +176,23 @@ function connect(){
         if(m.state.apiUsed!=null) $("quotaText").textContent="โควต้า: "+m.state.apiUsed+" / 800";
       }
     }
-    if(m.type==="pair_update"){renderPair(m.pair);}
+    if(m.type==="pair_update"){
+      const p = m.pair;
+      const currentSelected = $("symbol").value;
+      
+      // ถ้าข้อมูลที่อัปเดตเข้ามา เป็นคู่เงินที่กำลังเปิดดูอยู่
+      if(p.symbol === currentSelected){
+        renderPair(p);
+      } 
+      // ถ้าเป็นคู่เงินอื่น แล้วเกิดสัญญาณ CALL หรือ PUT ให้เด้งป้ายแจ้งเตือนขึ้นมาทันที!
+      else if(p.signal && ["CALL","PUT"].includes(p.signal.toUpperCase())){
+        alertedSymbol = p.symbol;
+        $("alertPairName").textContent = p.symbol;
+        $("alertPairSignal").textContent = p.signal.toUpperCase();
+        $("signalAlertBanner").classList.add("show");
+        beep(950, 0.2);
+      }
+    }
     if(m.type==="error"){
       setConnection(false,m.error||"API ขัดข้อง");
     }
@@ -165,9 +205,7 @@ function connect(){
 function setThresholdUI(v){$("thresholdText").textContent=Math.round(v)+"%";}
 
 function renderPair(p){
-  if(!p||p.symbol!==$("symbol").value)return;
-  latestPair=p;
-  
+  if(!p)return;
   $("price").textContent=Number.isFinite(Number(p.price))?Number(p.price).toFixed(p.symbol.includes("JPY")?3:5):"—";
   $("updated").textContent=p.updatedAt?new Date(p.updatedAt).toLocaleTimeString("th-TH"):"รอข้อมูล";
   
@@ -187,6 +225,20 @@ function renderPair(p){
   $("trend").textContent=(p.indicators?.bullishPoints > p.indicators?.bearishPoints)?"ขาขึ้น":(p.indicators?.bullishPoints < p.indicators?.bearishPoints)?"ขาลง":"ไซด์เวย์";
   
   if(p.updatedAt)$("lastScan").textContent=new Date(p.updatedAt).toLocaleTimeString("th-TH");
+}
+
+// ฟังก์ชันคลิกที่ป้ายแจ้งเตือนเพื่อสลับหน้าจอไปคู่เงินนั้นทันที
+async function switchToAlertedPair(){
+  if(!alertedSymbol)return;
+  $("symbol").value = alertedSymbol;
+  $("signalAlertBanner").classList.remove("show");
+  
+  try{
+    resetToStandby("สลับไปคู่ " + alertedSymbol);
+    await post("/api/select",{symbol:alertedSymbol});
+    if(ws?.readyState===1) ws.send(JSON.stringify({action:"set_symbol",symbol:alertedSymbol}));
+    scanNow();
+  }catch(e){$("reason").textContent=e.message;}
 }
 
 async function post(url,body){
@@ -211,6 +263,7 @@ function resetToStandby(msg){
 
 $("symbol").addEventListener("change",async()=>{
   try{
+    $("signalAlertBanner").classList.remove("show");
     resetToStandby("สลับคู่เงิน");
     await post("/api/select",{symbol:$("symbol").value});
     if(ws?.readyState===1) ws.send(JSON.stringify({action:"set_symbol",symbol:$("symbol").value}));
@@ -251,39 +304,27 @@ async function scanNow(){
 
 $("scanBtn").onclick=scanNow;
 
-function startAutoScanAlways(){
-  if(autoTimer) clearInterval(autoTimer);
-  autoTimer = setInterval(()=>{
-    if(document.visibilityState==="visible" && navigator.onLine) scanNow();
-  }, 60000);
-}
-
-// วงจรรอบเวลานับถอยหลัง คุมจังหวะไฟติด/ดับตามสเปก 40 วินาทีเป๊ะๆ
+// วงจรรอบเวลานับถอยหลัง คุมจังหวะไฟติด/ดับตามสเปก 40 วินาที
 let lastSec = -1;
 setInterval(()=>{
   const now=Date.now(), remain=60-Math.floor((now%60000)/1000);
   const sec = remain === 60 ? 0 : remain;
   $("countdown").textContent=`00:${String(remain===60?0:remain).padStart(2,"0")}`;
 
-  // ตรวจสอบเงื่อนไขตัดกลับ STANDBY เมื่อครบ 40 วินาทีนับจากเวลาติดไฟ
   if (holdUntil > 0 && now >= holdUntil) {
     resetToStandby("ครบ 40 วินาที — กลับ STANDBY");
   }
 
   if(sec !== lastSec) {
     lastSec = sec;
-
-    // 1. เหลือ 10 วินาที: แจ้งเตือนล่วงหน้า
     if(sec === 10 && activeSignal === "STANDBY"){
       beep(650,.1);
       $("statusLabel").textContent = "เหลือ 10 วินาที (เตือนล่วงหน้า)";
     }
-
-    // 2. เหลือ 5 วินาที: สัญญาณเข้า Order (ไฟสว่าง + สั่น)
     if(sec === 5 && activeSignal === "STANDBY"){
       if(pendingSignal !== "STANDBY"){
         activeSignal = pendingSignal;
-        holdUntil = now + 40000; // กำหนดเวลาค้างไฟไว้ 40 วินาที
+        holdUntil = now + 40000;
         
         const light = $("signalLight");
         light.className = "signal " + activeSignal.toLowerCase();
@@ -307,5 +348,4 @@ window.addEventListener("offline",()=>{setConnection(false,"อินเทอ�
 
 connect();
 scanNow();
-startAutoScanAlways();
 </script></body></html>
