@@ -56,7 +56,8 @@ async function fetchCandles(symbol){
   if(!API_KEY)throw new Error("ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY");
   const url=new URL("https://api.twelvedata.com/time_series");
   url.searchParams.set("symbol",symbol); url.searchParams.set("interval","1min");
-  url.searchParams.set("outputsize","150"); url.searchParams.set("timezone","UTC");
+  url.searchParams.set("outputsize","400"); // ปรับเพิ่มเป็น 400 แท่งเพื่อความแม่นยำสูง
+  url.searchParams.set("timezone","UTC");
   url.searchParams.set("apikey",API_KEY);
   
   apiCreditsUsed = (apiCreditsUsed + 1) % 800;
