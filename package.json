@@ -1,8 +1,9 @@
+
 {
   "name": "ai-signal-radar",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Forex Non-OTC signal radar and Telegram Mini App",
+  "description": "Forex Dual Scan Signal Radar",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
