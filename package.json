@@ -1,17 +1,16 @@
-
 {
   "name": "ai-signal-radar",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Forex M1 Signal Radar with Twelve Data quota protection",
+  "description": "Forex Non-OTC signal radar and Telegram Mini App",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^4.21.2"
   }
 }
