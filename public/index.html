@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="th">
 <head>
@@ -14,116 +13,76 @@
     <header class="top">
       <div class="brand">
         <div class="logo">AI</div>
-        <div>
-          <h1>AI SIGNAL RADAR</h1>
-          <p>DUAL SCAN · FOREX NON-OTC</p>
-        </div>
+        <div><h1>AI SIGNAL RADAR</h1><p>FOREX NON-OTC · 1 MINUTE</p></div>
       </div>
-      <div class="pill">
-        <span id="dot" class="dot"></span>
-        <span id="connection">กำลังเชื่อมต่อ</span>
-      </div>
+      <div class="pill"><span id="dot" class="dot"></span><span id="connection">กำลังเชื่อมต่อ</span></div>
     </header>
 
     <section id="hero" class="card hero standby">
       <div class="hero-head">
-        <div>
-          <p class="eyebrow">LIVE SIGNAL</p>
-          <h2 id="signalTitle">STANDBY</h2>
-        </div>
+        <div><p class="eyebrow">สัญญาณปัจจุบัน</p><h2 id="signalTitle">STANDBY</h2></div>
         <div id="stage" class="stage">WAITING</div>
       </div>
-
       <p id="message" class="message">กำลังรอข้อมูลตลาด</p>
-
       <div class="price-line">
         <div><span>คู่เงิน</span><strong id="pairLabel">EUR/USD</strong></div>
         <div><span>ราคาล่าสุด</span><strong id="price">—</strong></div>
         <div><span>คะแนน</span><strong id="score">—</strong></div>
       </div>
-
       <div class="signal-bar"><div id="signalBar"></div></div>
+
+      <div class="countdown-panel" role="status" aria-live="polite">
+        <div class="countdown-info">
+          <span class="countdown-label">เวลาถึงนาทีถัดไป · โดยประมาณ</span>
+          <strong id="countdownPair">EUR/USD</strong>
+        </div>
+        <div id="candleCountdown" class="countdown-clock">00:00</div>
+        <p id="countdownNote" class="countdown-note">นับตามนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุออเดอร์ที่ยืนยันจาก IQ Option</p>
+      </div>
 
       <div class="hero-actions">
         <button id="scanBtn" class="primary">สแกนตอนนี้</button>
         <button id="soundBtn" class="secondary">เปิดเสียง</button>
-        <button id="vibrateBtn" class="secondary">ทดสอบสั่น</button>
+        <button id="vibrateBtn" class="secondary">เปิด/ทดสอบสั่น</button>
       </div>
-
       <p id="updated" class="small">ยังไม่มีข้อมูลอัปเดต</p>
     </section>
 
     <section class="card">
-      <div class="section-head">
-        <h3>ตั้งค่าการสแกน</h3>
-        <span class="small">กรอบเวลา 1 นาที</span>
-      </div>
-
+      <div class="section-head"><h3>ตั้งค่าการสแกน</h3><span class="small">กรอบเวลา 1 นาที</span></div>
       <label for="pairSelect">เลือกคู่เงิน</label>
       <select id="pairSelect"></select>
-
       <div class="toggle-row">
-        <div>
-          <strong>รีเฟรชหน้าจออัตโนมัติ</strong>
-          <p class="small">ติดตามผลจากเซิร์ฟเวอร์</p>
-        </div>
-        <label class="switch">
-          <input id="autoToggle" type="checkbox" checked>
-          <span></span>
-        </label>
+        <div><strong>รีเฟรชหน้าจออัตโนมัติ</strong><p class="small">ติดตามผลจากเซิร์ฟเวอร์</p></div>
+        <label class="switch"><input id="autoToggle" type="checkbox" checked><span></span></label>
       </div>
-
       <div class="toggle-row">
-        <div>
-          <strong>เปิดเสียงและสั่น</strong>
-          <p class="small">ต้องเปิด Mini App และอนุญาตเสียง/การสั่น</p>
-        </div>
-        <label class="switch">
-          <input id="notifyToggle" type="checkbox" checked>
-          <span></span>
-        </label>
+        <div><strong>แจ้งเตือนสัญญาณ</strong><p class="small">ทำงานเมื่อ Mini App เปิดอยู่ และเปิดเสียง/สั่นแล้ว</p></div>
+        <label class="switch"><input id="notifyToggle" type="checkbox" checked><span></span></label>
       </div>
     </section>
 
     <section class="card">
-      <div class="section-head">
-        <h3>ผลสแกน 2 ระดับ</h3>
-        <span id="age" class="small">ข้อมูล —</span>
-      </div>
-
+      <div class="section-head"><h3>ผลวิเคราะห์ 2 ระดับ</h3><span id="age" class="small">ข้อมูล —</span></div>
+      <p class="legend"><b class="early-color">EARLY</b> = สัญญาณเบื้องต้น · <b class="confirmed-color">CONFIRMED</b> = สัญญาณจากแท่งปิดแล้ว · <b>STANDBY</b> = รอก่อน</p>
       <div class="scan-grid">
-        <div class="scan-box">
-          <span>EARLY · แท่งกำลังวิ่ง</span>
-          <strong id="earlyDir">STANDBY</strong>
-          <span id="earlyScore" class="small">คะแนน —</span>
-        </div>
-        <div class="scan-box">
-          <span>CONFIRMED · แท่งปิด</span>
-          <strong id="confirmedDir">STANDBY</strong>
-          <span id="confirmedScore" class="small">คะแนน —</span>
-        </div>
+        <div class="scan-box"><span>EARLY · เฝ้าระวัง</span><strong id="earlyDir">STANDBY</strong><span id="earlyScore" class="small">คะแนน —</span></div>
+        <div class="scan-box confirmed-box"><span>CONFIRMED · สัญญาณหลัก</span><strong id="confirmedDir">STANDBY</strong><span id="confirmedScore" class="small">คะแนน —</span></div>
       </div>
-
       <div class="metrics">
         <div><span>RSI (14)</span><strong id="rsi">—</strong></div>
         <div><span>EMA 6</span><strong id="ema6">—</strong></div>
         <div><span>EMA 21</span><strong id="ema21">—</strong></div>
         <div><span>EMA 50</span><strong id="ema50">—</strong></div>
         <div><span>MACD</span><strong id="macd">—</strong></div>
-        <div><span>เวลาแท่ง</span><strong id="candleTime">—</strong></div>
+        <div><span>เวลาแท่งข้อมูล</span><strong id="candleTime">—</strong></div>
       </div>
-
-      <h4>เหตุผลของสัญญาณ</h4>
-      <ul id="reasons" class="reasons">
-        <li>รอข้อมูลตลาด</li>
-      </ul>
+      <h4>เหตุผลของการประเมิน</h4>
+      <ul id="reasons" class="reasons"><li>รอข้อมูลตลาด</li></ul>
     </section>
 
     <section class="card">
-      <div class="section-head">
-        <h3>เรดาร์คู่เงิน</h3>
-        <button id="refreshRadar" class="text-btn">รีเฟรช</button>
-      </div>
+      <div class="section-head"><h3>เรดาร์คู่เงิน</h3><button id="refreshRadar" class="text-btn">รีเฟรช</button></div>
       <div id="radar" class="radar"></div>
     </section>
 
@@ -134,13 +93,8 @@
       <button id="diagnosticsBtn" class="secondary">ตรวจสอบระบบ</button>
       <pre id="diagnostics" class="diagnostics hidden"></pre>
     </section>
-
-    <footer>
-      สัญญาณเป็นการประเมินทางเทคนิค ไม่รับประกันผลกำไร
-      ระบบไม่ส่งคำสั่งซื้อขายแทนผู้ใช้
-    </footer>
+    <footer>สัญญาณเป็นการประเมินทางเทคนิค ไม่รับประกันผลกำไร · ระบบไม่ส่งคำสั่งซื้อขายแทนผู้ใช้</footer>
   </main>
-
   <script src="/app.js"></script>
 </body>
 </html>
