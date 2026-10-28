@@ -20,12 +20,10 @@ const MAX_CALLS = Math.max(
   1,
   Number(process.env.MAX_API_CALLS_PER_DAY || 700)
 );
-
 const MIN_SCORE = Math.min(
   90,
   Math.max(40, Number(process.env.MIN_SIGNAL_SCORE || 68))
 );
-
 const HOLD_SECONDS = Math.max(
   5,
   Math.min(120, Number(process.env.SIGNAL_HOLD_SECONDS || 40))
@@ -74,8 +72,6 @@ function resetDailyCounterIfNeeded() {
 function quotaState() {
   resetDailyCounterIfNeeded();
 
-  const now = Date.now();
-
   if (!API_KEY) {
     return {
       ok: false,
@@ -88,11 +84,11 @@ function quotaState() {
     return {
       ok: false,
       code: 'API_LIMIT',
-      message: 'ถึงเพดาน API ที่ตั้งไว้แล้ว'
+      message: 'ถึงเพดาน API ที่ตั้งไว้ในแอปแล้ว'
     };
   }
 
-  if (now < providerBlockedUntil) {
+  if (Date.now() < providerBlockedUntil) {
     return {
       ok: false,
       code: 'API_LIMIT',
@@ -100,15 +96,19 @@ function quotaState() {
     };
   }
 
-  if (now - lastProviderCallAt < GLOBAL_FETCH_GAP_MS) {
+  if (Date.now() - lastProviderCallAt < GLOBAL_FETCH_GAP_MS) {
     return {
       ok: false,
       code: 'WAITING',
-      message: 'กำลังจำกัดความถี่การเรียก API'
+      message: 'จำกัดความถี่การเรียก API เพื่อประหยัดโควต้า'
     };
   }
 
-  return { ok: true, code: 'OK', message: 'พร้อมดึงข้อมูล' };
+  return {
+    ok: true,
+    code: 'OK',
+    message: 'พร้อมดึงข้อมูล'
+  };
 }
 
 function verifyTelegramInitData(initData) {
@@ -127,9 +127,11 @@ function verifyTelegramInitData(initData) {
     const authDate = Number(params.get('auth_date'));
     const nowSeconds = Math.floor(Date.now() / 1000);
 
-    if (!Number.isFinite(authDate) ||
-        authDate > nowSeconds + 30 ||
-        nowSeconds - authDate > 86400) {
+    if (
+      !Number.isFinite(authDate) ||
+      authDate > nowSeconds + 30 ||
+      nowSeconds - authDate > 86400
+    ) {
       return false;
     }
 
@@ -152,8 +154,10 @@ function verifyTelegramInitData(initData) {
 
     const receivedHash = Buffer.from(hash, 'hex');
 
-    return receivedHash.length === calculatedHash.length &&
-      crypto.timingSafeEqual(receivedHash, calculatedHash);
+    return (
+      receivedHash.length === calculatedHash.length &&
+      crypto.timingSafeEqual(receivedHash, calculatedHash)
+    );
   } catch {
     return false;
   }
@@ -176,22 +180,22 @@ function requireTelegram(req, res, next) {
 }
 
 function parseCandleTime(value) {
-  // Twelve Data is requested with timezone=UTC.
-  // Treat its timestamp as UTC when no timezone suffix exists.
   const text = String(value || '');
+
   const normalized =
     /(?:Z|[+-]\d{2}:\d{2})$/i.test(text)
       ? text
       : `${text.replace(' ', 'T')}Z`;
 
   const time = Date.parse(normalized);
+
   return Number.isFinite(time) ? time : NaN;
 }
 
 function normalizeCandles(values) {
   const now = Date.now();
 
-  return (values || [])
+  const sorted = (values || [])
     .map(c => ({
       time: parseCandleTime(c.datetime),
       open: Number(c.open),
@@ -207,16 +211,28 @@ function normalizeCandles(values) {
       Number.isFinite(c.low) &&
       Number.isFinite(c.close)
     )
+    // ใช้เฉพาะแท่งที่ปิดแล้ว ไม่ใช้แท่งที่กำลังก่อตัว
     .filter(c => c.time + 60000 <= now)
-    .sort((a, b) => a.time - b.time)
-    .filter((c, i, arr) => i === 0 || c.time > arr[i - 1].time);
+    .sort((a, b) => a.time - b.time);
+
+  const unique = [];
+
+  for (const candle of sorted) {
+    if (!unique.length || candle.time > unique[unique.length - 1].time) {
+      unique.push(candle);
+    }
+  }
+
+  return unique;
 }
 
 function ema(values, period) {
   if (values.length < period) return null;
 
   const k = 2 / (period + 1);
-  let result = values.slice(0, period)
+
+  let result = values
+    .slice(0, period)
     .reduce((sum, n) => sum + n, 0) / period;
 
   for (let i = period; i < values.length; i++) {
@@ -234,6 +250,7 @@ function calculateRSI(values, period = 14) {
 
   for (let i = values.length - period; i < values.length; i++) {
     const change = values[i] - values[i - 1];
+
     if (change > 0) gains += change;
     else losses -= change;
   }
@@ -263,6 +280,7 @@ function calculateATR(candles, period = 14) {
   }
 
   const selected = ranges.slice(-period);
+
   return selected.reduce((sum, n) => sum + n, 0) / selected.length;
 }
 
@@ -281,11 +299,9 @@ function analyze(candles) {
   const e21 = ema(closes, 21);
   const e50 = ema(closes, 50);
   const rsi = calculateRSI(closes, 14);
-  const macdFast = ema(closes, 12);
-  const macdSlow = ema(closes, 26);
-  const macd = macdFast !== null && macdSlow !== null
-    ? macdFast - macdSlow
-    : null;
+  const fast = ema(closes, 12);
+  const slow = ema(closes, 26);
+  const macd = fast !== null && slow !== null ? fast - slow : null;
   const atr = calculateATR(candles, 14);
 
   if ([e8, e21, e50, rsi, macd, atr].some(v => v === null)) {
@@ -299,8 +315,8 @@ function analyze(candles) {
 
   const last = candles[candles.length - 1];
   const previous = candles[candles.length - 2];
-  const candleRange = Math.max(last.high - last.low, 1e-10);
-  const bodyRatio = Math.abs(last.close - last.open) / candleRange;
+  const range = Math.max(last.high - last.low, 1e-10);
+  const bodyRatio = Math.abs(last.close - last.open) / range;
   const momentum = last.close - closes[closes.length - 4];
 
   let call = 0;
@@ -330,7 +346,6 @@ function analyze(candles) {
   if (last.close > previous.close) call += 5;
   if (last.close < previous.close) put += 5;
 
-  // Avoid extreme overbought/oversold entries.
   if (rsi > 72) call = Math.min(call, 45);
   if (rsi < 28) put = Math.min(put, 45);
 
@@ -366,10 +381,10 @@ function analyze(candles) {
   };
 }
 
-function classifyProviderError(message, httpStatus) {
+function isQuotaError(message, status) {
   const text = String(message || '').toLowerCase();
 
-  return httpStatus === 429 ||
+  return status === 429 ||
     text.includes('api credits') ||
     text.includes('credit') ||
     text.includes('rate limit') ||
@@ -378,11 +393,35 @@ function classifyProviderError(message, httpStatus) {
     text.includes('quota');
 }
 
+function makeUnavailable(symbol, code, message, previous) {
+  return {
+    ok: false,
+    code,
+    message,
+    symbol,
+    pair: SYMBOLS[symbol] || symbol,
+    dataFresh: false,
+    price: previous?.price ?? null,
+    candleTime: previous?.candleTime ?? null,
+    fetchedAt: previous?.fetchedAt ?? null,
+    dataAgeSeconds: previous?.candleTime
+      ? Math.floor(
+          (Date.now() - Date.parse(previous.candleTime)) / 1000
+        )
+      : null,
+    signal: 'STANDBY',
+    score: 0,
+    reason: 'หยุดสัญญาณจนกว่าข้อมูลจะสด',
+    indicators: previous?.indicators ?? {},
+    candles: previous?.candles ?? []
+  };
+}
+
 async function fetchMarket(symbol) {
   resetDailyCounterIfNeeded();
 
-  const cached = cache.get(symbol);
   const now = Date.now();
+  const cached = cache.get(symbol);
 
   if (cached && now - cached.fetchedAt < CACHE_MS) {
     return cached;
@@ -401,6 +440,7 @@ async function fetchMarket(symbol) {
   const promise = (async () => {
     try {
       const url = new URL('https://api.twelvedata.com/time_series');
+
       url.searchParams.set('symbol', SYMBOLS[symbol]);
       url.searchParams.set('interval', '1min');
       url.searchParams.set('outputsize', '100');
@@ -425,10 +465,10 @@ async function fetchMarket(symbol) {
       if (!response.ok || body.status === 'error' || body.code) {
         const message = body.message || `HTTP ${response.status}`;
 
-        if (classifyProviderError(message, response.status)) {
+        if (isQuotaError(message, response.status)) {
           providerBlockedUntil = Date.now() + PROVIDER_COOLDOWN_MS;
           providerBlockReason =
-            'Twelve Data จำกัดโควต้าหรือความถี่ พักการเรียก API ชั่วคราว';
+            'Twelve Data จำกัดโควต้าหรือความถี่ พัก API ชั่วคราว';
         }
 
         throw new Error(message);
@@ -437,7 +477,7 @@ async function fetchMarket(symbol) {
       const candles = normalizeCandles(body.values);
 
       if (candles.length < 60) {
-        throw new Error('แท่งเทียนที่ปิดแล้วมีไม่ถึง 60 แท่ง');
+        throw new Error('มีแท่งเทียนที่ปิดแล้วไม่ถึง 60 แท่ง');
       }
 
       const latest = candles[candles.length - 1];
@@ -447,7 +487,7 @@ async function fetchMarket(symbol) {
         throw new Error('ข้อมูลแท่งเทียนเก่าเกินเกณฑ์');
       }
 
-      const analysis = analyze(candles);
+      const resultAnalysis = analyze(candles);
 
       const result = {
         ok: true,
@@ -459,10 +499,10 @@ async function fetchMarket(symbol) {
         fetchedAt: Date.now(),
         dataAgeSeconds: Math.floor(ageMs / 1000),
         dataFresh: true,
-        signal: analysis.signal,
-        score: analysis.score,
-        reason: analysis.reason,
-        indicators: analysis.indicators,
+        signal: resultAnalysis.signal,
+        score: resultAnalysis.score,
+        reason: resultAnalysis.reason,
+        indicators: resultAnalysis.indicators,
         candles: candles.slice(-30).map(c => ({
           time: new Date(c.time).toISOString(),
           open: c.open,
@@ -480,9 +520,13 @@ async function fetchMarket(symbol) {
     } catch (error) {
       lastApiError = String(error.message || 'API request failed');
 
+      const code = isQuotaError(lastApiError, 0)
+        ? 'API_LIMIT'
+        : 'DATA_STALE';
+
       return makeUnavailable(
         symbol,
-        classifyProviderError(lastApiError, 0) ? 'API_LIMIT' : 'DATA_STALE',
+        code,
         lastApiError,
         cache.get(symbol)
       );
@@ -493,29 +537,6 @@ async function fetchMarket(symbol) {
 
   inFlight.set(symbol, promise);
   return promise;
-}
-
-function makeUnavailable(symbol, code, message, previous) {
-  return {
-    ok: false,
-    code,
-    message,
-    symbol,
-    pair: SYMBOLS[symbol] || symbol,
-    dataFresh: false,
-    price: previous?.price ?? null,
-    candleTime: previous?.candleTime ?? null,
-    fetchedAt: previous?.fetchedAt ?? null,
-    dataAgeSeconds: previous?.candleTime
-      ? Math.floor((Date.now() - Date.parse(previous.candleTime)) / 1000)
-      : null,
-    // Never allow a stale cached signal to be used as a new signal.
-    signal: 'STANDBY',
-    score: 0,
-    reason: 'หยุดสัญญาณจนกว่าข้อมูลจะสด',
-    indicators: previous?.indicators ?? {},
-    candles: previous?.candles ?? []
-  };
 }
 
 app.get('/api/health', (req, res) => {
@@ -573,13 +594,10 @@ app.get('/api/market', requireTelegram, async (req, res) => {
   }
 
   const result = await fetchMarket(symbol);
-
-  // A stale-data response is a service state, not a valid signal.
   res.status(200).json(result);
 });
 
 app.get('/api/signals/history', requireTelegram, (req, res) => {
-  // No fake trade history: this endpoint intentionally reports no stored trades.
   res.json({
     ok: true,
     items: [],
@@ -587,7 +605,8 @@ app.get('/api/signals/history', requireTelegram, (req, res) => {
   });
 });
 
-app.get('*', (req, res, next) => {
+// Express 5: ใช้ RegExp route เพื่อส่งหน้าเว็บสำหรับเส้นทางที่ไม่ใช่ API
+app.get(/.*/, (req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({
       ok: false,
@@ -595,9 +614,12 @@ app.get('*', (req, res, next) => {
     });
   }
 
-  res.sendFile(path.join(__dirname, 'public', 'index.html'), err => {
-    if (err) next(err);
-  });
+  res.sendFile(
+    path.join(__dirname, 'public', 'index.html'),
+    err => {
+      if (err) next(err);
+    }
+  );
 });
 
 app.listen(PORT, () => {
