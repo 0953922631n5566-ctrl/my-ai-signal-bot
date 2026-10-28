@@ -1,3 +1,4 @@
+
 services:
   - type: web
     name: ai-signal-radar
@@ -14,5 +15,7 @@ services:
         value: "EUR/USD,GBP/USD,USD/JPY"
       - key: MIN_SIGNAL_SCORE
         value: "68"
+      - key: POLL_INTERVAL_MS
+        value: "25000"
       - key: MAX_DATA_AGE_SECONDS
         value: "180"
