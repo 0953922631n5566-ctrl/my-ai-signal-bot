@@ -161,7 +161,7 @@ class ScreenCaptureService : Service() {
         val scanBitmap = cropToRoi(bitmap)
         recognizer.process(InputImage.fromBitmap(scanBitmap, 0))
             .addOnSuccessListener { result ->
-                val candidates = Regex("""(?<![\d])(\d{1,3}(?:,\d{3})*\.\d{4,6}|\d+\.\d{4,6})(?![\d])""")
+                val candidates = Regex("""(?<![\d])(\d{1,3}(?:,\d{3})*\.\d{2,6}|\d+\.\d{2,6})(?![\d])""")
                     .findAll(result.text)
                     .mapNotNull { it.groupValues[1].replace(",", "").toDoubleOrNull() }
                     .filter { it > 0 }
