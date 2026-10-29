@@ -3,6 +3,7 @@
 
 const express = require("express");
 const path = require("path");
+const crypto = require("crypto");
 
 const app = express();
 app.disable("x-powered-by");
@@ -18,6 +19,10 @@ const SYMBOL = process.env.FOREX_PAIR || "EUR/USD";
 const POLL_MS = Math.max(60000, Number(process.env.POLL_INTERVAL_MS) || 60000);
 const MIN_SCORE = Math.min(90, Math.max(60, Number(process.env.MIN_SIGNAL_SCORE) || 70));
 const MAX_DATA_AGE_MS = 90000;
+const SCREEN_INGEST_TOKEN = process.env.SCREEN_INGEST_TOKEN || "";
+const SCREEN_TICK_MAX_AGE_MS = 15000;
+let latestScreenTick = null;
+let lastScreenIngestAt = 0;
 const SIGNAL_DURATION_MS = 40000;
 
 const state = {
@@ -349,6 +354,87 @@ function publicState() {
     minScore: MIN_SCORE
   };
 }
+
+
+function screenTokenMatches(req) {
+  const header = req.get("authorization") || "";
+  const match = /^Bearer (.+)$/i.exec(header);
+  if (!match || !SCREEN_INGEST_TOKEN) return false;
+  const supplied = Buffer.from(match[1], "utf8");
+  const expected = Buffer.from(SCREEN_INGEST_TOKEN, "utf8");
+  return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+}
+
+app.post("/api/screen/ingest", (req, res) => {
+  res.set("Cache-Control", "no-store");
+
+  if (SCREEN_INGEST_TOKEN.length < 32) {
+    return res.status(503).json({
+      ok: false,
+      error: "SCREEN_INGEST_TOKEN is not configured (minimum 32 characters)"
+    });
+  }
+  if (!screenTokenMatches(req)) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+
+  const body = req.body || {};
+  const symbol = typeof body.symbol === "string" ? body.symbol.trim().toUpperCase() : "";
+  const price = Number(body.price);
+  const capturedAtMs = Date.parse(body.capturedAt);
+  const confidence = body.confidence === undefined ? null : Number(body.confidence);
+  const now = Date.now();
+
+  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol) ||
+      !Number.isFinite(price) || price <= 0 || price > 1000000 ||
+      !Number.isFinite(capturedAtMs) ||
+      capturedAtMs > now + 30000 || now - capturedAtMs > 60000 ||
+      (confidence !== null && (!Number.isFinite(confidence) || confidence < 0 || confidence > 1))) {
+    return res.status(400).json({ ok: false, error: "Invalid or stale screen tick" });
+  }
+
+  // The Android companion samples roughly once per second. Limit bursts without
+  // blocking the intended capture rate; do not log credentials or raw headers.
+  if (now - lastScreenIngestAt < 150) {
+    return res.status(429).json({ ok: false, error: "Ingest rate limited" });
+  }
+  lastScreenIngestAt = now;
+
+  latestScreenTick = {
+    symbol,
+    price,
+    capturedAt: new Date(capturedAtMs).toISOString(),
+    receivedAt: new Date(now).toISOString(),
+    receivedAtMs: now,
+    confidence,
+    confidenceType: confidence === null ? null : "client heuristic, not calibrated OCR probability"
+  };
+
+  return res.status(200).json({ ok: true, received: true, receivedAt: latestScreenTick.receivedAt });
+});
+
+app.get("/api/screen/status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const tick = latestScreenTick;
+  const ageMs = tick ? Date.now() - tick.receivedAtMs : null;
+  const dataFresh = ageMs !== null && ageMs <= SCREEN_TICK_MAX_AGE_MS;
+  return res.status(200).json({
+    ok: true,
+    source: "Android screen OCR",
+    status: dataFresh ? "RECEIVING" : "STANDBY",
+    dataFresh,
+    ageMs,
+    tick: dataFresh && tick ? {
+      symbol: tick.symbol,
+      price: tick.price,
+      capturedAt: tick.capturedAt,
+      receivedAt: tick.receivedAt,
+      confidence: tick.confidence,
+      confidenceType: tick.confidenceType
+    } : null,
+    note: "OCR ticks are screen readings only; they are not yet used as the candle source for CALL/PUT signals."
+  });
+});
 
 app.get("/api/health", (req, res) => {
   const data = publicState();
