@@ -168,8 +168,10 @@ async function fetchMarketData() {
   if (macd > 0) bull++;
   else if (macd < 0) bear++;
 
-  // Analyse the last 7 completed candles for market structure.
-  // Twelve Data returns the newest candle too; exclude it because it may still be forming.
+  // Trend-following analysis from the last 7 CLOSED candles.
+  // Do not automatically reject a trend just because 6-7 candles move in one direction.
+  // Prefer following the dominant direction; stand by only when structure/indicators conflict
+  // or price is excessively stretched away from EMA9.
   const completed = candles.slice(0, -1);
   const recent7 = completed.slice(-7);
   const candleStats = recent7.map(c => ({
@@ -183,47 +185,59 @@ async function fetchMarketData() {
   );
   const bullishCandles = valid7 ? candleStats.filter(c => c.close > c.open).length : 0;
   const bearishCandles = valid7 ? candleStats.filter(c => c.close < c.open).length : 0;
-  const closes7 = valid7 ? candleStats.map(c => c.close) : [];
-  const firstClose = closes7[0];
-  const lastClose = closes7[closes7.length - 1];
-  const netMove = valid7 ? lastClose - firstClose : 0;
-  const lowerHighs = valid7 && candleStats.slice(1).filter((c, i) => c.high < candleStats[i].high).length >= 4;
-  const lowerLows = valid7 && candleStats.slice(1).filter((c, i) => c.low < candleStats[i].low).length >= 4;
-  const higherHighs = valid7 && candleStats.slice(1).filter((c, i) => c.high > candleStats[i].high).length >= 4;
-  const higherLows = valid7 && candleStats.slice(1).filter((c, i) => c.low > candleStats[i].low).length >= 4;
-  const candleRange = valid7
-    ? Math.max(...candleStats.map(c => c.high)) - Math.min(...candleStats.map(c => c.low))
-    : 0;
-  const directionalMoveRatio = candleRange > 0 ? Math.abs(netMove) / candleRange : 0;
+  const firstClose = valid7 ? candleStats[0].close : 0;
+  const lastClosedClose = valid7 ? candleStats[6].close : 0;
+  const netMove = lastClosedClose - firstClose;
+  const rangeHigh = valid7 ? Math.max(...candleStats.map(c => c.high)) : 0;
+  const rangeLow = valid7 ? Math.min(...candleStats.map(c => c.low)) : 0;
+  const totalRange = rangeHigh - rangeLow;
+  const moveRatio = totalRange > 0 ? Math.abs(netMove) / totalRange : 0;
 
-  // Avoid chasing an exhausted move: if 6-7 of the last 7 closed candles point
-  // the same way, require a pullback/reset instead of issuing a late entry.
-  const downTrendConfirmed = valid7 && bearishCandles >= 4 && netMove < 0 &&
-    lowerHighs && lowerLows && directionalMoveRatio >= 0.35 &&
-    bearishCandles <= 5;
-  const upTrendConfirmed = valid7 && bullishCandles >= 4 && netMove > 0 &&
-    higherHighs && higherLows && directionalMoveRatio >= 0.35 &&
-    bullishCandles <= 5;
+  const higherHighCount = valid7
+    ? candleStats.slice(1).filter((c, i) => c.high > candleStats[i].high).length : 0;
+  const higherLowCount = valid7
+    ? candleStats.slice(1).filter((c, i) => c.low > candleStats[i].low).length : 0;
+  const lowerHighCount = valid7
+    ? candleStats.slice(1).filter((c, i) => c.high < candleStats[i].high).length : 0;
+  const lowerLowCount = valid7
+    ? candleStats.slice(1).filter((c, i) => c.low < candleStats[i].low).length : 0;
 
-  const alignedCall = e9 > e21 && e21 > e50 && price > e9 &&
-    rsi >= 52 && rsi <= 68 && macd > 0;
-  const alignedPut = e9 < e21 && e21 < e50 && price < e9 &&
-    rsi <= 48 && rsi >= 32 && macd < 0;
+  // A usable trend needs directional candle majority + net movement + at least
+  // one supporting market-structure feature. This is intentionally less restrictive
+  // than requiring every indicator and every swing to align perfectly.
+  const upTrend = valid7 && bullishCandles >= 4 && netMove > 0 &&
+    moveRatio >= 0.18 && (higherHighCount >= 2 || higherLowCount >= 2);
+  const downTrend = valid7 && bearishCandles >= 4 && netMove < 0 &&
+    moveRatio >= 0.18 && (lowerHighCount >= 2 || lowerLowCount >= 2);
+
+  // Trend-following indicator confirmation. RSI is allowed to stay strong in a trend;
+  // do not automatically treat RSI above 68 or below 32 as a reversal.
+  const callIndicators = e9 > e21 && e21 > e50 && price > e21 &&
+    rsi >= 50 && rsi <= 78 && macd > 0;
+  const putIndicators = e9 < e21 && e21 < e50 && price < e21 &&
+    rsi >= 22 && rsi <= 50 && macd < 0;
+
+  // Avoid entries only when the current price is unusually extended from EMA9.
+  // In a sustained trend, 6-7 directional candles alone are NOT a reason to stand by.
+  const emaGap = Math.abs(price - e9);
+  const avgCandleRange = valid7
+    ? candleStats.reduce((sum, c) => sum + (c.high - c.low), 0) / 7 : 0;
+  const overextended = avgCandleRange > 0 && emaGap > avgCandleRange * 1.8;
 
   const score = Math.round(Math.max(bull, bear) / 5 * 100);
   let candidate = "STANDBY";
-  let reason = "เงื่อนไขยังไม่ครบ รอจังหวะที่ชัดเจน";
+  let reason = "รอแนวโน้มที่ยืนยันได้";
 
-  if (score >= MIN_SCORE && bull >= 4 && alignedCall && upTrendConfirmed) {
+  if (upTrend && callIndicators && !overextended && bull >= 3) {
     candidate = "CALL";
-    reason = "แนวโน้มแท่งปิด 7 แท่งเป็นขาขึ้น มี Higher High/Higher Low และตัวชี้วัดยืนยัน";
-  } else if (score >= MIN_SCORE && bear >= 4 && alignedPut && downTrendConfirmed) {
+    reason = "ตามน้ำขาขึ้น: แท่งปิด 7 แท่งส่วนใหญ่ขึ้น โครงสร้างราคาสนับสนุน และ EMA/RSI/MACD ไปทางเดียวกัน";
+  } else if (downTrend && putIndicators && !overextended && bear >= 3) {
     candidate = "PUT";
-    reason = "แนวโน้มแท่งปิด 7 แท่งเป็นขาลง มี Lower High/Lower Low และตัวชี้วัดยืนยัน";
-  } else if (valid7 && (bullishCandles >= 6 || bearishCandles >= 6)) {
-    reason = "STANDBY: ราคาเคลื่อนทางเดียวต่อเนื่อง 6-7 จาก 7 แท่ง เสี่ยงไล่ราคา รอจังหวะย่อ";
+    reason = "ตามน้ำขาลง: แท่งปิด 7 แท่งส่วนใหญ่ลง โครงสร้างราคาสนับสนุน และ EMA/RSI/MACD ไปทางเดียวกัน";
+  } else if (overextended && (upTrend || downTrend)) {
+    reason = "STANDBY: แนวโน้มมีทิศทาง แต่ราคาออกห่าง EMA9 มาก รอจังหวะย่อแล้วตามแนวโน้ม";
   } else {
-    reason = "STANDBY: แนวโน้มแท่งปิด 7 แท่ง โครงสร้างราคา และตัวชี้วัดยังไม่ยืนยันตรงกัน";
+    reason = "STANDBY: แนวโน้มแท่งเทียนกับตัวชี้วัดยังไม่สอดคล้องกัน";
   }
 
   const now = Date.now();
