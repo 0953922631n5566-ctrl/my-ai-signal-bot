@@ -1,4 +1,3 @@
-
 services:
   - type: web
     name: ai-signal-radar
@@ -6,16 +5,17 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: "20"
       - key: TWELVE_DATA_API_KEY
         sync: false
-      - key: FOREX_PAIRS
-        value: "EUR/USD,GBP/USD,USD/JPY"
+      - key: FOREX_PAIR
+        value: EUR/USD
+      - key: POLL_INTERVAL_MS
+        value: "60000"
       - key: MIN_SIGNAL_SCORE
         value: "68"
-      - key: POLL_INTERVAL_MS
-        value: "25000"
-      - key: MAX_DATA_AGE_SECONDS
-        value: "180"
+      - key: PORT
+        value: "10000"
