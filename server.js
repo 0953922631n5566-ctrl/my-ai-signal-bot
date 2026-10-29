@@ -9,14 +9,17 @@ app.use(express.static(path.join(__dirname, "public")));
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_API_KEY;
 const SYMBOL = process.env.FOREX_PAIR || "EUR/USD";
+
 const POLL_MS = Math.max(
   60000,
   Number(process.env.POLL_INTERVAL_MS) || 60000
 );
+
 const MIN_SCORE = Math.min(
   90,
   Math.max(60, Number(process.env.MIN_SIGNAL_SCORE) || 70)
 );
+
 const MAX_DATA_AGE_MS = 90000;
 const SIGNAL_DURATION_MS = 40000;
 
@@ -48,11 +51,14 @@ let pollInProgress = false;
 let pollTimer = null;
 
 function ema(values, period) {
-  if (!Array.isArray(values) || values.length < period) return null;
+  if (!Array.isArray(values) || values.length < period) {
+    return null;
+  }
 
   const k = 2 / (period + 1);
-  let result = values.slice(0, period)
-    .reduce((sum, value) => sum + value, 0) / period;
+  let result =
+    values.slice(0, period).reduce((sum, value) => sum + value, 0) /
+    period;
 
   for (let i = period; i < values.length; i++) {
     result = values[i] * k + result * (1 - k);
@@ -62,13 +68,16 @@ function ema(values, period) {
 }
 
 function calculateRSI(values, period = 14) {
-  if (values.length <= period) return null;
+  if (!Array.isArray(values) || values.length <= period) {
+    return null;
+  }
 
   let gains = 0;
   let losses = 0;
 
   for (let i = 1; i <= period; i++) {
     const change = values[i] - values[i - 1];
+
     if (change > 0) gains += change;
     else losses += Math.abs(change);
   }
@@ -78,7 +87,10 @@ function calculateRSI(values, period = 14) {
 
   for (let i = period + 1; i < values.length; i++) {
     const change = values[i] - values[i - 1];
-    avgGain = (avgGain * (period - 1) + Math.max(change, 0)) / period;
+
+    avgGain =
+      (avgGain * (period - 1) + Math.max(change, 0)) / period;
+
     avgLoss =
       (avgLoss * (period - 1) + Math.max(-change, 0)) / period;
   }
@@ -90,31 +102,28 @@ function calculateRSI(values, period = 14) {
 }
 
 function calculateMACD(values) {
-  const fast = [];
-  const slow = [];
+  if (!Array.isArray(values) || values.length < 35) {
+    return null;
+  }
+
   const kFast = 2 / 13;
   const kSlow = 2 / 27;
 
-  if (values.length < 35) return null;
+  let eFast =
+    values.slice(0, 12).reduce((a, b) => a + b, 0) / 12;
 
-  let eFast = values.slice(0, 12)
-    .reduce((a, b) => a + b, 0) / 12;
-  let eSlow = values.slice(0, 26)
-    .reduce((a, b) => a + b, 0) / 26;
+  let eSlow =
+    values.slice(0, 26).reduce((a, b) => a + b, 0) / 26;
 
   for (let i = 12; i < values.length; i++) {
     eFast = values[i] * kFast + eFast * (1 - kFast);
-    fast.push(eFast);
   }
 
   for (let i = 26; i < values.length; i++) {
     eSlow = values[i] * kSlow + eSlow * (1 - kSlow);
-    slow.push(eSlow);
   }
 
-  return fast.length && slow.length
-    ? fast[fast.length - 1] - slow[slow.length - 1]
-    : null;
+  return eFast - eSlow;
 }
 
 function round(value, digits = 5) {
@@ -127,7 +136,10 @@ async function fetchMarketData() {
     throw new Error("ยังไม่ได้ตั้ง TWELVE_DATA_API_KEY ใน Render");
   }
 
-  const url = new URL("https://api.twelvedata.com/time_series");
+  const url = new URL(
+    "https://api.twelvedata.com/time_series"
+  );
+
   url.searchParams.set("symbol", SYMBOL);
   url.searchParams.set("interval", "1min");
   url.searchParams.set("outputsize", "100");
@@ -143,15 +155,20 @@ async function fetchMarketData() {
 
   const json = await response.json();
 
-  if (json.status === "error" || json.code || !Array.isArray(json.values)) {
-    throw new Error(json.message || "Twelve Data ไม่ส่งข้อมูลแท่งเทียน");
+  if (
+    json.status === "error" ||
+    json.code ||
+    !Array.isArray(json.values)
+  ) {
+    throw new Error(
+      json.message || "Twelve Data ไม่ส่งข้อมูลแท่งเทียน"
+    );
   }
 
-  if (json.values.length < 35) {
-    throw new Error("ข้อมูลแท่งเทียนไม่เพียงพอสำหรับวิเคราะห์");
+  if (json.values.length < 50) {
+    throw new Error("ข้อมูลแท่งเทียนไม่เพียงพอ");
   }
 
-  // Twelve Data ส่งแท่งล่าสุดมาก่อน จึงกลับลำดับให้เก่าไปใหม่
   const candles = json.values.slice().reverse();
   const closes = candles.map(c => Number(c.close));
 
@@ -161,13 +178,17 @@ async function fetchMarketData() {
 
   const last = candles[candles.length - 1];
   const price = Number(last.close);
+
   const ema9 = ema(closes, 9);
   const ema21 = ema(closes, 21);
   const ema50 = ema(closes, 50);
   const rsi14 = calculateRSI(closes, 14);
   const macd = calculateMACD(closes);
 
-  if ([price, ema9, ema21, ema50, rsi14, macd].some(v => v === null)) {
+  if (
+    [price, ema9, ema21, ema50, rsi14, macd]
+      .some(v => v === null || !Number.isFinite(v))
+  ) {
     throw new Error("คำนวณตัวชี้วัดไม่สำเร็จ");
   }
 
@@ -189,8 +210,7 @@ async function fetchMarketData() {
   if (macd > 0) bull++;
   else if (macd < 0) bear++;
 
-  const maxVotes = Math.max(bull, bear);
-  const score = Math.round((maxVotes / 5) * 100);
+  const score = Math.round((Math.max(bull, bear) / 5) * 100);
 
   let candidate = "STANDBY";
   let reason = "สัญญาณยังไม่ชัดเจน";
@@ -203,16 +223,17 @@ async function fetchMarketData() {
     reason = "แนวโน้มขาลงผ่านเกณฑ์";
   }
 
-  // บันทึกเฉพาะข้อมูลที่ได้จากการดึงสำเร็จ
   state.price = round(price, 6);
   state.candleTime = last.datetime || null;
   state.fetchedAt = new Date().toISOString();
   state.fetchedAtMs = Date.now();
+
   state.ema9 = round(ema9, 6);
   state.ema21 = round(ema21, 6);
   state.ema50 = round(ema50, 6);
   state.rsi14 = round(rsi14, 2);
   state.macd = round(macd, 8);
+
   state.bullVotes = bull;
   state.bearVotes = bear;
   state.score = score;
@@ -229,6 +250,7 @@ async function fetchMarketData() {
 
 async function pollMarket() {
   if (pollInProgress) return;
+
   pollInProgress = true;
 
   try {
@@ -239,6 +261,7 @@ async function pollMarket() {
     state.score = 0;
     state.reason = "ข้อมูลไม่พร้อม ห้ามสร้างสัญญาณเข้าออเดอร์";
     state.nextPollAt = new Date(Date.now() + POLL_MS).toISOString();
+
     console.error("[MARKET ERROR]", state.error);
   } finally {
     state.serverTime = Date.now();
@@ -248,7 +271,10 @@ async function pollMarket() {
 
 function publicState() {
   const now = Date.now();
-  const age = state.fetchedAtMs ? now - state.fetchedAtMs : Infinity;
+  const age = state.fetchedAtMs
+    ? now - state.fetchedAtMs
+    : Infinity;
+
   const fresh = age <= MAX_DATA_AGE_MS && !state.error;
 
   return {
@@ -269,7 +295,9 @@ function publicState() {
     bearVotes: state.bearVotes,
     score: fresh ? state.score : 0,
     candidate: fresh ? state.candidate : "STANDBY",
-    reason: fresh ? state.reason : "ข้อมูลตลาดเก่าหรือไม่พร้อม",
+    reason: fresh
+      ? state.reason
+      : "ข้อมูลตลาดเก่าหรือไม่พร้อม",
     error: state.error,
     lastPollAt: state.lastPollAt,
     nextPollAt: state.nextPollAt,
@@ -281,6 +309,7 @@ function publicState() {
 
 app.get("/api/health", (req, res) => {
   const data = publicState();
+
   res.json({
     ok: Boolean(API_KEY) && data.dataFresh,
     apiKeyConfigured: Boolean(API_KEY),
@@ -288,7 +317,9 @@ app.get("/api/health", (req, res) => {
     source: data.source,
     symbol: data.symbol,
     serverTime: Date.now(),
-    error: data.error || (!API_KEY ? "ยังไม่ได้ตั้ง API Key" : null)
+    error:
+      data.error ||
+      (!API_KEY ? "ยังไม่ได้ตั้ง API Key" : null)
   });
 });
 
@@ -299,6 +330,7 @@ app.get("/api/status", (req, res) => {
 
 app.get("/api/radar", (req, res) => {
   const data = publicState();
+
   res.json({
     source: data.source,
     dataFresh: data.dataFresh,
@@ -313,9 +345,8 @@ app.get("/api/radar", (req, res) => {
   });
 });
 
-// ปุ่มสแกนจะขอให้หน้าเว็บอ่านสถานะล่าสุด
-// ไม่ดึง API ซ้ำทันที เพื่อช่วยประหยัดโควตา Twelve Data
 app.post("/api/scan", (req, res) => {
+  res.set("Cache-Control", "no-store");
   res.json({ ok: true, ...publicState() });
 });
 
@@ -323,7 +354,8 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.get("*", (req, res) => {
+// ใช้ RegExp route เพื่อรองรับ Express 4 และ Express 5
+app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
