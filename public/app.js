@@ -215,7 +215,7 @@ async function refreshDashboard() {
       const subtitle = document.querySelector(".market-heading p");
       if (heading) heading.textContent = data.symbol || "8xTrade · รอข้อมูล";
       if (subtitle) subtitle.textContent = "8xTrade · อ่านจากหน้าจอ · 1 นาที";
-      $("marketModeNote").textContent = "โหมด 8xTrade ใช้ OCR จากหน้าจอที่คุณอนุญาต";
+      $("marketModeNote").textContent = "อ่านราคา OCR จากหน้าจอที่มองเห็นอยู่เท่านั้น; ใช้ Split Screen บนเครื่องเดียวและปรับ ROI ให้ตรงกับกราฟ";
       if (connected) {
         setConnection(true, "ได้รับข้อมูลจากหน้าจอ 8xTrade");
         hideNotice();
@@ -223,7 +223,7 @@ async function refreshDashboard() {
         setConnection(false, "รอข้อมูลหน้าจอ 8xTrade");
         showNotice(
           "ข้อมูลหน้าจอยังไม่พร้อม",
-          data.reason || data.error || "เปิดแอป Android Companion และตรวจสอบราคา OCR"
+          data.reason || data.error || "เปิด Android Companion; หากใช้เครื่องเดียวให้เปิด 8xTrade และ Mini App แบบ Split Screen แล้วปรับ ROI"
         );
       }
       renderSignal(data);
