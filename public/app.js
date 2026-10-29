@@ -4,10 +4,12 @@
 const $ = id => document.getElementById(id);
 
 const state = {
+  marketMode: "NON_OTC",
   sound: false,
   vibrate: false,
   audioContext: null,
   loading: false,
+  refreshAfterLoad: false,
   latestData: null,
   activeDirection: "STANDBY",
   activeUntil: 0,
@@ -196,16 +198,43 @@ function renderSignal(data) {
 
 async function refreshDashboard() {
   if (state.loading) return;
+  const requestedMode = state.marketMode;
 
   state.loading = true;
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
 
   try {
+    if (requestedMode === "SCREEN") {
+      const data = await getJson("/api/screen/status");
+      if (requestedMode !== state.marketMode) return;
+      state.latestData = data;
+      const connected = data.dataFresh === true && !data.error &&
+        data.price !== null && data.price !== undefined;
+      const heading = document.querySelector(".market-heading h2");
+      const subtitle = document.querySelector(".market-heading p");
+      if (heading) heading.textContent = data.symbol || "8xTrade · รอข้อมูล";
+      if (subtitle) subtitle.textContent = "8xTrade · อ่านจากหน้าจอ · 1 นาที";
+      $("marketModeNote").textContent = "อ่านราคา OCR จากหน้าจอที่มองเห็นอยู่เท่านั้น; ใช้ Split Screen บนเครื่องเดียวและปรับ ROI ให้ตรงกับกราฟ";
+      if (connected) {
+        setConnection(true, "ได้รับข้อมูลจากหน้าจอ 8xTrade");
+        hideNotice();
+      } else {
+        setConnection(false, "รอข้อมูลหน้าจอ 8xTrade");
+        showNotice(
+          "ข้อมูลหน้าจอยังไม่พร้อม",
+          data.reason || data.error || "เปิด Android Companion; หากใช้เครื่องเดียวให้เปิด 8xTrade และ Mini App แบบ Split Screen แล้วปรับ ROI"
+        );
+      }
+      renderSignal(data);
+      return;
+    }
+
     const [health, data] = await Promise.all([
       getJson("/api/health"),
       getJson("/api/status")
     ]);
+    if (requestedMode !== state.marketMode) return;
 
     state.latestData = data;
 
@@ -231,8 +260,12 @@ async function refreshDashboard() {
       );
     }
 
+    const subtitle = document.querySelector(".market-heading p");
+    if (subtitle) subtitle.textContent = "ตลาดหลัก · 1 นาที · Twelve Data";
+    $("marketModeNote").textContent = "ตลาดหลักใช้ข้อมูล Twelve Data";
     renderSignal(data);
   } catch (error) {
+    if (requestedMode !== state.marketMode) return;
     setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
     showNotice(
       "การเชื่อมต่อขัดข้อง",
@@ -256,6 +289,10 @@ async function refreshDashboard() {
     state.loading = false;
     $("refreshBtn").disabled = false;
     $("refreshBtn").textContent = "สแกนข้อมูลอีกครั้ง";
+    if (state.refreshAfterLoad) {
+      state.refreshAfterLoad = false;
+      refreshDashboard();
+    }
   }
 }
 
@@ -310,7 +347,7 @@ function updateCountdown() {
     `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
   $("countdownMessage").textContent =
-    "อ้างอิงนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุที่ยืนยันจาก IQ Option";
+    "อ้างอิงนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุที่ยืนยันจาก 8xTrade";
 
   $("countdownCard").classList.toggle("warning", remainingSeconds <= 10);
 
@@ -360,16 +397,54 @@ $("vibrateBtn").addEventListener("click", () => {
   if (state.vibrate) vibrate([100]);
 });
 
+function setMarketMode(mode) {
+  if (!["NON_OTC", "SCREEN"].includes(mode) || mode === state.marketMode) return;
+  state.marketMode = mode;
+  $("nonOtcBtn").classList.toggle("active", mode === "NON_OTC");
+  $("screenBtn").classList.toggle("active", mode === "SCREEN");
+
+  // Clear every value from the previous source immediately. Never display an
+  // old Mode A tick as Mode B data, or vice versa, while a request is in flight.
+  state.latestData = null;
+  state.activeDirection = "STANDBY";
+  state.activeUntil = 0;
+  state.lastSignalMinute = null;
+  const heading = document.querySelector(".market-heading h2");
+  const subtitle = document.querySelector(".market-heading p");
+  if (heading) heading.textContent = mode === "SCREEN" ? "8xTrade · รอข้อมูล" : "ตลาดหลัก · รอข้อมูล";
+  if (subtitle) subtitle.textContent = mode === "SCREEN"
+    ? "8xTrade OCR · 1 นาที"
+    : "ตลาดหลัก · 1 นาที · Twelve Data";
+  $("marketModeNote").textContent = mode === "SCREEN"
+    ? "กำลังรอข้อมูล OCR สดจากหน้าจอ 8xTrade"
+    : "กำลังรอข้อมูลตลาดหลักจาก Twelve Data";
+  renderSignal({
+    candidate: "STANDBY", dataFresh: false, score: 0, price: null,
+    reason: mode === "SCREEN" ? "รอข้อมูลสดจาก 8xTrade OCR" : "รอข้อมูลตลาดจริง"
+  });
+  setConnection(false, mode === "SCREEN" ? "รอข้อมูลหน้าจอ 8xTrade" : "รอข้อมูลตลาดจริง");
+
+  if (state.loading) {
+    state.refreshAfterLoad = true;
+    return;
+  }
+  refreshDashboard();
+}
+
+$("nonOtcBtn").addEventListener("click", () => setMarketMode("NON_OTC"));
+$("screenBtn").addEventListener("click", () => setMarketMode("SCREEN"));
+
 $("refreshBtn").addEventListener("click", async () => {
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังสแกน…";
 
-  try {
-    await getJson("/api/scan", 20000);
-  } catch (error) {
-    showNotice("สแกนไม่สำเร็จ", error.message || "กำลังรอข้อมูลตลาด");
+  if (state.marketMode !== "SCREEN") {
+    try {
+      await getJson("/api/scan", 20000);
+    } catch (error) {
+      showNotice("สแกนไม่สำเร็จ", error.message || "กำลังรอข้อมูลตลาด");
+    }
   }
-
   await refreshDashboard();
 });
 
