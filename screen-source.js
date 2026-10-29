@@ -168,7 +168,7 @@ function createScreenSource({ token = "" } = {}) {
   router.get("/status", (req, res) => {
     res.set("Cache-Control", "no-store");
     const state = publicState();
-    res.status(state.dataFresh ? 200 : 503).json(state);
+    res.status(200).json(state);
   });
 
   router.post("/ingest", requireToken, (req, res) => {
