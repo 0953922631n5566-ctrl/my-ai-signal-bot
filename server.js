@@ -7,6 +7,7 @@ const path = require("path");
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20kb" }));
+app.use("/api/otc", require("./otc"));
 app.use(express.static(path.join(__dirname, "public"), {
   etag: true,
   maxAge: "1h"
