@@ -409,6 +409,15 @@ function setMarketMode(mode) {
   state.activeDirection = "STANDBY";
   state.activeUntil = 0;
   state.lastSignalMinute = null;
+  const heading = document.querySelector(".market-heading h2");
+  const subtitle = document.querySelector(".market-heading p");
+  if (heading) heading.textContent = mode === "SCREEN" ? "8xTrade · รอข้อมูล" : "ตลาดหลัก · รอข้อมูล";
+  if (subtitle) subtitle.textContent = mode === "SCREEN"
+    ? "8xTrade OCR · 1 นาที"
+    : "ตลาดหลัก · 1 นาที · Twelve Data";
+  $("marketModeNote").textContent = mode === "SCREEN"
+    ? "กำลังรอข้อมูล OCR สดจากหน้าจอ 8xTrade"
+    : "กำลังรอข้อมูลตลาดหลักจาก Twelve Data";
   renderSignal({
     candidate: "STANDBY", dataFresh: false, score: 0, price: null,
     reason: mode === "SCREEN" ? "รอข้อมูลสดจาก 8xTrade OCR" : "รอข้อมูลตลาดจริง"
