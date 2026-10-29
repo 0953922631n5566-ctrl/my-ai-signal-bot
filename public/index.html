@@ -39,6 +39,22 @@
       ></span>
     </header>
 
+    <!-- EXCLUSIVE MODE SELECTOR: only the selected source is queried/rendered -->
+    <section class="mode-card" aria-label="เลือกแหล่งข้อมูล">
+      <span class="eyebrow">ACTIVE ANALYSIS MODE</span>
+      <div class="mode-switch" role="group" aria-label="เลือกโหมดวิเคราะห์">
+        <button id="modeABtn" class="mode-btn" type="button" aria-pressed="false">
+          <strong>MODE A</strong>
+          <span>อ่านหน้าจอ 8xTrade</span>
+        </button>
+        <button id="modeBBtn" class="mode-btn active" type="button" aria-pressed="true">
+          <strong>MODE B</strong>
+          <span>ตลาดจริง · Twelve Data</span>
+        </button>
+      </div>
+      <p id="modeDescription" class="mode-description">กำลังใช้ข้อมูลตลาดหลักจาก Twelve Data เท่านั้น</p>
+    </section>
+
     <!-- CONNECTION STATUS -->
     <section class="connection-card">
       <div>
@@ -59,7 +75,7 @@
         <div>
           <span class="eyebrow">MARKET PAIR</span>
           <h2>EUR/USD</h2>
-          <p>ตลาดหลัก · 1 นาที · Twelve Data</p>
+          <p id="marketSource">ตลาดหลัก · 1 นาที · Twelve Data</p>
         </div>
 
         <div class="price-box">
@@ -115,7 +131,7 @@
     </section>
 
     <!-- TECHNICAL INDICATORS -->
-    <section class="indicators-card">
+    <section id="indicatorsCard" class="indicators-card">
       <h3>TECHNICAL INDICATORS</h3>
 
       <div class="indicator-grid">
