@@ -8,6 +8,9 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20kb" }));
 app.use("/api/otc", require("./otc"));
+const { createScreenSource } = require("./screen-source");
+const screenSource = createScreenSource({ token: process.env.SCREEN_INGEST_TOKEN });
+app.use("/api/screen", screenSource.router);
 app.use(express.static(path.join(__dirname, "public"), {
   etag: true,
   maxAge: "1h"
