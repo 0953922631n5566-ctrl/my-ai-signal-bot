@@ -15,6 +15,7 @@ class MainActivity : Activity() {
     private lateinit var serverInput: EditText
     private lateinit var tokenInput: EditText
     private lateinit var symbolInput: EditText
+    private lateinit var roiInput: EditText
     private lateinit var status: TextView
     private val requestCapture = 701
 
@@ -43,6 +44,7 @@ class MainActivity : Activity() {
         tokenInput = field("SCREEN_INGEST_TOKEN")
         tokenInput.inputType = 129
         symbolInput = field("คู่เงิน เช่น EUR/USD", "EUR/USD")
+        roiInput = field("พื้นที่อ่านราคา x,y,width,height (%)", "0,0,100,100")
         status = TextView(this).apply {
             text = "สถานะ: ยังไม่เริ่มจับภาพ"
             textSize = 14f
@@ -62,6 +64,14 @@ class MainActivity : Activity() {
                 }
                 if (!symbol.matches(Regex("[A-Z]{3}/[A-Z]{3}"))) {
                     Toast.makeText(this@MainActivity, "ใส่คู่เงินรูปแบบ EUR/USD", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val roi = roiInput.text.toString().trim()
+                val parts = roi.split(",").mapNotNull { it.trim().toFloatOrNull() }
+                if (parts.size != 4 || parts[0] < 0 || parts[1] < 0 ||
+                    parts[2] <= 0 || parts[3] <= 0 ||
+                    parts[0] + parts[2] > 100 || parts[1] + parts[3] > 100) {
+                    Toast.makeText(this@MainActivity, "พื้นที่ต้องเป็น x,y,width,height เป็นเปอร์เซ็นต์ เช่น 0,0,100,100", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
                 val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -98,6 +108,7 @@ class MainActivity : Activity() {
             putExtra(ScreenCaptureService.EXTRA_SERVER, serverInput.text.toString().trim().trimEnd('/'))
             putExtra(ScreenCaptureService.EXTRA_TOKEN, tokenInput.text.toString().trim())
             putExtra(ScreenCaptureService.EXTRA_SYMBOL, symbolInput.text.toString().trim().uppercase())
+            putExtra(ScreenCaptureService.EXTRA_ROI, roiInput.text.toString().trim())
         }
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
         status.text = "สถานะ: กำลังจับภาพ — เปิดหน้า 8xTrade เพื่อทดสอบ"
