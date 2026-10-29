@@ -17,5 +17,7 @@ services:
         value: "60000"
       - key: MIN_SIGNAL_SCORE
         value: "68"
+      - key: SCREEN_INGEST_TOKEN
+        sync: false
       - key: PORT
         value: "10000"
