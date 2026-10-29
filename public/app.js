@@ -13,7 +13,9 @@ const state = {
   activeUntil: 0,
   lastSignalMinute: null,
   warning10Minute: null,
-  warning2Minute: null
+  warning2Minute: null,
+  activeMode: "B",
+  screenStatus: null
 };
 
 const tg = window.Telegram?.WebApp;
@@ -194,27 +196,89 @@ function renderSignal(data) {
   if (pairHeading && data.symbol) pairHeading.textContent = data.symbol;
 }
 
+function clearSignalToStandby(message) {
+  state.activeDirection = "STANDBY";
+  state.activeUntil = 0;
+  const card = $("signalCard");
+  card.classList.remove("call", "put");
+  card.classList.add("standby");
+  $("signalTitle").textContent = "STANDBY";
+  $("signalArrow").textContent = "●";
+  $("signalMessage").textContent = message;
+  $("score").textContent = "--";
+  $("scoreBar").style.width = "0%";
+}
+
+function renderScreenMode(data) {
+  state.screenStatus = data;
+  const tick = data && data.dataFresh === true ? data.tick : null;
+  const fresh = Boolean(tick && Number.isFinite(Number(tick.price)));
+
+  $("marketSource").textContent = "หน้าจอ 8xTrade · Android OCR";
+  $("price").textContent = fresh ? formatNumber(tick.price, 5) : "--";
+  $("ema9").textContent = "--";
+  $("ema21").textContent = "--";
+  $("rsi14").textContent = "--";
+  $("macd").textContent = "--";
+  $("lastUpdated").textContent = fresh ? formatTime(tick.capturedAt) : "ไม่มีข้อมูลสด";
+  const pairHeading = document.querySelector(".market-heading h2");
+  if (pairHeading) pairHeading.textContent = fresh ? tick.symbol : "รอหน้าจอ";
+
+  if (fresh) {
+    setConnection(true, "รับข้อมูล OCR จากหน้าจอ");
+    const confidence = Number.isFinite(Number(tick.confidence))
+      ? ` · ความเชื่อมั่น OCR ${Math.round(Number(tick.confidence) * 100)}%`
+      : "";
+    $("modeDescription").textContent = "โหมด A ทำงานอยู่ — ใช้ข้อมูลจากหน้าจอ 8xTrade เท่านั้น";
+    showNotice(
+      "อ่านหน้าจอได้ แต่ยังไม่มีสัญญาณจากโหมด A",
+      "ขณะนี้ระบบรับคู่เงินและราคา OCR ได้เท่านั้น ยังไม่ได้แปลงข้อมูลนี้เป็นแท่งเทียนเพื่อคำนวณ CALL/PUT จึงแสดง STANDBY เพื่อไม่สร้างสัญญาณที่ไม่มีหลักฐาน" + confidence
+    );
+    clearSignalToStandby("รับราคา OCR แล้ว แต่ยังไม่มีเครื่องคำนวณสัญญาณจากแท่งเทียนของโหมด A");
+  } else {
+    setConnection(false, "รอข้อมูลจากหน้าจอ 8xTrade");
+    $("modeDescription").textContent = "โหมด A ทำงานอยู่ — ต้องเปิดแอปคู่หู Android และอนุญาตอ่านหน้าจอ";
+    showNotice(
+      "ยังไม่ได้รับข้อมูลหน้าจอ",
+      "ตรวจสอบว่า Android companion กำลังอ่านหน้าจอที่อนุญาต และส่งข้อมูลไปยังเซิร์ฟเวอร์ ข้อมูลที่เกิน 15 วินาทีจะไม่แสดง"
+    );
+    clearSignalToStandby("ไม่มีราคา OCR ที่สดพอ จึงไม่แสดงสัญญาณ");
+  }
+}
+
 async function refreshDashboard() {
   if (state.loading) return;
 
+  const requestedMode = state.activeMode;
   state.loading = true;
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
 
   try {
+    if (requestedMode === "A") {
+      const screen = await getJson("/api/screen/status");
+      if (state.activeMode !== requestedMode) return;
+      state.latestData = null;
+      renderScreenMode(screen);
+      return;
+    }
+
     const [health, data] = await Promise.all([
       getJson("/api/health"),
       getJson("/api/status")
     ]);
+    if (state.activeMode !== requestedMode) return;
 
     state.latestData = data;
-
     const connected =
       health.apiKeyConfigured === true &&
       data.dataFresh === true &&
       !data.error &&
       data.price !== null &&
       data.price !== undefined;
+
+    $("marketSource").textContent = "ตลาดหลัก · 1 นาที · Twelve Data";
+    $("modeDescription").textContent = "โหมด B ทำงานอยู่ — ใช้ข้อมูลตลาดหลักจาก Twelve Data เท่านั้น";
 
     if (connected) {
       setConnection(true, "เชื่อมต่อข้อมูลตลาดแล้ว");
@@ -230,33 +294,71 @@ async function refreshDashboard() {
             : "ข้อมูลยังไม่พร้อม รอข้อมูลใหม่")
       );
     }
-
     renderSignal(data);
   } catch (error) {
-    setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+    if (state.activeMode !== requestedMode) return;
+    setConnection(false, "เชื่อมต่อแหล่งข้อมูลไม่ได้");
     showNotice(
       "การเชื่อมต่อขัดข้อง",
       error.name === "AbortError"
         ? "เซิร์ฟเวอร์ตอบช้าเกินกำหนด ลองใหม่อีกครั้ง"
-        : error.message || "ตรวจสอบสถานะ Render"
+        : error.message || "ตรวจสอบสถานะ Render และการเชื่อมต่อ"
     );
 
     state.latestData = null;
     state.activeDirection = "STANDBY";
     state.activeUntil = 0;
 
-    renderSignal({
-      candidate: "STANDBY",
-      dataFresh: false,
-      score: 0,
-      price: null,
-      reason: "ไม่สามารถยืนยันข้อมูลตลาดได้"
-    });
+    if (requestedMode === "A") {
+      renderScreenMode({ dataFresh: false, tick: null });
+    } else {
+      renderSignal({
+        candidate: "STANDBY",
+        dataFresh: false,
+        score: 0,
+        price: null,
+        reason: "ไม่สามารถยืนยันข้อมูลตลาดได้"
+      });
+    }
   } finally {
     state.loading = false;
     $("refreshBtn").disabled = false;
     $("refreshBtn").textContent = "สแกนข้อมูลอีกครั้ง";
   }
+}
+
+function setMode(mode) {
+  if (!["A", "B"].includes(mode) || state.activeMode === mode) return;
+
+  state.activeMode = mode;
+  state.latestData = null;
+  state.screenStatus = null;
+  state.activeDirection = "STANDBY";
+  state.activeUntil = 0;
+  state.lastSignalMinute = null;
+  state.warning10Minute = null;
+  state.warning2Minute = null;
+
+  $("modeABtn").classList.toggle("active", mode === "A");
+  $("modeBBtn").classList.toggle("active", mode === "B");
+  $("modeABtn").setAttribute("aria-pressed", String(mode === "A"));
+  $("modeBBtn").setAttribute("aria-pressed", String(mode === "B"));
+  $("indicatorsCard").classList.toggle("hidden", mode === "A");
+  $("countdownCard").classList.toggle("hidden", mode === "A");
+
+  clearSignalToStandby(mode === "A"
+    ? "กำลังตรวจสอบข้อมูล OCR ของโหมด A"
+    : "กำลังตรวจสอบข้อมูลตลาดของโหมด B");
+  $("price").textContent = "--";
+  $("lastUpdated").textContent = "รอข้อมูล";
+  $("marketSource").textContent = mode === "A"
+    ? "หน้าจอ 8xTrade · Android OCR"
+    : "ตลาดหลัก · 1 นาที · Twelve Data";
+  $("modeDescription").textContent = mode === "A"
+    ? "กำลังใช้ข้อมูลจากหน้าจอ 8xTrade เท่านั้น"
+    : "กำลังใช้ข้อมูลตลาดหลักจาก Twelve Data เท่านั้น";
+  hideNotice();
+  refreshDashboard();
 }
 
 function minuteKey(date) {
@@ -270,6 +372,7 @@ function minuteKey(date) {
 }
 
 function triggerSignalAtTwoSeconds(key) {
+  if (state.activeMode !== "B") return;
   if (state.lastSignalMinute === key) return;
   state.lastSignalMinute = key;
 
@@ -299,6 +402,7 @@ function triggerSignalAtTwoSeconds(key) {
 }
 
 function updateCountdown() {
+  if (state.activeMode !== "B") return;
   const now = new Date();
   const elapsed = now.getSeconds() * 1000 + now.getMilliseconds();
   const remainingMs = 60000 - elapsed;
@@ -336,6 +440,9 @@ function updateCountdown() {
   }
 }
 
+$("modeABtn").addEventListener("click", () => setMode("A"));
+$("modeBBtn").addEventListener("click", () => setMode("B"));
+
 $("soundBtn").addEventListener("click", async () => {
   state.sound = !state.sound;
 
@@ -365,7 +472,7 @@ $("refreshBtn").addEventListener("click", async () => {
   $("refreshBtn").textContent = "กำลังสแกน…";
 
   try {
-    await getJson("/api/scan", 20000);
+    if (state.activeMode === "B") await getJson("/api/scan", 20000);
   } catch (error) {
     showNotice("สแกนไม่สำเร็จ", error.message || "กำลังรอข้อมูลตลาด");
   }
@@ -377,6 +484,8 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refreshDashboard();
 });
 
+$("indicatorsCard").classList.toggle("hidden", state.activeMode === "A");
+$("countdownCard").classList.toggle("hidden", state.activeMode === "A");
 updateCountdown();
 setInterval(updateCountdown, 200);
 refreshDashboard();
