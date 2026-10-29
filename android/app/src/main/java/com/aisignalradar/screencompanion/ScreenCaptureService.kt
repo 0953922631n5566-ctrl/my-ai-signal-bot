@@ -38,6 +38,7 @@ class ScreenCaptureService : Service() {
         const val EXTRA_SERVER = "server"
         const val EXTRA_TOKEN = "token"
         const val EXTRA_SYMBOL = "symbol"
+        const val EXTRA_ROI = "roi"
         private const val CHANNEL = "screen_capture"
         private const val NOTIFICATION_ID = 7001
     }
@@ -48,6 +49,7 @@ class ScreenCaptureService : Service() {
     private var server = ""
     private var token = ""
     private var symbol = "EUR/USD"
+    private var roi = "0,0,100,100"
     private var lastCaptureElapsed = 0L
     private var lastSendElapsed = 0L
     private val busy = AtomicBoolean(false)
@@ -93,6 +95,7 @@ class ScreenCaptureService : Service() {
         server = intent.getStringExtra(EXTRA_SERVER).orEmpty()
         token = intent.getStringExtra(EXTRA_TOKEN).orEmpty()
         symbol = intent.getStringExtra(EXTRA_SYMBOL).orEmpty().ifBlank { "EUR/USD" }
+        roi = intent.getStringExtra(EXTRA_ROI).orEmpty().ifBlank { "0,0,100,100" }
 
         startForeground(NOTIFICATION_ID, buildNotification("กำลังจับภาพหน้าจอที่คุณอนุญาต"))
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
@@ -141,8 +144,22 @@ class ScreenCaptureService : Service() {
         mainHandler.post(captureLoop)
     }
 
+    private fun cropToRoi(source: Bitmap): Bitmap {
+        val values = roi.split(",").mapNotNull { it.trim().toFloatOrNull() }
+        if (values.size != 4) return source
+        val left = (source.width * values[0] / 100f).toInt().coerceIn(0, source.width - 1)
+        val top = (source.height * values[1] / 100f).toInt().coerceIn(0, source.height - 1)
+        val width = (source.width * values[2] / 100f).toInt().coerceAtLeast(1)
+            .coerceAtMost(source.width - left)
+        val height = (source.height * values[3] / 100f).toInt().coerceAtLeast(1)
+            .coerceAtMost(source.height - top)
+        if (left == 0 && top == 0 && width == source.width && height == source.height) return source
+        return Bitmap.createBitmap(source, left, top, width, height)
+    }
+
     private fun runOcr(bitmap: Bitmap) {
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
+        val scanBitmap = cropToRoi(bitmap)
+        recognizer.process(InputImage.fromBitmap(scanBitmap, 0))
             .addOnSuccessListener { result ->
                 val candidates = Regex("""(?<![\d])(\d{1,3}(?:,\d{3})*\.\d{4,6}|\d+\.\d{4,6})(?![\d])""")
                     .findAll(result.text)
@@ -161,6 +178,7 @@ class ScreenCaptureService : Service() {
             }
             .addOnFailureListener { e -> Log.w("SignalRadar", "OCR failed", e) }
             .addOnCompleteListener {
+                if (scanBitmap !== bitmap) scanBitmap.recycle()
                 bitmap.recycle()
                 busy.set(false)
             }
