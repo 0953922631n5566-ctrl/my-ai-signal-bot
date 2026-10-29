@@ -1,3 +1,4 @@
+
 "use strict";
 
 const $ = (id) => document.getElementById(id);
@@ -7,11 +8,7 @@ const state = {
   vibrate: false,
   audioContext: null,
   lastDirection: null,
-  lastAlertMinute: null,
-  warning10Minute: null,
-  warning2Minute: null,
-  loading: false,
-  lastSuccessfulHealth: false
+  loading: false
 };
 
 const tg = window.Telegram?.WebApp;
@@ -37,7 +34,11 @@ function setConnection(online, text) {
 }
 
 function formatNumber(value, digits = 5) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(Number(value))
+  ) {
     return "--";
   }
 
@@ -61,23 +62,53 @@ function formatTime(value) {
 }
 
 function renderSignal(data) {
-  const direction = ["CALL", "PUT", "STANDBY"].includes(data.direction)
+  let direction = ["CALL", "PUT", "STANDBY"].includes(data.direction)
     ? data.direction
     : "STANDBY";
 
-  $("signalCard").classList.remove("call", "put", "standby");
-  $("signalCard").classList.add(direction.toLowerCase());
+  // ป้องกันการแสดงสัญญาณเข้าออเดอร์เมื่อข้อมูลเก่าหรือหมดอายุ
+  if (data.dataStale === true) {
+    direction = "STANDBY";
+  }
+
+  if (direction !== "STANDBY" && data.signalExpiresAt) {
+    const expiry = new Date(data.signalExpiresAt).getTime();
+
+    if (!Number.isFinite(expiry) || Date.now() >= expiry) {
+      direction = "STANDBY";
+    }
+  }
+
+  const card = $("signalCard");
+  card.classList.remove("call", "put", "standby");
+  card.classList.add(direction.toLowerCase());
 
   $("signalTitle").textContent = direction;
   $("signalArrow").textContent =
     direction === "CALL" ? "↑" :
     direction === "PUT" ? "↓" : "●";
 
-  $("signalMessage").textContent = data.note || "รอข้อมูลรอบถัดไป";
+  let message = data.note || "กำลังรอข้อมูลรอบถัดไป";
 
-  const score = Number(data.score);
-  const safeScore = Number.isFinite(score)
-    ? Math.max(0, Math.min(100, score))
+  if (direction === "STANDBY" && data.error) {
+    message = "ข้อมูลมีปัญหา จึงพักสัญญาณไว้ก่อน";
+  } else if (direction === "STANDBY" && data.dataStale) {
+    message = "ข้อมูลเก่าเกินกำหนด รอข้อมูลใหม่";
+  } else if (
+    direction === "STANDBY" &&
+    data.signalAt &&
+    data.signalExpiresAt &&
+    Date.now() >= new Date(data.signalExpiresAt).getTime()
+  ) {
+    message = "สัญญาณหมดอายุแล้ว รอประเมินรอบใหม่";
+  }
+
+  $("signalMessage").textContent = message;
+
+  // คะแนน 0 เมื่อ STANDBY เพื่อไม่ให้เข้าใจว่าเป็นสัญญาณที่ยังใช้ได้
+  const scoreValue = direction === "STANDBY" ? 0 : Number(data.score);
+  const safeScore = Number.isFinite(scoreValue)
+    ? Math.max(0, Math.min(100, scoreValue))
     : 0;
 
   $("score").textContent = `${safeScore}%`;
@@ -91,10 +122,9 @@ function renderSignal(data) {
   $("rsi14").textContent = formatNumber(indicators.rsi14, 2);
   $("macd").textContent = formatNumber(indicators.macd, 6);
 
-  $("lastUpdated").textContent = formatTime(data.updatedAt);
+  $("lastUpdated").textContent = formatTime(data.lastSuccessAt || data.updatedAt);
 
-  // แจ้งเตือนเมื่อทิศทางเปลี่ยนจาก STANDBY ไปเป็น CALL/PUT
-  // หรือเปลี่ยนจาก CALL เป็น PUT และกลับกัน
+  // แจ้งเตือนเฉพาะเมื่อมีสัญญาณใหม่หรือทิศทางเปลี่ยน
   if (
     state.lastDirection !== null &&
     direction !== state.lastDirection &&
@@ -133,6 +163,7 @@ async function getJson(url, timeoutMs = 15000) {
 
 async function refreshDashboard() {
   if (state.loading) return;
+
   state.loading = true;
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
@@ -154,38 +185,41 @@ async function refreshDashboard() {
       data.price !== null &&
       data.price !== undefined;
 
-    state.lastSuccessfulHealth = connected;
-
     if (connected) {
       setConnection(true, "เชื่อมต่อข้อมูลตลาดแล้ว");
       hideNotice();
     } else {
       setConnection(false, "ข้อมูลตลาดมีปัญหา");
+
       showNotice(
-        "ไม่สามารถยืนยันข้อมูลตลาดได้",
+        "ตรวจพบปัญหาข้อมูลตลาด",
         health.error ||
           data.error ||
           (!health.apiKeyConfigured
-            ? "กรุณาตั้งค่า TWELVE_DATA_API_KEY ใน Render Environment"
-            : "รอข้อมูลตลาดที่ใหม่และถูกต้องก่อนใช้งาน")
+            ? "กรุณาตั้งค่า TWELVE_DATA_API_KEY ใน Render"
+            : "กำลังรอข้อมูลตลาดที่พร้อมใช้งาน")
       );
     }
 
     renderSignal(data);
-
-    if (health.lastSuccessAt) {
-      $("lastUpdated").textContent = formatTime(health.lastSuccessAt);
-    }
   } catch (error) {
-    state.lastSuccessfulHealth = false;
     setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
 
     showNotice(
       "การเชื่อมต่อขัดข้อง",
       error.name === "AbortError"
-        ? "เซิร์ฟเวอร์ตอบช้าเกินเวลาที่กำหนด ลองใหม่อีกครั้ง"
+        ? "เซิร์ฟเวอร์ตอบช้าเกินกำหนด ลองใหม่อีกครั้ง"
         : error.message || "ตรวจสอบ URL และสถานะ Render"
     );
+
+    // หากติดต่อเซิร์ฟเวอร์ไม่ได้ ให้ดับสัญญาณเข้าออเดอร์
+    renderSignal({
+      direction: "STANDBY",
+      score: 0,
+      price: null,
+      note: "ไม่สามารถยืนยันข้อมูลตลาดได้",
+      indicators: {}
+    });
   } finally {
     state.loading = false;
     $("refreshBtn").disabled = false;
@@ -194,7 +228,8 @@ async function refreshDashboard() {
 }
 
 function getAudioContext() {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  const AudioContextClass =
+    window.AudioContext || window.webkitAudioContext;
 
   if (!AudioContextClass) return null;
 
@@ -221,30 +256,32 @@ async function playBeep(frequency = 760, durationMs = 180) {
 
     oscillator.type = "sine";
     oscillator.frequency.value = frequency;
+
+    const duration = durationMs / 1000;
     gain.gain.setValueAtTime(0.001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
     gain.gain.setValueAtTime(
       0.15,
-      ctx.currentTime + durationMs / 1000 - 0.03
+      ctx.currentTime + Math.max(0.025, duration - 0.03)
     );
     gain.gain.exponentialRampToValueAtTime(
       0.001,
-      ctx.currentTime + durationMs / 1000
+      ctx.currentTime + duration
     );
 
     oscillator.connect(gain);
     gain.connect(ctx.destination);
-
     oscillator.start();
-    oscillator.stop(ctx.currentTime + durationMs / 1000);
+    oscillator.stop(ctx.currentTime + duration);
   } catch (error) {
     console.warn("เล่นเสียงไม่ได้:", error.message);
   }
 }
 
 function vibrate(pattern) {
-  if (!state.vibrate) return;
-  if (typeof navigator.vibrate !== "function") return;
+  if (!state.vibrate || typeof navigator.vibrate !== "function") {
+    return;
+  }
 
   try {
     navigator.vibrate(pattern);
@@ -255,10 +292,8 @@ function vibrate(pattern) {
 
 function updateCountdown() {
   const now = new Date();
-  const millisecondsIntoMinute =
-    now.getSeconds() * 1000 + now.getMilliseconds();
-
-  const remainingMs = 60000 - millisecondsIntoMinute;
+  const msIntoMinute = now.getSeconds() * 1000 + now.getMilliseconds();
+  const remainingMs = 60000 - msIntoMinute;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
 
   const minutes = Math.floor(remainingSeconds / 60);
@@ -270,11 +305,12 @@ function updateCountdown() {
   $("countdownMessage").textContent =
     "อ้างอิงนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุที่ยืนยันจาก IQ Option";
 
-  $("countdownCard")?.classList.toggle(
+  $("countdownCard").classList.toggle(
     "warning",
     remainingSeconds <= 10
   );
 
+  // ใช้เลขนาทีเป็นกุญแจ ป้องกันการเตือนซ้ำหลายครั้งในนาทีเดียว
   const minuteKey =
     `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
 
@@ -289,12 +325,10 @@ function updateCountdown() {
     playBeep(1050, 250);
     vibrate([180, 70, 180]);
   }
-
-  if (remainingSeconds === 60) {
-    state.warning10Minute = null;
-    state.warning2Minute = null;
-  }
 }
+
+state.warning10Minute = null;
+state.warning2Minute = null;
 
 $("soundBtn").addEventListener("click", async () => {
   state.sound = !state.sound;
@@ -302,10 +336,13 @@ $("soundBtn").addEventListener("click", async () => {
   if (state.sound) {
     try {
       const ctx = getAudioContext();
-      if (ctx && ctx.state === "suspended") await ctx.resume();
+      if (ctx && ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
       await playBeep(720, 100);
-    } catch (_) {
-      // แสดงสถานะเปิดเสียงไว้ แต่เบราว์เซอร์อาจบล็อกเสียง
+    } catch (error) {
+      console.warn("เปิดเสียงไม่ได้:", error.message);
     }
   }
 
@@ -319,16 +356,20 @@ $("vibrateBtn").addEventListener("click", () => {
   $("vibrateBtn").textContent = state.vibrate ? "ปิดสั่น" : "เปิดสั่น";
   $("vibrateBtn").classList.toggle("active", state.vibrate);
 
-  if (state.vibrate) {
-    vibrate([100]);
-  }
+  if (state.vibrate) vibrate([100]);
 });
 
 $("refreshBtn").addEventListener("click", async () => {
+  $("refreshBtn").disabled = true;
+  $("refreshBtn").textContent = "กำลังสแกน…";
+
   try {
     await getJson("/api/scan", 20000);
   } catch (error) {
-    showNotice("สแกนไม่สำเร็จ", error.message || "ลองใหม่อีกครั้ง");
+    showNotice(
+      "สแกนไม่สำเร็จ",
+      error.message || "กำลังรอข้อมูลตลาดจากเซิร์ฟเวอร์"
+    );
   }
 
   await refreshDashboard();
@@ -342,5 +383,6 @@ document.addEventListener("visibilitychange", () => {
 
 updateCountdown();
 setInterval(updateCountdown, 200);
+
 refreshDashboard();
 setInterval(refreshDashboard, 5000);
