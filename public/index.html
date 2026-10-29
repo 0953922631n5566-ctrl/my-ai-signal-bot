@@ -1,100 +1,115 @@
 <!doctype html>
 <html lang="th">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta name="theme-color" content="#090e18">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080d18">
   <title>AI Signal Radar</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <main class="app">
-    <header class="top">
+    <header class="topbar">
+      <div class="brand-icon">AI</div>
       <div class="brand">
-        <div class="logo">AI</div>
-        <div><h1>AI SIGNAL RADAR</h1><p>FOREX NON-OTC · 1 MINUTE</p></div>
+        <h1>AI SIGNAL RADAR</h1>
+        <p>SMART MARKET SCANNER</p>
       </div>
-      <div class="pill"><span id="dot" class="dot"></span><span id="connection">กำลังเชื่อมต่อ</span></div>
+      <span id="connectionDot" class="dot offline"></span>
     </header>
 
-    <section id="hero" class="card hero standby">
-      <div class="hero-head">
-        <div><p class="eyebrow">สัญญาณปัจจุบัน</p><h2 id="signalTitle">STANDBY</h2></div>
-        <div id="stage" class="stage">WAITING</div>
+    <section class="connection-card">
+      <div>
+        <span class="eyebrow">DATA CONNECTION</span>
+        <strong id="connectionText">กำลังตรวจสอบการเชื่อมต่อ…</strong>
       </div>
-      <p id="message" class="message">กำลังรอข้อมูลตลาด</p>
-      <div class="price-line">
-        <div><span>คู่เงิน</span><strong id="pairLabel">EUR/USD</strong></div>
-        <div><span>ราคาล่าสุด</span><strong id="price">—</strong></div>
-        <div><span>คะแนน</span><strong id="score">—</strong></div>
-      </div>
-      <div class="signal-bar"><div id="signalBar"></div></div>
+      <span id="lastUpdated" class="small">รอข้อมูล</span>
+    </section>
 
-      <div class="countdown-panel" role="status" aria-live="polite">
-        <div class="countdown-info">
-          <span class="countdown-label">เวลาถึงนาทีถัดไป · โดยประมาณ</span>
-          <strong id="countdownPair">EUR/USD</strong>
+    <section class="market-card">
+      <div class="market-heading">
+        <div>
+          <span class="eyebrow">MARKET PAIR</span>
+          <h2>EUR/USD</h2>
+          <p>ตลาดหลัก · 1 นาที · Twelve Data</p>
         </div>
-        <div id="candleCountdown" class="countdown-clock">00:00</div>
-        <p id="countdownNote" class="countdown-note">นับตามนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุออเดอร์ที่ยืนยันจาก IQ Option</p>
-      </div>
-
-      <div class="hero-actions">
-        <button id="scanBtn" class="primary">สแกนตอนนี้</button>
-        <button id="soundBtn" class="secondary">เปิดเสียง</button>
-        <button id="vibrateBtn" class="secondary">เปิด/ทดสอบสั่น</button>
-      </div>
-      <p id="updated" class="small">ยังไม่มีข้อมูลอัปเดต</p>
-    </section>
-
-    <section class="card">
-      <div class="section-head"><h3>ตั้งค่าการสแกน</h3><span class="small">กรอบเวลา 1 นาที</span></div>
-      <label for="pairSelect">เลือกคู่เงิน</label>
-      <select id="pairSelect"></select>
-      <div class="toggle-row">
-        <div><strong>รีเฟรชหน้าจออัตโนมัติ</strong><p class="small">ติดตามผลจากเซิร์ฟเวอร์</p></div>
-        <label class="switch"><input id="autoToggle" type="checkbox" checked><span></span></label>
-      </div>
-      <div class="toggle-row">
-        <div><strong>แจ้งเตือนสัญญาณ</strong><p class="small">ทำงานเมื่อ Mini App เปิดอยู่ และเปิดเสียง/สั่นแล้ว</p></div>
-        <label class="switch"><input id="notifyToggle" type="checkbox" checked><span></span></label>
+        <div class="price-box">
+          <span class="eyebrow">LAST PRICE</span>
+          <strong id="price">--</strong>
+        </div>
       </div>
     </section>
 
-    <section class="card">
-      <div class="section-head"><h3>ผลวิเคราะห์ 2 ระดับ</h3><span id="age" class="small">ข้อมูล —</span></div>
-      <p class="legend"><b class="early-color">EARLY</b> = สัญญาณเบื้องต้น · <b class="confirmed-color">CONFIRMED</b> = สัญญาณจากแท่งปิดแล้ว · <b>STANDBY</b> = รอก่อน</p>
-      <div class="scan-grid">
-        <div class="scan-box"><span>EARLY · เฝ้าระวัง</span><strong id="earlyDir">STANDBY</strong><span id="earlyScore" class="small">คะแนน —</span></div>
-        <div class="scan-box confirmed-box"><span>CONFIRMED · สัญญาณหลัก</span><strong id="confirmedDir">STANDBY</strong><span id="confirmedScore" class="small">คะแนน —</span></div>
+    <section id="signalCard" class="signal-card standby">
+      <span class="eyebrow">AI SIGNAL</span>
+      <div id="signalLight" class="signal-light">
+        <span id="signalArrow">●</span>
       </div>
-      <div class="metrics">
-        <div><span>RSI (14)</span><strong id="rsi">—</strong></div>
-        <div><span>EMA 6</span><strong id="ema6">—</strong></div>
-        <div><span>EMA 21</span><strong id="ema21">—</strong></div>
-        <div><span>EMA 50</span><strong id="ema50">—</strong></div>
-        <div><span>MACD</span><strong id="macd">—</strong></div>
-        <div><span>เวลาแท่งข้อมูล</span><strong id="candleTime">—</strong></div>
+      <h2 id="signalTitle">STANDBY</h2>
+      <p id="signalMessage">กำลังรอข้อมูลตลาดที่พร้อมใช้งาน</p>
+
+      <div class="score-row">
+        <span>คะแนนสัญญาณ</span>
+        <strong id="score">--</strong>
       </div>
-      <h4>เหตุผลของการประเมิน</h4>
-      <ul id="reasons" class="reasons"><li>รอข้อมูลตลาด</li></ul>
+      <div class="score-track">
+        <div id="scoreBar" class="score-fill"></div>
+      </div>
     </section>
 
-    <section class="card">
-      <div class="section-head"><h3>เรดาร์คู่เงิน</h3><button id="refreshRadar" class="text-btn">รีเฟรช</button></div>
-      <div id="radar" class="radar"></div>
+    <section class="countdown-card">
+      <span class="eyebrow">นับถอยหลังถึงนาทีถัดไป</span>
+      <strong id="countdown">--:--</strong>
+      <p id="countdownMessage">เวลาอ้างอิงจากนาฬิกาอุปกรณ์</p>
     </section>
 
-    <section class="card">
-      <h3>สถานะข้อมูล</h3>
-      <p class="small">แหล่งข้อมูล: Twelve Data REST API ไม่ใช่ฟีดราคา IQ Option โดยตรง</p>
-      <p id="errorText" class="error-text">ยังไม่มีข้อผิดพลาด</p>
-      <button id="diagnosticsBtn" class="secondary">ตรวจสอบระบบ</button>
-      <pre id="diagnostics" class="diagnostics hidden"></pre>
+    <section class="indicators-card">
+      <h3>TECHNICAL INDICATORS</h3>
+      <div class="indicator-grid">
+        <div class="indicator">
+          <span>EMA 9</span>
+          <strong id="ema9">--</strong>
+        </div>
+        <div class="indicator">
+          <span>EMA 21</span>
+          <strong id="ema21">--</strong>
+        </div>
+        <div class="indicator">
+          <span>RSI 14</span>
+          <strong id="rsi14">--</strong>
+        </div>
+        <div class="indicator">
+          <span>MACD</span>
+          <strong id="macd">--</strong>
+        </div>
+      </div>
     </section>
-    <footer>สัญญาณเป็นการประเมินทางเทคนิค ไม่รับประกันผลกำไร · ระบบไม่ส่งคำสั่งซื้อขายแทนผู้ใช้</footer>
+
+    <section id="notice" class="notice hidden" role="status">
+      <strong id="noticeTitle">แจ้งเตือน</strong>
+      <p id="noticeText"></p>
+    </section>
+
+    <section class="controls-card">
+      <h3>การแจ้งเตือน</h3>
+      <div class="button-row">
+        <button id="soundBtn" class="control-btn">เปิดเสียง</button>
+        <button id="vibrateBtn" class="control-btn">เปิดสั่น</button>
+      </div>
+      <button id="refreshBtn" class="primary-btn">สแกนข้อมูลอีกครั้ง</button>
+      <p class="footnote">
+        เสียงและการสั่นทำงานเมื่ออุปกรณ์และเบราว์เซอร์อนุญาต
+        ระบบนี้ให้ข้อมูลประกอบการตัดสินใจเท่านั้น
+      </p>
+    </section>
+
+    <footer>
+      <p>AI SIGNAL RADAR · INFORMATION ONLY</p>
+      <p>ไม่มีการส่งคำสั่งซื้อขายอัตโนมัติ</p>
+    </footer>
   </main>
+
   <script src="/app.js"></script>
 </body>
 </html>
