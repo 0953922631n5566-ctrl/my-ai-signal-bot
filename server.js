@@ -225,9 +225,11 @@ async function fetchMarketData() {
   const callIndicators = price > e21 && rsi >= 50 && rsi <= 80 && macd > 0;
   const putIndicators = price < e21 && rsi >= 20 && rsi <= 50 && macd < 0;
 
-  const upTrend = stackUpCount >= 2 && ema9Rising && ema21Rising &&
+  const upTrend = stackUpCount >= 2 && latest.ema9 > latest.ema21 &&
+    latest.ema21 > latest.ema50 && ema9Rising && ema21Rising &&
     ema50Rising && price > e21 && lastCandleBullish;
-  const downTrend = stackDownCount >= 2 && ema9Falling && ema21Falling &&
+  const downTrend = stackDownCount >= 2 && latest.ema9 < latest.ema21 &&
+    latest.ema21 < latest.ema50 && ema9Falling && ema21Falling &&
     ema50Falling && price < e21 && lastCandleBearish;
 
   let bull = 0;
@@ -235,7 +237,7 @@ async function fetchMarketData() {
   if (e9 > e21) bull++; else if (e9 < e21) bear++;
   if (e21 > e50) bull++; else if (e21 < e50) bear++;
   if (price > e9) bull++; else if (price < e9) bear++;
-  if (rsi >= 50 && rsi <= 80) bull++; else if (rsi >= 20 && rsi <= 50) bear++;
+  if (rsi >= 50 && rsi <= 80) bull++; else if (rsi >= 20 && rsi < 50) bear++;
   if (macd > 0) bull++; else if (macd < 0) bear++;
 
   // Use recent CLOSED candles only to estimate ordinary candle range.
