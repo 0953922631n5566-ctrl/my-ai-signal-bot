@@ -52,6 +52,7 @@ class ScreenCaptureService : Service() {
     private var roi = "0,0,100,100"
     private var lastCaptureElapsed = 0L
     private var lastSendElapsed = 0L
+    private var lastOcrNoticeElapsed = 0L
     private val busy = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
@@ -161,19 +162,28 @@ class ScreenCaptureService : Service() {
         val scanBitmap = cropToRoi(bitmap)
         recognizer.process(InputImage.fromBitmap(scanBitmap, 0))
             .addOnSuccessListener { result ->
-                val candidates = Regex("""(?<![\d])(\d{1,3}(?:,\d{3})*\.\d{2,6}|\d+\.\d{2,6})(?![\d])""")
+                val candidates = Regex("""(?<![\d])(\d{1,3}(?:,\d{3})*\.(\d{5,6})|\d+\.(\d{5,6}))(?![\d])""")
                     .findAll(result.text)
                     .mapNotNull { it.groupValues[1].replace(",", "").toDoubleOrNull() }
-                    .filter { it > 0 }
+                    // EUR/USD sanity filter; this is not sufficient to identify the live quote.
+                    .filter { it in 0.5..2.0 }
                     .distinct()
                     .toList()
 
-                // Conservative heuristic only: send a tick when exactly one price-like
-                // number exists. This is NOT an ML Kit confidence score and can still misread.
+                // Never guess when the selected screen region contains multiple prices.
                 if (candidates.size == 1 &&
                     SystemClock.elapsedRealtime() - lastSendElapsed >= 850) {
                     lastSendElapsed = SystemClock.elapsedRealtime()
+                    updateNotification("อ่าน EUR/USD ได้ " + String.format(java.util.Locale.US, "%.6f", candidates[0]) + " · กำลังส่ง")
                     sendTick(candidates[0], 0.80)
+                } else if (SystemClock.elapsedRealtime() - lastOcrNoticeElapsed >= 5000) {
+                    lastOcrNoticeElapsed = SystemClock.elapsedRealtime()
+                    val message = if (candidates.isEmpty()) {
+                        "OCR ยังไม่พบราคา EUR/USD 5–6 หลักในพื้นที่ที่เลือก"
+                    } else {
+                        "พบราคาที่เป็นไปได้ " + candidates.size + " ค่า · กรุณาปรับ ROI ให้แคบลง"
+                    }
+                    updateNotification(message)
                 }
             }
             .addOnFailureListener { e -> Log.w("SignalRadar", "OCR failed", e) }
@@ -205,13 +215,24 @@ class ScreenCaptureService : Service() {
                 }
                 connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
-                if (code !in 200..299) Log.w("SignalRadar", "Ingest rejected HTTP $code")
+                if (code in 200..299) {
+                    updateNotification("ส่งราคา EUR/USD ไป Render สำเร็จ · HTTP " + code)
+                } else {
+                    Log.w("SignalRadar", "Ingest rejected HTTP " + code)
+                    updateNotification("Render ปฏิเสธข้อมูล · HTTP " + code)
+                }
             } catch (e: Exception) {
                 Log.w("SignalRadar", "Ingest failed", e)
+                updateNotification("ส่งข้อมูลไม่สำเร็จ · ตรวจ URL/Token/อินเทอร์เน็ต")
             } finally {
                 connection?.disconnect()
             }
         }
+    }
+
+    private fun updateNotification(message: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(NOTIFICATION_ID, buildNotification(message))
     }
 
     private fun buildNotification(message: String): Notification {
