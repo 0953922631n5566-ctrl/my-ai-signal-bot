@@ -109,7 +109,9 @@ async function fetchMarketData() {
   const url = new URL("https://api.twelvedata.com/time_series");
   url.searchParams.set("symbol", SYMBOL);
   url.searchParams.set("interval", "1min");
-  url.searchParams.set("outputsize", "100");
+  url.searchParams.set("outputsize", "120");
+  // Forex candle timestamps are requested in UTC so closed-bar filtering is unambiguous.
+  url.searchParams.set("timezone", "UTC");
   url.searchParams.set("apikey", API_KEY);
 
   const response = await fetch(url, {
@@ -131,120 +133,145 @@ async function fetchMarketData() {
     throw new Error("ข้อมูลแท่งเทียนไม่เพียงพอสำหรับคำนวณตัวชี้วัด");
   }
 
+  // Twelve Data labels each candle by its opening time. Use UTC and exclude
+  // any 1-minute bar that has not finished yet; all indicators/signals use closed bars.
   const candles = json.values.slice().reverse();
-  const closes = candles.map(c => Number(c.close));
+  const nowMs = Date.now();
+  const completedCandles = candles.filter(c => {
+    const openedAt = Date.parse(String(c.datetime || "").replace(" ", "T") + "Z");
+    return Number.isFinite(openedAt) && openedAt + 60_000 <= nowMs;
+  });
 
-  if (closes.some(v => !Number.isFinite(v) || v <= 0)) {
-    throw new Error("ข้อมูลราคาที่ได้รับไม่ถูกต้อง");
+  if (completedCandles.length < 50) {
+    throw new Error("ข้อมูลแท่งเทียนที่ปิดแล้วไม่เพียงพอสำหรับคำนวณตัวชี้วัด");
   }
 
-  const last = candles[candles.length - 1];
-  const price = Number(last.close);
-  const e9 = ema(closes, 9);
-  const e21 = ema(closes, 21);
-  const e50 = ema(closes, 50);
+  const closes = completedCandles.map(c => Number(c.close));
+  if (closes.some(v => !Number.isFinite(v) || v <= 0)) {
+    throw new Error("ข้อมูลราคาปิดที่ได้รับไม่ถูกต้อง");
+  }
+
+  // EMA values aligned to each candle index; seed with the first-period SMA.
+  function emaSeries(values, period) {
+    if (!Array.isArray(values) || values.length < period) return [];
+    const result = Array(period - 1).fill(null);
+    let current = values.slice(0, period).reduce((sum, value) => sum + value, 0) / period;
+    result.push(current);
+    const k = 2 / (period + 1);
+    for (let i = period; i < values.length; i++) {
+      current = values[i] * k + current * (1 - k);
+      result.push(current);
+    }
+    return result;
+  }
+
+  const ema9Values = emaSeries(closes, 9);
+  const ema21Values = emaSeries(closes, 21);
+  const ema50Values = emaSeries(closes, 50);
   const rsi = calculateRSI(closes, 14);
   const macd = calculateMACD(closes);
+  const lastIndex = completedCandles.length - 1;
+  const price = closes[lastIndex];
+  const e9 = ema9Values[lastIndex];
+  const e21 = ema21Values[lastIndex];
+  const e50 = ema50Values[lastIndex];
 
   if ([price, e9, e21, e50, rsi, macd].some(v => !Number.isFinite(v))) {
-    throw new Error("คำนวณตัวชี้วัดไม่สำเร็จ");
+    throw new Error("คำนวณตัวชี้วัดจากแท่งที่ปิดแล้วไม่สำเร็จ");
   }
+
+  // Compare EMA 9/21/50 across the last THREE CLOSED candles.
+  // This recognizes an established trend; a fresh EMA crossover is not required.
+  const last3 = completedCandles.slice(-3).map((c, offset) => {
+    const i = lastIndex - 2 + offset;
+    return {
+      candle: c,
+      close: closes[i],
+      ema9: ema9Values[i],
+      ema21: ema21Values[i],
+      ema50: ema50Values[i]
+    };
+  });
+
+  if (last3.length !== 3 || last3.some(x =>
+    [x.close, x.ema9, x.ema21, x.ema50].some(v => !Number.isFinite(v))
+  )) {
+    throw new Error("ต้องมีค่า EMA ครบ 3 แท่งปิดล่าสุด");
+  }
+
+  const stackUpCount = last3.filter(x => x.ema9 > x.ema21 && x.ema21 > x.ema50).length;
+  const stackDownCount = last3.filter(x => x.ema9 < x.ema21 && x.ema21 < x.ema50).length;
+  const oldest = last3[0];
+  const middle = last3[1];
+  const latest = last3[2];
+  const ema9Rising = latest.ema9 > oldest.ema9;
+  const ema21Rising = latest.ema21 > oldest.ema21;
+  const ema50Rising = latest.ema50 >= oldest.ema50;
+  const ema9Falling = latest.ema9 < oldest.ema9;
+  const ema21Falling = latest.ema21 < oldest.ema21;
+  const ema50Falling = latest.ema50 <= oldest.ema50;
+
+  const lastCandle = completedCandles[lastIndex];
+  const previousCandle = completedCandles[lastIndex - 1];
+  const lastOpen = Number(lastCandle.open);
+  const lastHigh = Number(lastCandle.high);
+  const lastLow = Number(lastCandle.low);
+  const lastClose = Number(lastCandle.close);
+  const lastCandleBullish = lastClose > lastOpen || lastClose > Number(previousCandle.close);
+  const lastCandleBearish = lastClose < lastOpen || lastClose < Number(previousCandle.close);
+
+  // Keep the existing RSI/MACD confirmation, but do not treat a strong RSI
+  // alone as a reversal and do not require a new EMA crossover.
+  const callIndicators = price > e21 && rsi >= 50 && rsi <= 80 && macd > 0;
+  const putIndicators = price < e21 && rsi >= 20 && rsi <= 50 && macd < 0;
+
+  const upTrend = stackUpCount >= 2 && ema9Rising && ema21Rising &&
+    ema50Rising && price > e21 && lastCandleBullish;
+  const downTrend = stackDownCount >= 2 && ema9Falling && ema21Falling &&
+    ema50Falling && price < e21 && lastCandleBearish;
 
   let bull = 0;
   let bear = 0;
+  if (e9 > e21) bull++; else if (e9 < e21) bear++;
+  if (e21 > e50) bull++; else if (e21 < e50) bear++;
+  if (price > e9) bull++; else if (price < e9) bear++;
+  if (rsi >= 50 && rsi <= 80) bull++; else if (rsi >= 20 && rsi <= 50) bear++;
+  if (macd > 0) bull++; else if (macd < 0) bear++;
 
-  if (e9 > e21) bull++;
-  else if (e9 < e21) bear++;
-
-  if (e21 > e50) bull++;
-  else if (e21 < e50) bear++;
-
-  if (price > e9) bull++;
-  else if (price < e9) bear++;
-
-  if (rsi >= 52 && rsi <= 68) bull++;
-  else if (rsi <= 48 && rsi >= 32) bear++;
-
-  if (macd > 0) bull++;
-  else if (macd < 0) bear++;
-
-  // Trend-following analysis from the last 7 CLOSED candles.
-  // Do not automatically reject a trend just because 6-7 candles move in one direction.
-  // Prefer following the dominant direction; stand by only when structure/indicators conflict
-  // or price is excessively stretched away from EMA9.
-  const completed = candles.slice(0, -1);
-  const recent7 = completed.slice(-7);
-  const candleStats = recent7.map(c => ({
-    open: Number(c.open),
-    high: Number(c.high),
-    low: Number(c.low),
-    close: Number(c.close)
+  // Use recent CLOSED candles only to estimate ordinary candle range.
+  const recent7 = completedCandles.slice(-7).map(c => ({
+    open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close)
   }));
-  const valid7 = candleStats.length === 7 && candleStats.every(c =>
+  const valid7 = recent7.length === 7 && recent7.every(c =>
     [c.open, c.high, c.low, c.close].every(Number.isFinite)
   );
-  const bullishCandles = valid7 ? candleStats.filter(c => c.close > c.open).length : 0;
-  const bearishCandles = valid7 ? candleStats.filter(c => c.close < c.open).length : 0;
-  const firstClose = valid7 ? candleStats[0].close : 0;
-  const lastClosedClose = valid7 ? candleStats[6].close : 0;
-  const netMove = lastClosedClose - firstClose;
-  const rangeHigh = valid7 ? Math.max(...candleStats.map(c => c.high)) : 0;
-  const rangeLow = valid7 ? Math.min(...candleStats.map(c => c.low)) : 0;
-  const totalRange = rangeHigh - rangeLow;
-  const moveRatio = totalRange > 0 ? Math.abs(netMove) / totalRange : 0;
-
-  const higherHighCount = valid7
-    ? candleStats.slice(1).filter((c, i) => c.high > candleStats[i].high).length : 0;
-  const higherLowCount = valid7
-    ? candleStats.slice(1).filter((c, i) => c.low > candleStats[i].low).length : 0;
-  const lowerHighCount = valid7
-    ? candleStats.slice(1).filter((c, i) => c.high < candleStats[i].high).length : 0;
-  const lowerLowCount = valid7
-    ? candleStats.slice(1).filter((c, i) => c.low < candleStats[i].low).length : 0;
-
-  // A usable trend needs directional candle majority + net movement + at least
-  // one supporting market-structure feature. This is intentionally less restrictive
-  // than requiring every indicator and every swing to align perfectly.
-  const upTrend = valid7 && bullishCandles >= 4 && netMove > 0 &&
-    moveRatio >= 0.18 && (higherHighCount >= 2 || higherLowCount >= 2);
-  const downTrend = valid7 && bearishCandles >= 4 && netMove < 0 &&
-    moveRatio >= 0.18 && (lowerHighCount >= 2 || lowerLowCount >= 2);
-
-  // Trend-following indicator confirmation. RSI is allowed to stay strong in a trend;
-  // do not automatically treat RSI above 68 or below 32 as a reversal.
-  const callIndicators = e9 > e21 && e21 > e50 && price > e21 &&
-    rsi >= 50 && rsi <= 78 && macd > 0;
-  const putIndicators = e9 < e21 && e21 < e50 && price < e21 &&
-    rsi >= 22 && rsi <= 50 && macd < 0;
-
-  // Avoid entries only when the current price is unusually extended from EMA9.
-  // In a sustained trend, 6-7 directional candles alone are NOT a reason to stand by.
-  const emaGap = Math.abs(price - e9);
   const avgCandleRange = valid7
-    ? candleStats.reduce((sum, c) => sum + (c.high - c.low), 0) / 7 : 0;
+    ? recent7.reduce((sum, c) => sum + Math.max(0, c.high - c.low), 0) / recent7.length
+    : 0;
+  const emaGap = Math.abs(price - e9);
   const overextended = avgCandleRange > 0 && emaGap > avgCandleRange * 1.8;
 
   const score = Math.round(Math.max(bull, bear) / 5 * 100);
   let candidate = "STANDBY";
-  let reason = "รอแนวโน้มที่ยืนยันได้";
+  let reason = "รอแนวโน้ม EMA ยืนยันจากแท่งปิด 3 แท่ง";
 
-  if (upTrend && callIndicators && !overextended && bull >= 3) {
+  if (upTrend && callIndicators && !overextended) {
     candidate = "CALL";
-    reason = "ตามน้ำขาขึ้น: แท่งปิด 7 แท่งส่วนใหญ่ขึ้น โครงสร้างราคาสนับสนุน และ EMA/RSI/MACD ไปทางเดียวกัน";
-  } else if (downTrend && putIndicators && !overextended && bear >= 3) {
+    reason = "ตามน้ำขาขึ้น: EMA 9/21/50 เรียงตัวและความชันสนับสนุนใน 3 แท่งปิดล่าสุด พร้อมราคา/RSI/MACD ยืนยัน โดยไม่ต้องรอเส้นตัดกันใหม่";
+  } else if (downTrend && putIndicators && !overextended) {
     candidate = "PUT";
-    reason = "ตามน้ำขาลง: แท่งปิด 7 แท่งส่วนใหญ่ลง โครงสร้างราคาสนับสนุน และ EMA/RSI/MACD ไปทางเดียวกัน";
+    reason = "ตามน้ำขาลง: EMA 9/21/50 เรียงตัวและความชันสนับสนุนใน 3 แท่งปิดล่าสุด พร้อมราคา/RSI/MACD ยืนยัน โดยไม่ต้องรอเส้นตัดกันใหม่";
   } else if (overextended && (upTrend || downTrend)) {
-    reason = "STANDBY: แนวโน้มมีทิศทาง แต่ราคาออกห่าง EMA9 มาก รอจังหวะย่อแล้วตามแนวโน้ม";
+    reason = "STANDBY: แนวโน้มยังไปทางเดิม แต่ราคาห่าง EMA9 มากเกินไป รอจังหวะย่อ";
   } else {
-    reason = "STANDBY: แนวโน้มแท่งเทียนกับตัวชี้วัดยังไม่สอดคล้องกัน";
+    reason = "STANDBY: EMA 3 แท่งล่าสุดหรือแท่งปิดล่าสุดยังไม่ยืนยันแนวโน้มเดียวกัน";
   }
 
   const now = Date.now();
 
   Object.assign(state, {
     price: round(price),
-    candleTime: last.datetime || null,
+    candleTime: lastCandle.datetime || null,
     fetchedAt: new Date(now).toISOString(),
     fetchedAtMs: now,
     ema9: round(e9),
