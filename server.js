@@ -168,15 +168,43 @@ async function fetchMarketData() {
   if (macd > 0) bull++;
   else if (macd < 0) bear++;
 
-  // Conservative confirmation: use the last 3 completed candles, not the
-  // newest potentially-forming candle. A signal needs trend alignment,
-  // directional candle confirmation and at least 4/5 indicator votes.
+  // Analyse the last 7 completed candles for market structure.
+  // Twelve Data returns the newest candle too; exclude it because it may still be forming.
   const completed = candles.slice(0, -1);
-  const recentClosed = completed.slice(-3);
-  const bullishCandles = recentClosed.filter(c => Number(c.close) > Number(c.open)).length;
-  const bearishCandles = recentClosed.filter(c => Number(c.close) < Number(c.open)).length;
-  const candleConfirmCall = recentClosed.length === 3 && bullishCandles >= 2;
-  const candleConfirmPut = recentClosed.length === 3 && bearishCandles >= 2;
+  const recent7 = completed.slice(-7);
+  const candleStats = recent7.map(c => ({
+    open: Number(c.open),
+    high: Number(c.high),
+    low: Number(c.low),
+    close: Number(c.close)
+  }));
+  const valid7 = candleStats.length === 7 && candleStats.every(c =>
+    [c.open, c.high, c.low, c.close].every(Number.isFinite)
+  );
+  const bullishCandles = valid7 ? candleStats.filter(c => c.close > c.open).length : 0;
+  const bearishCandles = valid7 ? candleStats.filter(c => c.close < c.open).length : 0;
+  const closes7 = valid7 ? candleStats.map(c => c.close) : [];
+  const firstClose = closes7[0];
+  const lastClose = closes7[closes7.length - 1];
+  const netMove = valid7 ? lastClose - firstClose : 0;
+  const lowerHighs = valid7 && candleStats.slice(1).filter((c, i) => c.high < candleStats[i].high).length >= 4;
+  const lowerLows = valid7 && candleStats.slice(1).filter((c, i) => c.low < candleStats[i].low).length >= 4;
+  const higherHighs = valid7 && candleStats.slice(1).filter((c, i) => c.high > candleStats[i].high).length >= 4;
+  const higherLows = valid7 && candleStats.slice(1).filter((c, i) => c.low > candleStats[i].low).length >= 4;
+  const candleRange = valid7
+    ? Math.max(...candleStats.map(c => c.high)) - Math.min(...candleStats.map(c => c.low))
+    : 0;
+  const directionalMoveRatio = candleRange > 0 ? Math.abs(netMove) / candleRange : 0;
+
+  // Avoid chasing an exhausted move: if 6-7 of the last 7 closed candles point
+  // the same way, require a pullback/reset instead of issuing a late entry.
+  const downTrendConfirmed = valid7 && bearishCandles >= 4 && netMove < 0 &&
+    lowerHighs && lowerLows && directionalMoveRatio >= 0.35 &&
+    bearishCandles <= 5;
+  const upTrendConfirmed = valid7 && bullishCandles >= 4 && netMove > 0 &&
+    higherHighs && higherLows && directionalMoveRatio >= 0.35 &&
+    bullishCandles <= 5;
+
   const alignedCall = e9 > e21 && e21 > e50 && price > e9 &&
     rsi >= 52 && rsi <= 68 && macd > 0;
   const alignedPut = e9 < e21 && e21 < e50 && price < e9 &&
@@ -186,14 +214,16 @@ async function fetchMarketData() {
   let candidate = "STANDBY";
   let reason = "เงื่อนไขยังไม่ครบ รอจังหวะที่ชัดเจน";
 
-  if (score >= MIN_SCORE && bull >= 4 && alignedCall && candleConfirmCall) {
+  if (score >= MIN_SCORE && bull >= 4 && alignedCall && upTrendConfirmed) {
     candidate = "CALL";
-    reason = "ผ่านตัวชี้วัดอย่างน้อย 4/5, EMA เรียงขาขึ้น และแท่งที่ปิดแล้วช่วยยืนยัน";
-  } else if (score >= MIN_SCORE && bear >= 4 && alignedPut && candleConfirmPut) {
+    reason = "แนวโน้มแท่งปิด 7 แท่งเป็นขาขึ้น มี Higher High/Higher Low และตัวชี้วัดยืนยัน";
+  } else if (score >= MIN_SCORE && bear >= 4 && alignedPut && downTrendConfirmed) {
     candidate = "PUT";
-    reason = "ผ่านตัวชี้วัดอย่างน้อย 4/5, EMA เรียงขาลง และแท่งที่ปิดแล้วช่วยยืนยัน";
+    reason = "แนวโน้มแท่งปิด 7 แท่งเป็นขาลง มี Lower High/Lower Low และตัวชี้วัดยืนยัน";
+  } else if (valid7 && (bullishCandles >= 6 || bearishCandles >= 6)) {
+    reason = "STANDBY: ราคาเคลื่อนทางเดียวต่อเนื่อง 6-7 จาก 7 แท่ง เสี่ยงไล่ราคา รอจังหวะย่อ";
   } else {
-    reason = "STANDBY: ตัวชี้วัด แนวโน้ม EMA และแท่งที่ปิดแล้วไม่ยืนยันตรงกัน";
+    reason = "STANDBY: แนวโน้มแท่งปิด 7 แท่ง โครงสร้างราคา และตัวชี้วัดยังไม่ยืนยันตรงกัน";
   }
 
   const now = Date.now();
