@@ -9,6 +9,7 @@ const state = {
   vibrate: false,
   audioContext: null,
   loading: false,
+  refreshAfterLoad: false,
   latestData: null,
   activeDirection: "STANDBY",
   activeUntil: 0,
@@ -197,14 +198,16 @@ function renderSignal(data) {
 
 async function refreshDashboard() {
   if (state.loading) return;
+  const requestedMode = state.marketMode;
 
   state.loading = true;
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
 
   try {
-    if (state.marketMode === "SCREEN") {
+    if (requestedMode === "SCREEN") {
       const data = await getJson("/api/screen/status");
+      if (requestedMode !== state.marketMode) return;
       state.latestData = data;
       const connected = data.dataFresh === true && !data.error &&
         data.price !== null && data.price !== undefined;
@@ -231,6 +234,7 @@ async function refreshDashboard() {
       getJson("/api/health"),
       getJson("/api/status")
     ]);
+    if (requestedMode !== state.marketMode) return;
 
     state.latestData = data;
 
@@ -261,6 +265,7 @@ async function refreshDashboard() {
     $("marketModeNote").textContent = "ตลาดหลักใช้ข้อมูล Twelve Data";
     renderSignal(data);
   } catch (error) {
+    if (requestedMode !== state.marketMode) return;
     setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
     showNotice(
       "การเชื่อมต่อขัดข้อง",
@@ -284,6 +289,10 @@ async function refreshDashboard() {
     state.loading = false;
     $("refreshBtn").disabled = false;
     $("refreshBtn").textContent = "สแกนข้อมูลอีกครั้ง";
+    if (state.refreshAfterLoad) {
+      state.refreshAfterLoad = false;
+      refreshDashboard();
+    }
   }
 }
 
@@ -389,11 +398,27 @@ $("vibrateBtn").addEventListener("click", () => {
 });
 
 function setMarketMode(mode) {
+  if (!["NON_OTC", "SCREEN"].includes(mode) || mode === state.marketMode) return;
   state.marketMode = mode;
   $("nonOtcBtn").classList.toggle("active", mode === "NON_OTC");
   $("screenBtn").classList.toggle("active", mode === "SCREEN");
+
+  // Clear every value from the previous source immediately. Never display an
+  // old Mode A tick as Mode B data, or vice versa, while a request is in flight.
+  state.latestData = null;
   state.activeDirection = "STANDBY";
   state.activeUntil = 0;
+  state.lastSignalMinute = null;
+  renderSignal({
+    candidate: "STANDBY", dataFresh: false, score: 0, price: null,
+    reason: mode === "SCREEN" ? "รอข้อมูลสดจาก 8xTrade OCR" : "รอข้อมูลตลาดจริง"
+  });
+  setConnection(false, mode === "SCREEN" ? "รอข้อมูลหน้าจอ 8xTrade" : "รอข้อมูลตลาดจริง");
+
+  if (state.loading) {
+    state.refreshAfterLoad = true;
+    return;
+  }
   refreshDashboard();
 }
 
