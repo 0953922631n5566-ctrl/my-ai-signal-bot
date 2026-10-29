@@ -202,42 +202,27 @@ async function refreshDashboard() {
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
 
   try {
-    if (state.marketMode === "OTC") {
-      const status = await getJson("/api/otc/status");
-      const data = status.data;
-      $("marketModeNote").textContent = "OTC อ่านจากหน้าจอ Android ที่คุณอนุญาตเท่านั้น";
+    if (state.marketMode === "SCREEN") {
+      const data = await getJson("/api/screen/status");
+      state.latestData = data;
+      const connected = data.dataFresh === true && !data.error &&
+        data.price !== null && data.price !== undefined;
       const heading = document.querySelector(".market-heading h2");
-      if (heading) heading.textContent = data?.symbol || "OTC · รอข้อมูล";
-      $("price").textContent = data ? formatNumber(data.price, 5) : "--";
-      $("lastUpdated").textContent = formatTime(data?.receivedAt);
-      state.latestData = {
-        ...(data || {}),
-        candidate: "STANDBY",
-        score: 0,
-        minScore: 70,
-        signalDurationMs: 40000,
-        dataFresh: status.dataFresh === true,
-        error: status.configured ? null : "ยังไม่ได้ตั้ง OTC_INGEST_TOKEN ใน Render"
-      };
-      if (status.dataFresh && data) {
-        setConnection(true, "ได้รับข้อมูลจากหน้าจอ OTC");
+      const subtitle = document.querySelector(".market-heading p");
+      if (heading) heading.textContent = data.symbol || "8xTrade · รอข้อมูล";
+      if (subtitle) subtitle.textContent = "8xTrade · อ่านจากหน้าจอ · 1 นาที";
+      $("marketModeNote").textContent = "โหมด 8xTrade อ่านข้อมูล OCR จากหน้าจอที่คุณอนุญาต";
+      if (connected) {
+        setConnection(true, "ได้รับข้อมูลจากหน้าจอ 8xTrade");
         hideNotice();
       } else {
-        setConnection(false, "รอข้อมูล OTC จาก Android");
+        setConnection(false, "รอข้อมูลหน้าจอ 8xTrade");
         showNotice(
-          "โหมด OTC ยังไม่พร้อม",
-          !status.configured
-            ? "ต้องตั้ง OTC_INGEST_TOKEN ใน Render แล้วใส่ค่าเดียวกันในแอป Android Companion"
-            : "เปิดแอป Android Companion แล้วอนุญาตแชร์หน้าจอ IQ Option เพื่อเริ่มส่งข้อมูล"
+          "ข้อมูลหน้าจอยังไม่พร้อม",
+          data.reason || data.error || "เปิดแอป Android Companion และตรวจสอบราคา OCR"
         );
       }
-      renderSignal({
-        ...state.latestData,
-        reason: status.reason || data?.reason || "ยังไม่มีข้อมูล OTC ใหม่",
-        price: data?.price ?? null,
-        ema9: null, ema21: null, rsi14: null, macd: null,
-        fetchedAt: data?.receivedAt || null
-      });
+      renderSignal(data);
       return;
     }
 
@@ -268,6 +253,8 @@ async function refreshDashboard() {
     const heading = document.querySelector(".market-heading h2");
     if (heading) heading.textContent = data.symbol || "EUR/USD";
     $("marketModeNote").textContent = "ตลาดหลักใช้ข้อมูล Twelve Data";
+    const subtitle = document.querySelector(".market-heading p");
+    if (subtitle) subtitle.textContent = "ตลาดหลัก · 1 นาที · Twelve Data";
     renderSignal(data);
   } catch (error) {
     setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
@@ -418,7 +405,7 @@ $("nonOtcBtn").addEventListener("click", () => {
 });
 
 $("otcBtn").addEventListener("click", () => {
-  state.marketMode = "OTC";
+  state.marketMode = "SCREEN";
   $("otcBtn").classList.add("active");
   $("nonOtcBtn").classList.remove("active");
   state.activeDirection = "STANDBY";
