@@ -4,6 +4,7 @@
 const $ = id => document.getElementById(id);
 
 const state = {
+  marketMode: "NON_OTC",
   sound: false,
   vibrate: false,
   audioContext: null,
@@ -202,6 +203,30 @@ async function refreshDashboard() {
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
 
   try {
+    if (state.marketMode === "SCREEN") {
+      const data = await getJson("/api/screen/status");
+      state.latestData = data;
+      const connected = data.dataFresh === true && !data.error &&
+        data.price !== null && data.price !== undefined;
+      const heading = document.querySelector(".market-heading h2");
+      const subtitle = document.querySelector(".market-heading p");
+      if (heading) heading.textContent = data.symbol || "8xTrade · รอข้อมูล";
+      if (subtitle) subtitle.textContent = "8xTrade · อ่านจากหน้าจอ · 1 นาที";
+      $("marketModeNote").textContent = "โหมด 8xTrade ใช้ OCR จากหน้าจอที่คุณอนุญาต";
+      if (connected) {
+        setConnection(true, "ได้รับข้อมูลจากหน้าจอ 8xTrade");
+        hideNotice();
+      } else {
+        setConnection(false, "รอข้อมูลหน้าจอ 8xTrade");
+        showNotice(
+          "ข้อมูลหน้าจอยังไม่พร้อม",
+          data.reason || data.error || "เปิดแอป Android Companion และตรวจสอบราคา OCR"
+        );
+      }
+      renderSignal(data);
+      return;
+    }
+
     const [health, data] = await Promise.all([
       getJson("/api/health"),
       getJson("/api/status")
@@ -231,6 +256,9 @@ async function refreshDashboard() {
       );
     }
 
+    const subtitle = document.querySelector(".market-heading p");
+    if (subtitle) subtitle.textContent = "ตลาดหลัก · 1 นาที · Twelve Data";
+    $("marketModeNote").textContent = "ตลาดหลักใช้ข้อมูล Twelve Data";
     renderSignal(data);
   } catch (error) {
     setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
@@ -360,16 +388,29 @@ $("vibrateBtn").addEventListener("click", () => {
   if (state.vibrate) vibrate([100]);
 });
 
+function setMarketMode(mode) {
+  state.marketMode = mode;
+  $("nonOtcBtn").classList.toggle("active", mode === "NON_OTC");
+  $("screenBtn").classList.toggle("active", mode === "SCREEN");
+  state.activeDirection = "STANDBY";
+  state.activeUntil = 0;
+  refreshDashboard();
+}
+
+$("nonOtcBtn").addEventListener("click", () => setMarketMode("NON_OTC"));
+$("screenBtn").addEventListener("click", () => setMarketMode("SCREEN"));
+
 $("refreshBtn").addEventListener("click", async () => {
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังสแกน…";
 
-  try {
-    await getJson("/api/scan", 20000);
-  } catch (error) {
-    showNotice("สแกนไม่สำเร็จ", error.message || "กำลังรอข้อมูลตลาด");
+  if (state.marketMode !== "SCREEN") {
+    try {
+      await getJson("/api/scan", 20000);
+    } catch (error) {
+      showNotice("สแกนไม่สำเร็จ", error.message || "กำลังรอข้อมูลตลาด");
+    }
   }
-
   await refreshDashboard();
 });
 
