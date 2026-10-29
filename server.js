@@ -1,3 +1,4 @@
+
 "use strict";
 
 const express = require("express");
@@ -8,14 +9,22 @@ const app = express();
 const PORT = Number(process.env.PORT || 10000);
 const API_KEY = process.env.TWELVE_DATA_API_KEY || "";
 const PAIR = process.env.FOREX_PAIR || "EUR/USD";
+
 const POLL_MS = Math.max(
   60000,
   Number(process.env.POLL_INTERVAL_MS || 60000)
 );
+
 const MIN_SCORE = Math.min(
   90,
   Math.max(50, Number(process.env.MIN_SIGNAL_SCORE || 68))
 );
+
+// สัญญาณ CALL/PUT แสดงไม่เกิน 40 วินาที
+const SIGNAL_DURATION_MS = 40000;
+
+// ถ้าข้อมูลเก่าเกิน 3 นาที ให้กลับ STANDBY
+const MAX_DATA_AGE_MS = 180000;
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 
@@ -34,7 +43,9 @@ let state = {
   updatedAt: null,
   lastPollAt: null,
   lastSuccessAt: null,
-  error: null,
+  signalAt: null,
+  signalExpiresAt: null,
+  error: "กำลังเริ่มระบบ",
   indicators: {
     ema9: null,
     ema21: null,
@@ -54,7 +65,8 @@ function ema(values, period) {
   }
 
   const k = 2 / (period + 1);
-  let result = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  let result =
+    values.slice(0, period).reduce((a, b) => a + b, 0) / period;
 
   for (let i = period; i < values.length; i++) {
     result = values[i] * k + result * (1 - k);
@@ -73,6 +85,7 @@ function rsi(values, period = 14) {
 
   for (let i = 1; i <= period; i++) {
     const change = values[i] - values[i - 1];
+
     if (change >= 0) gains += change;
     else losses += Math.abs(change);
   }
@@ -82,14 +95,15 @@ function rsi(values, period = 14) {
 
   for (let i = period + 1; i < values.length; i++) {
     const change = values[i] - values[i - 1];
-    const gain = Math.max(0, change);
-    const loss = Math.max(0, -change);
+    const gain = Math.max(change, 0);
+    const loss = Math.max(-change, 0);
 
     avgGain = (avgGain * (period - 1) + gain) / period;
     avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
 
   if (avgLoss === 0) return 100;
+  if (avgGain === 0) return 0;
 
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);
@@ -105,8 +119,7 @@ function calculateMacd(values) {
 }
 
 function round(value, digits = 5) {
-  if (!Number.isFinite(value)) return null;
-  return Number(value.toFixed(digits));
+  return Number.isFinite(value) ? Number(value.toFixed(digits)) : null;
 }
 
 function calculateSignal(candles) {
@@ -114,9 +127,8 @@ function calculateSignal(candles) {
     throw new Error("ข้อมูลแท่งเทียนไม่เพียงพอ ต้องมีอย่างน้อย 35 แท่ง");
   }
 
-  // Twelve Data ส่งแท่งล่าสุดมาก่อน จึงกลับลำดับให้เก่าไปใหม่
+  // Twelve Data ส่งแท่งล่าสุดมาก่อน
   const ordered = [...candles].reverse();
-
   const closes = ordered.map((c) => Number(c.close));
   const latest = ordered[ordered.length - 1];
 
@@ -124,7 +136,7 @@ function calculateSignal(candles) {
     closes.some((v) => !Number.isFinite(v)) ||
     !Number.isFinite(Number(latest.close))
   ) {
-    throw new Error("รูปแบบข้อมูลราคาจากผู้ให้บริการไม่ถูกต้อง");
+    throw new Error("ข้อมูลราคาที่ได้รับไม่ถูกต้อง");
   }
 
   const ema9 = ema(closes, 9);
@@ -139,31 +151,36 @@ function calculateSignal(candles) {
   let bull = 0;
   let bear = 0;
 
+  // แนวโน้ม EMA
   if (ema9 > ema21) bull += 2;
   else if (ema9 < ema21) bear += 2;
 
+  // ราคาปิดเทียบ EMA 9
   if (Number(latest.close) > ema9) bull += 1;
   else if (Number(latest.close) < ema9) bear += 1;
 
+  // MACD
   if (macd > 0) bull += 1;
   else if (macd < 0) bear += 1;
 
+  // RSI ไม่ให้คะแนนเมื่ออยู่ในช่วงกลางหรือสุดโต่ง
   if (rsi14 >= 52 && rsi14 <= 68) bull += 1;
-  else if (rsi14 <= 48 && rsi14 >= 32) bear += 1;
+  else if (rsi14 >= 32 && rsi14 <= 48) bear += 1;
 
-  const total = bull + bear;
-  const dominant = Math.max(bull, bear);
-  const score = total === 0 ? 0 : Math.round((dominant / total) * 100);
+  // คะแนน 50–100 ตามความต่างของคะแนนฝั่งขึ้น/ลง
+  // ไม่ใช่ความน่าจะเป็นที่จะชนะ
+  const difference = Math.abs(bull - bear);
+  const score = Math.round(50 + (difference / 5) * 50);
 
   let direction = "STANDBY";
-  let note = "เงื่อนไขยังไม่ชัดเจน รอประเมินรอบถัดไป";
+  let note = "เงื่อนไขไม่ชัดเจน รอการยืนยันรอบถัดไป";
 
-  if (score >= MIN_SCORE && bull > bear) {
+  if (bull > bear && score >= MIN_SCORE) {
     direction = "CALL";
-    note = "แนวโน้มระยะสั้นเอนเอียงขึ้น แต่ไม่รับประกันผล";
-  } else if (score >= MIN_SCORE && bear > bull) {
+    note = "เงื่อนไขทางเทคนิคเอนเอียงขึ้น";
+  } else if (bear > bull && score >= MIN_SCORE) {
     direction = "PUT";
-    note = "แนวโน้มระยะสั้นเอนเอียงลง แต่ไม่รับประกันผล";
+    note = "เงื่อนไขทางเทคนิคเอนเอียงลง";
   }
 
   return {
@@ -187,9 +204,7 @@ function calculateSignal(candles) {
 
 async function fetchCandles() {
   if (!API_KEY) {
-    throw new Error(
-      "ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY ใน Render Environment"
-    );
+    throw new Error("ยังไม่ได้ตั้งค่า TWELVE_DATA_API_KEY ใน Render");
   }
 
   const url = new URL("https://api.twelvedata.com/time_series");
@@ -213,14 +228,18 @@ async function fetchCandles() {
 
     const data = await response.json();
 
-    if (data.status === "error" || data.code || data.message) {
+    if (
+      data.status === "error" ||
+      data.code ||
+      data.message
+    ) {
       throw new Error(
-        String(data.message || data.code || "ผู้ให้บริการปฏิเสธคำขอ")
+        String(data.message || data.code || "Twelve Data ส่งข้อผิดพลาด")
       );
     }
 
     if (!Array.isArray(data.values) || data.values.length === 0) {
-      throw new Error("ไม่พบข้อมูลแท่งเทียนจาก Twelve Data");
+      throw new Error("ไม่พบข้อมูลแท่งเทียน");
     }
 
     return data.values;
@@ -228,10 +247,48 @@ async function fetchCandles() {
     if (error.name === "AbortError") {
       throw new Error("หมดเวลารอข้อมูลจาก Twelve Data");
     }
+
     throw error;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// คืนสัญญาณ STANDBY หากสัญญาณหมดอายุหรือข้อมูลเก่า
+function getPublicState() {
+  const result = { ...state };
+  const now = Date.now();
+
+  const dataAge =
+    lastSuccessfulPollMs > 0
+      ? now - lastSuccessfulPollMs
+      : Infinity;
+
+  const dataIsStale = dataAge > MAX_DATA_AGE_MS;
+  const signalExpired =
+    !state.signalAt ||
+    now - state.signalAt >= SIGNAL_DURATION_MS;
+
+  if (dataIsStale) {
+    result.direction = "STANDBY";
+    result.score = 0;
+    result.note = "ข้อมูลตลาดเก่าเกินกำหนด กรุณารอข้อมูลใหม่";
+  } else if (signalExpired && state.direction !== "STANDBY") {
+    result.direction = "STANDBY";
+    result.score = 0;
+    result.note = "สัญญาณหมดอายุแล้ว กำลังรอการประเมินรอบใหม่";
+  }
+
+  if (result.direction === "STANDBY") {
+    result.signalExpiresAt = null;
+  }
+
+  result.dataAgeMs = Number.isFinite(dataAge) ? dataAge : null;
+  result.dataStale = dataIsStale;
+  result.minSignalScore = MIN_SCORE;
+  result.signalDurationMs = SIGNAL_DURATION_MS;
+
+  return result;
 }
 
 async function pollMarket() {
@@ -243,21 +300,36 @@ async function pollMarket() {
   try {
     const candles = await fetchCandles();
     const result = calculateSignal(candles);
+    const now = Date.now();
 
     state = {
       ...state,
       ...result,
       lastPollAt: state.lastPollAt,
-      lastSuccessAt: new Date().toISOString(),
-      error: null
+      lastSuccessAt: new Date(now).toISOString(),
+      error: null,
+      signalAt: result.direction === "STANDBY" ? null : now,
+      signalExpiresAt:
+        result.direction === "STANDBY"
+          ? null
+          : new Date(now + SIGNAL_DURATION_MS).toISOString()
     };
 
-    lastSuccessfulPollMs = Date.now();
+    lastSuccessfulPollMs = now;
+
     console.log(
-      `[OK] ${state.pair} ${state.direction} score=${state.score} price=${state.price}`
+      `[OK] ${PAIR} ${state.direction} score=${state.score} price=${state.price}`
     );
   } catch (error) {
     state.error = error.message || "ไม่สามารถดึงข้อมูลตลาดได้";
+
+    // หากเกิดข้อผิดพลาด ไม่แสดงสัญญาณเก่าค้างไว้
+    state.direction = "STANDBY";
+    state.score = 0;
+    state.signalAt = null;
+    state.signalExpiresAt = null;
+    state.note = "ข้อมูลมีปัญหา จึงพักสัญญาณไว้ก่อน";
+
     console.error("[MARKET ERROR]", state.error);
   } finally {
     pollInProgress = false;
@@ -267,13 +339,17 @@ async function pollMarket() {
 
 app.get("/api/health", (req, res) => {
   const now = Date.now();
+
   const recentSuccess =
     lastSuccessfulPollMs > 0 &&
     now - lastSuccessfulPollMs <= Math.max(POLL_MS * 3, 180000);
 
-  const ok = Boolean(API_KEY) && recentSuccess && !state.error;
+  const ok =
+    Boolean(API_KEY) &&
+    recentSuccess &&
+    !state.error;
 
-  res.status(200).json({
+  res.json({
     ok,
     apiKeyConfigured: Boolean(API_KEY),
     provider: "Twelve Data",
@@ -288,38 +364,26 @@ app.get("/api/health", (req, res) => {
 });
 
 app.get("/api/status", (req, res) => {
-  res.json({
-    pair: state.pair,
-    timeframe: state.timeframe,
-    source: state.source,
-    direction: state.direction,
-    score: state.score,
-    price: state.price,
-    candleTime: state.candleTime,
-    updatedAt: state.updatedAt,
-    lastPollAt: state.lastPollAt,
-    lastSuccessAt: state.lastSuccessAt,
-    error: state.error,
-    indicators: state.indicators,
-    note: state.note,
-    minSignalScore: MIN_SCORE,
-    nextPollAt
-  });
+  res.json(getPublicState());
 });
 
 app.get("/api/radar", (req, res) => {
+  const result = getPublicState();
+
   res.json({
-    updatedAt: state.updatedAt,
-    results: [state]
+    updatedAt: result.updatedAt,
+    results: [result]
   });
 });
 
 app.get("/api/scan", async (req, res) => {
   await pollMarket();
 
-  res.status(state.error ? 503 : 200).json({
-    ok: !state.error,
-    result: state
+  const result = getPublicState();
+
+  res.status(result.error ? 503 : 200).json({
+    ok: !result.error,
+    result
   });
 });
 
@@ -334,6 +398,7 @@ app.get("*", (req, res) => {
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`AI Signal Radar listening on port ${PORT}`);
   console.log(`Pair: ${PAIR} | Poll: ${POLL_MS}ms`);
+  console.log(`Signal duration: ${SIGNAL_DURATION_MS / 1000}s`);
 
   await pollMarket();
 
