@@ -63,6 +63,7 @@ function createScreenSource({ token = "" } = {}) {
   let currentCandle = null;
   let lastTickAt = 0;
   let lastAcceptedAt = 0;
+  let lastCapturedAt = 0;
   let lastPrice = null;
   let lastSymbol = "EUR/USD";
   let lastReceivedAt = null;
@@ -243,6 +244,9 @@ function createScreenSource({ token = "" } = {}) {
         return res.status(429).json({ ok: false, error: "ส่งข้อมูลถี่เกินไป" });
       }
 
+      if (capturedAt < lastCapturedAt) {
+        throw new Error("ข้อมูล OCR มาถึงไม่ตามลำดับเวลา");
+      }
       const minute = Math.floor(capturedAt / 60000) * 60000;
 
       // Never mix candles from different pairs.
@@ -283,6 +287,7 @@ function createScreenSource({ token = "" } = {}) {
       }
 
       lastAcceptedAt = now;
+      lastCapturedAt = capturedAt;
       lastTickAt = now;
       lastPrice = price;
       lastSymbol = symbol;
