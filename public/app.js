@@ -4,7 +4,8 @@
 const $ = id => document.getElementById(id);
 
 const state = {
-  marketMode: "NON_OTC",
+  marketMode: "B",
+  refreshPending: false,
   sound: false,
   vibrate: false,
   audioContext: null,
@@ -196,15 +197,20 @@ function renderSignal(data) {
 }
 
 async function refreshDashboard() {
-  if (state.loading) return;
+  if (state.loading) {
+    state.refreshPending = true;
+    return;
+  }
 
+  const requestedMode = state.marketMode;
   state.loading = true;
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
 
   try {
-    if (state.marketMode === "SCREEN") {
+    if (requestedMode === "A") {
       const data = await getJson("/api/screen/status");
+      if (state.marketMode !== requestedMode) return;
       state.latestData = data;
       const connected = data.dataFresh === true && !data.error &&
         data.price !== null && data.price !== undefined;
@@ -231,6 +237,7 @@ async function refreshDashboard() {
       getJson("/api/health"),
       getJson("/api/status")
     ]);
+    if (state.marketMode !== requestedMode) return;
 
     state.latestData = data;
 
@@ -261,6 +268,7 @@ async function refreshDashboard() {
     $("marketModeNote").textContent = "ตลาดหลักใช้ข้อมูล Twelve Data";
     renderSignal(data);
   } catch (error) {
+    if (state.marketMode !== requestedMode) return;
     setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
     showNotice(
       "การเชื่อมต่อขัดข้อง",
@@ -284,6 +292,10 @@ async function refreshDashboard() {
     state.loading = false;
     $("refreshBtn").disabled = false;
     $("refreshBtn").textContent = "สแกนข้อมูลอีกครั้ง";
+    if (state.refreshPending || state.marketMode !== requestedMode) {
+      state.refreshPending = false;
+      refreshDashboard();
+    }
   }
 }
 
@@ -389,16 +401,40 @@ $("vibrateBtn").addEventListener("click", () => {
 });
 
 function setMarketMode(mode) {
+  if (!["A", "B"].includes(mode) || state.marketMode === mode) return;
   state.marketMode = mode;
-  $("nonOtcBtn").classList.toggle("active", mode === "NON_OTC");
-  $("screenBtn").classList.toggle("active", mode === "SCREEN");
+  state.latestData = null;
   state.activeDirection = "STANDBY";
   state.activeUntil = 0;
+  state.lastSignalMinute = null;
+  state.warning10Minute = null;
+  state.warning2Minute = null;
+
+  $("nonOtcBtn").classList.toggle("active", mode === "B");
+  $("screenBtn").classList.toggle("active", mode === "A");
+  $("nonOtcBtn").setAttribute("aria-pressed", String(mode === "B"));
+  $("screenBtn").setAttribute("aria-pressed", String(mode === "A"));
+  $("marketModeNote").textContent = mode === "A"
+    ? "MODE A: ใช้เฉพาะ OCR จากหน้าจอ 8xTrade"
+    : "MODE B: ใช้เฉพาะข้อมูลตลาดหลักจาก Twelve Data";
+  $("price").textContent = "--";
+  $("lastUpdated").textContent = "รอข้อมูล";
+  const heading = document.querySelector(".market-heading h2");
+  if (heading) heading.textContent = mode === "A" ? "8xTrade · รอข้อมูล" : "EUR/USD";
+  renderSignal({
+    candidate: "STANDBY",
+    dataFresh: false,
+    score: 0,
+    price: null,
+    reason: mode === "A"
+      ? "กำลังรอข้อมูล OCR จากหน้าจอ 8xTrade"
+      : "กำลังรอข้อมูลตลาดหลักจาก Twelve Data"
+  });
   refreshDashboard();
 }
 
-$("nonOtcBtn").addEventListener("click", () => setMarketMode("NON_OTC"));
-$("screenBtn").addEventListener("click", () => setMarketMode("SCREEN"));
+$("nonOtcBtn").addEventListener("click", () => setMarketMode("B"));
+$("screenBtn").addEventListener("click", () => setMarketMode("A"));
 
 $("refreshBtn").addEventListener("click", async () => {
   $("refreshBtn").disabled = true;
