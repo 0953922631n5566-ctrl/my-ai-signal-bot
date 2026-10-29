@@ -162,22 +162,38 @@ async function fetchMarketData() {
   if (price > e9) bull++;
   else if (price < e9) bear++;
 
-  if (rsi >= 52 && rsi < 70) bull++;
-  else if (rsi <= 48 && rsi > 30) bear++;
+  if (rsi >= 52 && rsi <= 68) bull++;
+  else if (rsi <= 48 && rsi >= 32) bear++;
 
   if (macd > 0) bull++;
   else if (macd < 0) bear++;
 
+  // Conservative confirmation: use the last 3 completed candles, not the
+  // newest potentially-forming candle. A signal needs trend alignment,
+  // directional candle confirmation and at least 4/5 indicator votes.
+  const completed = candles.slice(0, -1);
+  const recentClosed = completed.slice(-3);
+  const bullishCandles = recentClosed.filter(c => Number(c.close) > Number(c.open)).length;
+  const bearishCandles = recentClosed.filter(c => Number(c.close) < Number(c.open)).length;
+  const candleConfirmCall = recentClosed.length === 3 && bullishCandles >= 2;
+  const candleConfirmPut = recentClosed.length === 3 && bearishCandles >= 2;
+  const alignedCall = e9 > e21 && e21 > e50 && price > e9 &&
+    rsi >= 52 && rsi <= 68 && macd > 0;
+  const alignedPut = e9 < e21 && e21 < e50 && price < e9 &&
+    rsi <= 48 && rsi >= 32 && macd < 0;
+
   const score = Math.round(Math.max(bull, bear) / 5 * 100);
   let candidate = "STANDBY";
-  let reason = "สัญญาณยังไม่ชัดเจน";
+  let reason = "เงื่อนไขยังไม่ครบ รอจังหวะที่ชัดเจน";
 
-  if (score >= MIN_SCORE && bull > bear) {
+  if (score >= MIN_SCORE && bull >= 4 && alignedCall && candleConfirmCall) {
     candidate = "CALL";
-    reason = "แนวโน้มขาขึ้นผ่านเกณฑ์ทางเทคนิค";
-  } else if (score >= MIN_SCORE && bear > bull) {
+    reason = "ผ่านตัวชี้วัดอย่างน้อย 4/5, EMA เรียงขาขึ้น และแท่งที่ปิดแล้วช่วยยืนยัน";
+  } else if (score >= MIN_SCORE && bear >= 4 && alignedPut && candleConfirmPut) {
     candidate = "PUT";
-    reason = "แนวโน้มขาลงผ่านเกณฑ์ทางเทคนิค";
+    reason = "ผ่านตัวชี้วัดอย่างน้อย 4/5, EMA เรียงขาลง และแท่งที่ปิดแล้วช่วยยืนยัน";
+  } else {
+    reason = "STANDBY: ตัวชี้วัด แนวโน้ม EMA และแท่งที่ปิดแล้วไม่ยืนยันตรงกัน";
   }
 
   const now = Date.now();
