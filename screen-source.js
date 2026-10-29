@@ -1,6 +1,7 @@
 "use strict";
 
 const express = require("express");
+const crypto = require("crypto");
 
 const ALLOWED_SYMBOLS = new Set([
   "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD",
@@ -63,6 +64,8 @@ function createScreenSource({ token = "" } = {}) {
   let lastAnalysis = null;
   const MAX_AGE_MS = 6000;
   const MAX_CLOCK_SKEW_MS = 15000;
+  const MAX_TICK_GAP_MS = 6000;
+  const MIN_TICKS_PER_CANDLE = 10;
   const MIN_CONFIDENCE = 0.75;
 
   function publicState() {
@@ -159,7 +162,10 @@ function createScreenSource({ token = "" } = {}) {
   }
 
   function requireToken(req, res, next) {
-    if (!token || req.get("authorization") !== "Bearer " + token) {
+    const supplied = Buffer.from(req.get("authorization") || "", "utf8");
+    const expected = Buffer.from("Bearer " + token, "utf8");
+    if (!token || token.length < 32 || supplied.length !== expected.length ||
+        !crypto.timingSafeEqual(supplied, expected)) {
       return res.status(401).json({ ok: false, error: "unauthorized" });
     }
     return next();
@@ -189,18 +195,59 @@ function createScreenSource({ token = "" } = {}) {
       }
 
       const minute = Math.floor(capturedAt / 60000) * 60000;
+      if (currentCandle && capturedAt < currentCandle.lastCapturedAt) {
+        throw new Error("ได้รับตัวอย่าง OCR ที่เก่ากว่าข้อมูลล่าสุด");
+      }
+
       if (!currentCandle || currentCandle.time !== minute || currentCandle.symbol !== symbol) {
         if (currentCandle) {
-          completedCandles.push(currentCandle);
-          if (completedCandles.length > 600) completedCandles.shift();
-          lastAnalysis = analyzeClosedCandles();
+          const contiguousMinute =
+            currentCandle.symbol === symbol &&
+            minute === currentCandle.time + 60000;
+          const candleUsable =
+            contiguousMinute &&
+            !currentCandle.invalid &&
+            currentCandle.ticks >= MIN_TICKS_PER_CANDLE;
+
+          if (candleUsable) {
+            completedCandles.push({
+              time: currentCandle.time,
+              symbol: currentCandle.symbol,
+              open: currentCandle.open,
+              high: currentCandle.high,
+              low: currentCandle.low,
+              close: currentCandle.close,
+              ticks: currentCandle.ticks
+            });
+            if (completedCandles.length > 600) completedCandles.shift();
+            lastAnalysis = analyzeClosedCandles();
+          } else {
+            // A missing minute, a symbol switch, too few samples, or a long
+            // OCR gap breaks continuity. Reset rather than fabricate a candle.
+            completedCandles.length = 0;
+            lastAnalysis = null;
+          }
         }
-        currentCandle = { time: minute, symbol, open: price, high: price, low: price, close: price, ticks: 1 };
+        currentCandle = {
+          time: minute,
+          symbol,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          ticks: 1,
+          lastCapturedAt: capturedAt,
+          invalid: false
+        };
       } else {
+        if (capturedAt - currentCandle.lastCapturedAt > MAX_TICK_GAP_MS) {
+          currentCandle.invalid = true;
+        }
         currentCandle.high = Math.max(currentCandle.high, price);
         currentCandle.low = Math.min(currentCandle.low, price);
         currentCandle.close = price;
         currentCandle.ticks++;
+        currentCandle.lastCapturedAt = capturedAt;
       }
 
       lastTickAt = Date.now();
