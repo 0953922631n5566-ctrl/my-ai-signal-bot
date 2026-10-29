@@ -316,13 +316,15 @@ function updateCountdown() {
 
   const key = minuteKey(now);
 
-  if (remainingSeconds === 10 && state.warning10Minute !== key) {
+  // Trigger when crossing the threshold, not only at exact equality.
+  // Mobile browsers may delay timers, so exact-second checks can be missed.
+  if (remainingMs <= 10000 && remainingMs > 0 && state.warning10Minute !== key) {
     state.warning10Minute = key;
-    playBeep(650, 180);
-    vibrate([120]);
+    playBeep(650, 220);
+    vibrate([160]);
   }
 
-  if (remainingSeconds === 2 && state.warning2Minute !== key) {
+  if (remainingMs <= 2000 && remainingMs > 0 && state.warning2Minute !== key) {
     state.warning2Minute = key;
     triggerSignalAtTwoSeconds(key);
   }
