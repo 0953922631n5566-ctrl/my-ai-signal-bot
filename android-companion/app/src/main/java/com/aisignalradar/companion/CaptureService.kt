@@ -134,7 +134,7 @@ class CaptureService : Service() {
                     val symbol = prefs.getString("symbol", "EURUSD(OTC)") ?: "EURUSD(OTC)"
                     val confidence = if (price.second) 0.90 else 0.70
                     sendPrice(server, token, symbol, price.first, confidence)
-                    updateNotification("อ่านราคาได้: \${price.first}")
+                    updateNotification("อ่านราคาได้: ${price.first}")
                 } else {
                     updateNotification("ยังอ่านราคาไม่ชัด — ตรวจตำแหน่งกราฟ")
                 }
