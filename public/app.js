@@ -4,7 +4,6 @@
 const $ = id => document.getElementById(id);
 
 const state = {
-  marketMode: "NON_OTC",
   sound: false,
   vibrate: false,
   audioContext: null,
@@ -197,61 +196,26 @@ function renderSignal(data) {
 
 async function refreshDashboard() {
   if (state.loading) return;
+
   state.loading = true;
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
 
   try {
-    if (state.marketMode === "OTC") {
-      const status = await getJson("/api/otc/status");
-      const data = status.data;
-      $("marketModeNote").textContent = "OTC อ่านจากหน้าจอ Android ที่คุณอนุญาตเท่านั้น";
-      const heading = document.querySelector(".market-heading h2");
-      if (heading) heading.textContent = data?.symbol || "OTC · รอข้อมูล";
-      $("price").textContent = data ? formatNumber(data.price, 5) : "--";
-      $("lastUpdated").textContent = formatTime(data?.receivedAt);
-      state.latestData = {
-        ...(data || {}),
-        candidate: "STANDBY",
-        score: 0,
-        minScore: 70,
-        signalDurationMs: 40000,
-        dataFresh: status.dataFresh === true,
-        error: status.configured ? null : "ยังไม่ได้ตั้ง OTC_INGEST_TOKEN ใน Render"
-      };
-      if (status.dataFresh && data) {
-        setConnection(true, "ได้รับข้อมูลจากหน้าจอ OTC");
-        hideNotice();
-      } else {
-        setConnection(false, "รอข้อมูล OTC จาก Android");
-        showNotice(
-          "โหมด OTC ยังไม่พร้อม",
-          !status.configured
-            ? "ต้องตั้ง OTC_INGEST_TOKEN ใน Render แล้วใส่ค่าเดียวกันในแอป Android Companion"
-            : "เปิดแอป Android Companion แล้วอนุญาตแชร์หน้าจอ IQ Option เพื่อเริ่มส่งข้อมูล"
-        );
-      }
-      renderSignal({
-        ...state.latestData,
-        reason: status.reason || data?.reason || "ยังไม่มีข้อมูล OTC ใหม่",
-        price: data?.price ?? null,
-        ema9: null, ema21: null, rsi14: null, macd: null,
-        fetchedAt: data?.receivedAt || null
-      });
-      return;
-    }
-
     const [health, data] = await Promise.all([
       getJson("/api/health"),
       getJson("/api/status")
     ]);
+
     state.latestData = data;
+
     const connected =
       health.apiKeyConfigured === true &&
       data.dataFresh === true &&
       !data.error &&
       data.price !== null &&
       data.price !== undefined;
+
     if (connected) {
       setConnection(true, "เชื่อมต่อข้อมูลตลาดแล้ว");
       hideNotice();
@@ -259,15 +223,14 @@ async function refreshDashboard() {
       setConnection(false, "ข้อมูลตลาดมีปัญหา");
       showNotice(
         "ตรวจพบปัญหาข้อมูลตลาด",
-        health.error || data.error ||
+        health.error ||
+          data.error ||
           (!health.apiKeyConfigured
             ? "ตั้งค่า TWELVE_DATA_API_KEY ใน Render Environment Variables"
             : "ข้อมูลยังไม่พร้อม รอข้อมูลใหม่")
       );
     }
-    const heading = document.querySelector(".market-heading h2");
-    if (heading) heading.textContent = data.symbol || "EUR/USD";
-    $("marketModeNote").textContent = "ตลาดหลักใช้ข้อมูล Twelve Data";
+
     renderSignal(data);
   } catch (error) {
     setConnection(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
@@ -277,9 +240,11 @@ async function refreshDashboard() {
         ? "เซิร์ฟเวอร์ตอบช้าเกินกำหนด ลองใหม่อีกครั้ง"
         : error.message || "ตรวจสอบสถานะ Render"
     );
+
     state.latestData = null;
     state.activeDirection = "STANDBY";
     state.activeUntil = 0;
+
     renderSignal({
       candidate: "STANDBY",
       dataFresh: false,
@@ -406,24 +371,6 @@ $("refreshBtn").addEventListener("click", async () => {
   }
 
   await refreshDashboard();
-});
-
-$("nonOtcBtn").addEventListener("click", () => {
-  state.marketMode = "NON_OTC";
-  $("nonOtcBtn").classList.add("active");
-  $("otcBtn").classList.remove("active");
-  state.activeDirection = "STANDBY";
-  state.activeUntil = 0;
-  refreshDashboard();
-});
-
-$("otcBtn").addEventListener("click", () => {
-  state.marketMode = "OTC";
-  $("otcBtn").classList.add("active");
-  $("nonOtcBtn").classList.remove("active");
-  state.activeDirection = "STANDBY";
-  state.activeUntil = 0;
-  refreshDashboard();
 });
 
 document.addEventListener("visibilitychange", () => {
