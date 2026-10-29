@@ -338,7 +338,7 @@ function updateCountdown() {
     `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
   $("countdownMessage").textContent =
-    "อ้างอิงนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุที่ยืนยันจาก IQ Option";
+    "อ้างอิงนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุที่ยืนยันจาก 8xTrade";
 
   $("countdownCard").classList.toggle("warning", remainingSeconds <= 10);
 
