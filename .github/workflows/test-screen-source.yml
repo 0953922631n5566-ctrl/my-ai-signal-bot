@@ -1,0 +1,45 @@
+name: Test Screen OCR API
+
+on:
+  push:
+    branches:
+      - feature/8xtrade-screen-main
+    paths:
+      - "server.js"
+      - "screen-source.js"
+      - "public/**"
+      - "test/**"
+      - "package.json"
+      - ".github/workflows/test-screen-source.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "server.js"
+      - "screen-source.js"
+      - "public/**"
+      - "test/**"
+      - "package.json"
+      - ".github/workflows/test-screen-source.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-screen-api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check screen-source.js
+          node --check public/app.js
+      - name: Test authenticated OCR API and safe standby behavior
+        run: npm test
