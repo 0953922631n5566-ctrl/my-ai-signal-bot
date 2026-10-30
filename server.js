@@ -14,6 +14,8 @@ const SYMBOL = process.env.FOREX_PAIR || "EUR/USD";
 const POLL_MS = Math.max(60000, Number(process.env.POLL_INTERVAL_MS) || 60000);
 const MIN_SCORE = Math.min(95, Math.max(70, Number(process.env.MIN_SIGNAL_SCORE) || 78));
 const MAX_DATA_AGE_MS = 90000;
+const HISTORY_BARS = 600;
+const MIN_COMPLETED_BARS = 500;
 const SIGNAL_DURATION_MS = 40000;
 const EMA_PERIODS = [3, 5, 8, 9, 12, 15, 18, 21, 25, 30, 35, 40, 50, 75, 100];
 
@@ -24,7 +26,7 @@ const state = {
   rsi14: null, macd: null, bullVotes: 0, bearVotes: 0,
   score: 0, candidate: "STANDBY", reason: "กำลังรอข้อมูลตลาด",
   aiSignal: null, aiAnalysis: null, technicalIndicators: {},
-  error: null, candles: [], signalReviews: [], lastPollAt: null, nextPollAt: null
+  error: null, candles: [], historyBars: 0, apiCreditsUsed: null, apiCreditsLeft: null, signalReviews: [], lastPollAt: null, nextPollAt: null
 };
 
 let pollInProgress = false;
@@ -386,11 +388,14 @@ async function fetchMarketData() {
   const url = new URL("https://api.twelvedata.com/time_series");
   url.searchParams.set("symbol", SYMBOL);
   url.searchParams.set("interval", "1min");
-  url.searchParams.set("outputsize", "120");
+  url.searchParams.set("outputsize", String(HISTORY_BARS));
+  url.searchParams.set("order", "desc");
   url.searchParams.set("timezone", "UTC");
   url.searchParams.set("apikey", API_KEY);
   const response = await fetch(url, { signal:AbortSignal.timeout(15000), headers:{Accept:"application/json"} });
   if (!response.ok) throw new Error("Twelve Data HTTP " + response.status);
+  const apiCreditsUsed = response.headers.get("api-credits-used");
+  const apiCreditsLeft = response.headers.get("api-credits-left");
   const json = await response.json();
   if (json.status === "error" || json.code || !Array.isArray(json.values)) throw new Error(json.message || "Twelve Data ไม่ส่งข้อมูลแท่งเทียน");
 
@@ -399,7 +404,7 @@ async function fetchMarketData() {
     const opened = Date.parse(String(c.datetime || "").replace(" ","T") + "Z");
     return Number.isFinite(opened) && opened + 60000 <= now;
   });
-  if (completed.length < 105) throw new Error("ต้องมีแท่งเทียนปิดแล้วอย่างน้อย 105 แท่งสำหรับ EMA100 และ AI indicators");
+  if (completed.length < MIN_COMPLETED_BARS) throw new Error("ข้อมูลแท่งเทียนปิดแล้วมีเพียง " + completed.length + " แท่ง ต้องมีอย่างน้อย " + MIN_COMPLETED_BARS + " แท่งเพื่อให้ EMA100 และ AI indicators มีช่วง warm-up เพียงพอ");
   const candles = completed.map(c=>({datetime:c.datetime||null,open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}));
   if (candles.some(c=>[c.open,c.high,c.low,c.close].some(v=>!Number.isFinite(v)||v<=0)||c.high<Math.max(c.open,c.close)||c.low>Math.min(c.open,c.close))) {
     throw new Error("ข้อมูล OHLC ที่ได้รับไม่ถูกต้อง");
@@ -411,6 +416,7 @@ async function fetchMarketData() {
   const bearVotes = Object.values(result.emaValues).filter(v=>result.price<v).length;
   Object.assign(state,{
     price:round(result.price), candleTime:result.candle.datetime,
+    historyBars:candles.length, apiCreditsUsed, apiCreditsLeft,
     fetchedAt:new Date(stamp).toISOString(), fetchedAtMs:stamp,
     emaValues:result.emaValues, emaSignals:result.emaSignals, marketTrend:result.trend,
     rsi14:result.indicators.rsi14, macd:result.indicators.macdHistogram,
@@ -450,7 +456,9 @@ function publicState() {
     technicalIndicators:fresh?state.technicalIndicators:{},aiAnalysis:fresh?state.aiAnalysis:null,fakeout:fresh?state.fakeout:null,
     aiSignal:fresh?state.aiSignal:null,score:fresh?state.score:0,
     candidate:fresh?state.candidate:"STANDBY",reason:fresh?state.reason:"ข้อมูลตลาดเก่าหรือยังไม่พร้อม",
-    error:state.error,lastPollAt:state.lastPollAt,nextPollAt:state.nextPollAt,
+    error:state.error,historyBars:state.historyBars,historyBarsRequired:MIN_COMPLETED_BARS,
+    apiCreditsUsed:state.apiCreditsUsed,apiCreditsLeft:state.apiCreditsLeft,
+    lastPollAt:state.lastPollAt,nextPollAt:state.nextPollAt,
     signalReviews:state.signalReviews.slice(-10),signalReviewStats:getSignalReviewStats(state.signalReviews),
     serverTime:Date.now(),signalDurationMs:SIGNAL_DURATION_MS,minScore:MIN_SCORE
   };
