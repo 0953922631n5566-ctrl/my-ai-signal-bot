@@ -120,8 +120,18 @@ function renderAIAnalysis(data) {
   const fakeoutEvidence = fakeout && Array.isArray(fakeout.evidence)
     ? fakeout.evidence.map(item => (item.passed ? "✓ " : "× ") + item.label).join(" · ")
     : "รอข้อมูลแท่งปิด";
+  const reviewStats = data.signalReviewStats || {};
+  const reviewRow = horizon => {
+    const stat = reviewStats[horizon] || {};
+    const original = stat.original || {}, final = stat.final || {};
+    const fmt = item => item.winRate === null || item.winRate === undefined ? "--" :
+      item.winRate + "% (" + item.wins + "/" + item.count + ")";
+    return ["ผลย้อนหลัง " + horizon + " แท่ง", "เดิม " + fmt(original) + " · หลังปรับ " + fmt(final),
+      "นับเฉพาะผลที่มีแท่งปิดครบแล้ว"];
+  };
   const rows = [
     ["Fakeout / กลับทิศ", fakeoutLabel, fakeoutEvidence],
+    reviewRow(1), reviewRow(2), reviewRow(3),
     ["คะแนนยืนยันกลับทิศ", fakeout && fakeout.detected ? fakeout.score + "%" : "--", "ต้องผ่านอย่างน้อย 4 ใน 5 เงื่อนไข"],
     ["ADX", tech.adx14, "แรงของแนวโน้ม"], ["RSI", tech.rsi14, "โมเมนตัม"],
     ["MACD Histogram", tech.macdHistogram, "ทิศทางโมเมนตัม"],
