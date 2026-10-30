@@ -153,6 +153,24 @@ function round(value, digits = 6) {
   return Number.isFinite(value) ? Number(value.toFixed(digits)) : null;
 }
 
+function calculatePressure(candles, lookback = 5) {
+  const recent = candles.slice(-lookback);
+  if (recent.length < lookback) return {buy:50,sell:50,delta:0,recentBuy:50,recentSell:50,confirmed:false,direction:"NEUTRAL",samples:recent.length,reason:"รอแท่งปิดให้ครบ 5 แท่ง"};
+  const values = recent.map(c => {
+    const range = Math.max(c.high-c.low, Number.EPSILON);
+    const closeLocation = ((c.close-c.low)/range)*2-1;
+    const body = (c.close-c.open)/range;
+    return Math.max(0,Math.min(100,50+closeLocation*30+body*20));
+  });
+  const weighted = values.reduce((sum,v,i)=>sum+v*(i+1),0);
+  const buy = weighted/15, recentBuy = values.slice(-3).reduce((sum,v)=>sum+v,0)/3;
+  const sell=100-buy, recentSell=100-recentBuy, delta=buy-sell;
+  const direction=buy>sell?"CALL":sell>buy?"PUT":"NEUTRAL";
+  const confirmed=(buy>=58&&delta>=16&&recentBuy>=52)||(sell>=58&&delta<=-16&&recentSell>=52);
+  return {buy:round(buy,1),sell:round(sell,1),delta:round(delta,1),recentBuy:round(recentBuy,1),recentSell:round(recentSell,1),confirmed,direction,samples:5,
+    reason:confirmed?"แรงฝั่ง"+(direction==="CALL"?"ซื้อ":"ขาย")+"เด่นทั้ง 5 แท่งและ 3 แท่งล่าสุด":"แรงซื้อขายยังไม่ยืนยันหรือแรงช่วงล่าสุดไม่ต่อเนื่อง"};
+}
+
 function detectFakeout(candles, ema21, indicators, baseDirection) {
   const empty = { status:"NO_FAKEOUT", detected:false, confirmed:false, originalDirection:baseDirection,
     reversalDirection:null, score:0, evidence:[], reason:"ไม่พบรูปแบบหลอกที่ยืนยันได้" };
@@ -238,10 +256,14 @@ function analyzeMarket(candles) {
   const alignedVotes = votes.filter(v=>v.direction===direction).length;
   const directionalVotes = votes.filter(v=>v.direction).length;
   const tooExtended = atr14 > 0 && Math.abs(price - ema[21]) > atr14 * 1.8;
+  const pressure = calculatePressure(candles, 5);
+  const pressureAligned = direction === "CALL" ? pressure.confirmed && pressure.direction === "CALL" :
+    direction === "PUT" ? pressure.confirmed && pressure.direction === "PUT" : false;
   const gates = {
     trendAligned: (direction === "CALL" && trend === "UP") || (direction === "PUT" && trend === "DOWN"),
     adxStrongEnough: adx14 >= 18,
     confluence: alignedVotes >= 6 && score >= MIN_SCORE,
+    buyingSellingPressure: pressureAligned,
     notOverextended: !tooExtended,
     candleClosed: true
   };
@@ -250,6 +272,7 @@ function analyzeMarket(candles) {
   if (!gates.trendAligned) reasons.push("ทิศทางยังไม่ตรงกับแนวโน้ม EMA50/100");
   if (!gates.adxStrongEnough) reasons.push("ADX ต่ำกว่า 18");
   if (!gates.confluence) reasons.push("คะแนนหรือจำนวน Indicator ที่เห็นตรงกันยังไม่ถึงเกณฑ์");
+  if (!gates.buyingSellingPressure) reasons.push("แรงซื้อ/แรงขายย้อนหลัง 5 แท่งยังไม่ยืนยัน หรือ 3 แท่งล่าสุดไม่ต่อเนื่อง");
   if (!gates.notOverextended) reasons.push("ราคาเคลื่อนห่าง EMA21 เกิน 1.8 ATR");
   if (!gates.candleClosed) reasons.push("รอแท่งปิด");
   let signal = passed ? {
@@ -299,7 +322,7 @@ function analyzeMarket(candles) {
     macdHistogram:round(macd.histogram,8), adx14:round(adx14,2), atr14:round(atr14,8),
     bollinger:{ upper:round(bands.upper), middle:round(bands.middle), lower:round(bands.lower), width:round(bands.width,3) },
     stochastic:{ k:round(stoch.k,2), d:round(stoch.d,2) },
-    cci20:round(cci20,2), williamsR14:round(wr14,2),
+    cci20:round(cci20,2), williamsR14:round(wr14,2), pressure,
     sma20:round(sma(closes,20)), sma50:round(sma(closes,50))
   };
   if (fakeout.confirmed) emaSignals.length = 0;
@@ -309,7 +332,7 @@ function analyzeMarket(candles) {
     score, direction:signal ? signal.direction : direction, originalDirection:direction,
     alignedVotes, directionalVotes, requiredVotes:6,
     minScore:MIN_SCORE, passed, gates, votes: votes.map(v=>({...v, aligned:v.direction===direction})),
-    fakeout, blockers:reasons.length ? reasons : ["ผ่านเกณฑ์ AI ทุกชั้น"]
+    pressure, fakeout, blockers:reasons.length ? reasons : ["ผ่านเกณฑ์ AI ทุกชั้น"]
   };
   return { price, candle, emaValues, emaLines, emaSignals, chartCandles, trend, indicators, analysis, signal, fakeout, score, closes };
 }
