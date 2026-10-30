@@ -10,7 +10,7 @@
   <meta name="theme-color" content="#080d18">
   <meta
     name="description"
-    content="AI Signal Radar for EUR/USD market analysis"
+    content="AI Signal Radar with 15 independent EMA signals"
   >
 
   <title>AI Signal Radar</title>
@@ -114,30 +114,33 @@
       </p>
     </section>
 
-    <!-- TECHNICAL INDICATORS -->
+    <!-- EMA 15 INDEPENDENT SCANNER -->
     <section class="indicators-card">
-      <h3>TECHNICAL INDICATORS</h3>
-
-      <div class="indicator-grid">
-        <div class="indicator">
-          <span>EMA 9</span>
-          <strong id="ema9">--</strong>
+      <div class="section-heading">
+        <div>
+          <h3>EMA 15 INDEPENDENT SCANNER</h3>
+          <p id="trendLabel" class="trend-label">แนวโน้มหลัก: กำลังคำนวณ</p>
         </div>
+        <span id="emaSignalCount" class="signal-count">0 SIGNAL</span>
+      </div>
+      <div id="emaGrid" class="ema-grid"></div>
+    </section>
 
-        <div class="indicator">
-          <span>EMA 21</span>
-          <strong id="ema21">--</strong>
+    <section class="chart-card">
+      <div class="section-heading">
+        <div>
+          <h3>PRICE + 15 EMA LINES</h3>
+          <p>แท่งเทียนปิดแล้ว · 80 แท่งล่าสุด</p>
         </div>
+      </div>
+      <div class="chart-wrap"><canvas id="priceChart" aria-label="กราฟราคาและ EMA 15 เส้น"></canvas></div>
+      <div id="chartLegend" class="chart-legend"></div>
+    </section>
 
-        <div class="indicator">
-          <span>RSI 14</span>
-          <strong id="rsi14">--</strong>
-        </div>
-
-        <div class="indicator">
-          <span>MACD</span>
-          <strong id="macd">--</strong>
-        </div>
+    <section class="indicators-card">
+      <h3>INDEPENDENT EMA SIGNALS</h3>
+      <div id="emaSignals" class="ema-signals">
+        <p class="empty-state">ยังไม่มีแท่งปิดตัด EMA ตามแนวโน้มหลัก</p>
       </div>
     </section>
 
