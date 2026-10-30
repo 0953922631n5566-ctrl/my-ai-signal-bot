@@ -284,8 +284,10 @@ function analyzeMarket(candles) {
   const longBear = price < ema[200] && slopeDown(200);
   const allBull = EMA_PERIODS.filter(p => price > ema[p]).length;
   const allBear = EMA_PERIODS.filter(p => price < ema[p]).length;
-  const trendUp = fastBull && mediumBull && longBull && allBull >= 11;
-  const trendDown = fastBear && mediumBear && longBear && allBear >= 11;
+  // Trend direction uses the fast EMA structure plus price relative to EMA50.
+  // Slower EMA alignment remains a weighted confirmation, not a hard veto.
+  const trendUp = fastBull && price > ema[50] && slopeUp(50);
+  const trendDown = fastBear && price < ema[50] && slopeDown(50);
 
   const macdBull = Number.isFinite(macd.histogram) && macd.line > macd.signal && macd.histogram > 0;
   const macdBear = Number.isFinite(macd.histogram) && macd.line < macd.signal && macd.histogram < 0;
@@ -302,7 +304,7 @@ function analyzeMarket(candles) {
     {name:"EMA 9/21 momentum",passed:fastBull,weight:20},
     {name:"EMA 50/100 trend",passed:mediumBull,weight:15},
     {name:"EMA 200 macro filter",passed:longBull,weight:15},
-    {name:"15 EMA alignment",passed:allBull>=11,weight:10},
+    {name:"15 EMA alignment",passed:allBull>=8,weight:10},
     {name:"Confirmed resistance breakout",passed:bullishBreakout,weight:20},
     {name:"RSI 14 momentum",passed:rsiBull,weight:5},
     {name:"MACD 12/26/9",passed:macdBull,weight:5},
@@ -313,7 +315,7 @@ function analyzeMarket(candles) {
     {name:"EMA 9/21 momentum",passed:fastBear,weight:20},
     {name:"EMA 50/100 trend",passed:mediumBear,weight:15},
     {name:"EMA 200 macro filter",passed:longBear,weight:15},
-    {name:"15 EMA alignment",passed:allBear>=11,weight:10},
+    {name:"15 EMA alignment",passed:allBear>=8,weight:10},
     {name:"Confirmed support breakdown",passed:bearishBreakout,weight:20},
     {name:"RSI 14 momentum",passed:rsiBear,weight:5},
     {name:"MACD 12/26/9",passed:macdBear,weight:5},
@@ -326,27 +328,35 @@ function analyzeMarket(candles) {
   // A failed breakout close, long rejection wick, or exhausted candle blocks entry.
   const bullishReject = current.high > priorHigh && current.close < priorHigh && upperWick/candleRange >= 0.35;
   const bearishReject = current.low < priorLow && current.close > priorLow && lowerWick/candleRange >= 0.35;
-  const bullishExhausted = rsi14 >= 80 || bodyRatio < 0.20 || upperWick/candleRange > 0.55;
-  const bearishExhausted = rsi14 <= 20 || bodyRatio < 0.20 || lowerWick/candleRange > 0.55;
-  const callOpposition = putScore >= 20;
-  const putOpposition = callScore >= 20;
+  // Apply equal exhaustion and opposition filters to both directions.
+  const bullishExhausted = rsi14 >= 80 || bodyRatio < 0.15 || upperWick/candleRange > 0.68;
+  const bearishExhausted = rsi14 <= 20 || bodyRatio < 0.15 || lowerWick/candleRange > 0.68;
+  const callOpposition = putScore >= 25;
+  const putOpposition = callScore >= 25;
 
+  // Breakout is a high-value bonus, not a mandatory condition. This also
+  // allows confirmed trend-continuation entries before a 20-bar extreme breaks.
+  const MIN_SIGNAL_SCORE = 55;
+  const MIN_DIRECTIONAL_VOTES = 5;
   let direction = "STANDBY";
   let score = Math.max(callScore,putScore);
-  const callReady = trendUp && bullishBreakout && callScore >= 64 && !callOpposition && !bullishReject && !bullishExhausted;
-  const putReady = trendDown && bearishBreakout && putScore >= 64 && !putOpposition && !bearishReject && !bearishExhausted;
+  const callVotes = callChecks.filter(x=>x.passed).length;
+  const putVotes = putChecks.filter(x=>x.passed).length;
+  const callReady = trendUp && callScore >= MIN_SIGNAL_SCORE && callVotes >= MIN_DIRECTIONAL_VOTES && !callOpposition && !bullishReject && !bullishExhausted;
+  const putReady = trendDown && putScore >= MIN_SIGNAL_SCORE && putVotes >= MIN_DIRECTIONAL_VOTES && !putOpposition && !bearishReject && !bearishExhausted;
   if (callReady && !putReady) direction = "CALL";
   else if (putReady && !callReady) direction = "PUT";
   else direction = "STANDBY";
 
   const blockers = [];
   if (direction === "STANDBY") {
-    if (!trendUp && !trendDown) blockers.push("EMA ระยะสั้น/กลาง/EMA200 ยังไม่เรียงตัวไปทิศเดียวกัน");
-    if (!bullishBreakout && !bearishBreakout) blockers.push("ยังไม่มีแท่งปิดยืนยัน Breakout/Breakdown");
+    if (!trendUp && !trendDown) blockers.push("EMA9/21 และตำแหน่งราคาเทียบ EMA50 ยังไม่ยืนยันทิศทาง");
+    if (!bullishBreakout && !bearishBreakout) blockers.push("ยังไม่เกิด Breakout 20 แท่ง (เป็นคะแนนเสริม ไม่ใช่เงื่อนไขบังคับ)");
     if (callOpposition || putOpposition) blockers.push("พบแรงขัดแย้งจากฝั่งตรงข้าม");
     if (bullishReject || bearishReject) blockers.push("พบไส้เทียนปฏิเสธ Breakout (เสี่ยง Fakeout)");
     if (bullishExhausted || bearishExhausted) blockers.push("แท่งเทียนหรือ RSI อยู่ในภาวะเสี่ยงไล่ราคา");
-    if (score < 64) blockers.push("คะแนนเงื่อนไขยังไม่ถึง 64/100");
+    if (score < MIN_SIGNAL_SCORE) blockers.push("คะแนนเงื่อนไขยังไม่ถึง 55/100");
+    if (Math.max(callVotes,putVotes) < MIN_DIRECTIONAL_VOTES) blockers.push("จำนวนกลยุทธ์ที่ยืนยันยังไม่ครบ 5 ข้อ");
   }
 
   const trend = trendUp ? "UP" : trendDown ? "DOWN" : "NEUTRAL";
@@ -395,7 +405,7 @@ function analyzeMarket(candles) {
     id:String(current.datetime)+":MOMENTUM_BREAKOUT:"+direction,
     direction,score:Math.min(100,score),alignedVotes,directionalVotes:checks.length,
     candleTime:current.datetime,
-    reason:(direction==="CALL"?"Breakout ขาขึ้น":"Breakdown ขาลง")+" · EMA 15 เส้น + RSI/MACD/ADX ยืนยัน"
+    reason:(direction==="CALL"?"แนวโน้มขึ้น + แรงส่งยืนยัน":"แนวโน้มลง + แรงส่งยืนยัน")+" · EMA 15 เส้น + RSI/MACD/ADX"+(direction==="CALL"&&bullishBreakout||direction==="PUT"&&bearishBreakout?" + Breakout":"")+" ยืนยัน"
   };
   const indicators = {
     rsi14:round(rsi14,2),macdLine:round(macd.line,8),macdSignal:round(macd.signal,8),
@@ -409,16 +419,16 @@ function analyzeMarket(candles) {
     risk
   };
   const analysis = {
-    engine:"MOMENTUM_TREND_BREAKOUT_V2",
+    engine:"BALANCED_TREND_MOMENTUM_V3",
     dataSource:"Twelve Data 1-minute OHLC",
     calculationSource:"คำนวณ EMA/RSI/MACD/ADX/ATR และ Breakout จากแท่ง OHLC ที่ปิดแล้ว",
-    mode:"Momentum + Trend Following + 20-bar Breakout · EMA 15 เส้น",
-    filter:"TREND_AND_CLOSED_CANDLE_BREAKOUT",
+    mode:"Trend Following + Momentum Confluence + optional 20-bar Breakout · EMA 15 เส้น",
+    filter:"EMA9_21_EMA50_AND_WEIGHTED_CONFIRMATION",
     trend,score,direction,passed:Boolean(signal),
     callVotes:callChecks.filter(x=>x.passed).length,
     putVotes:putChecks.filter(x=>x.passed).length,
     callWeight:callScore,putWeight:putScore,alignedVotes,
-    totalStrategies:9,requiredVotes:7,minimumScore:64,
+    totalStrategies:9,requiredVotes:MIN_DIRECTIONAL_VOTES,minimumScore:MIN_SIGNAL_SCORE,
     blockers, strategyVotes,
     breakout:indicators.breakout, fakeout, risk,
     note:"ไม่มี Volume จริงในข้อมูล OHLC ชุดนี้ จึงไม่ใช้หรือสร้างตัวเลข Volume ปลอม"
