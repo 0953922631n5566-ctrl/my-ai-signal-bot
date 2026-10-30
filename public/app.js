@@ -6,7 +6,7 @@ function setText(id, value) {
   if (element) element.textContent = value;
   else console.warn("ข้ามการอัปเดตข้อความ: ไม่พบ element #" + id);
 }
-const EMA_PERIODS = Array.from({ length: 20 }, (_, i) => i + 1);
+const EMA_PERIODS = [3,5,8,9,12,15,18,21,25,30,35,40,50,100,200];
 const EMA_COLORS = ["#f6c453","#ff8c42","#e879f9","#48d1cc","#a3e635","#fb7185","#60a5fa","#facc15","#c084fc","#34d399","#f97316","#38bdf8","#e5e7eb","#a78bfa","#fda4af","#22d3ee","#fb923c","#a3e635","#f472b6","#818cf8"];
 
 const state = {
@@ -123,7 +123,7 @@ function renderEmaGrid(data) {
     '<div class="ema-signal-row ' + signal.direction.toLowerCase() + '">' +
     '<strong>EMA ' + signal.ema + '</strong><span>' + signal.direction + '</span>' +
     '<small>' + signal.reason + '</small><b>' + signal.score + '%</b></div>'
-  ).join("") : '<p class="empty-state">ยังไม่มีแท่งปิดตัด EMA ตามแนวโน้มหลัก</p>';
+  ).join("") : '<p class="empty-state">EMA ใช้กรองเทรนด์ ไม่ได้สร้างสัญญาณแยกทีละเส้น</p>';
 }
 
 
@@ -132,9 +132,20 @@ function renderAIAnalysis(data) {
   const summary = $("aiSummary"), metrics = $("aiMetrics");
   if (!summary || !metrics) return;
   const votes = Array.isArray(analysis.strategyVotes) ? analysis.strategyVotes : [];
-  setText("aiModeBadge", "AI รวมหลายกลยุทธ์");
-  summary.textContent = "CALL " + (analysis.callVotes || 0) + " กลุ่ม · PUT " +
-    (analysis.putVotes || 0) + " กลุ่ม · ต้องเห็นตรงกันอย่างน้อย 4 กลุ่ม";
+  setText("aiModeBadge", "MOMENTUM · TREND · BREAKOUT");
+  summary.textContent = "CALL ผ่าน " + (analysis.callVotes || 0) + "/9 · PUT ผ่าน " +
+    (analysis.putVotes || 0) + "/9 · เกณฑ์คะแนน 85/100 และต้องมี Breakout ที่แท่งปิด"; 
+  const breakout = analysis.breakout || {};
+  const breakoutText = breakout.direction === "CALL" ? "ยืนยันทะลุแนวต้าน" :
+    breakout.direction === "PUT" ? "ยืนยันหลุดแนวรับ" : "ยังไม่มี Breakout ที่ยืนยัน";
+  setText("breakoutStatus", breakoutText + " · กรอบสูง " +
+    formatNumber(breakout.priorHigh, 5) + " · กรอบต่ำ " + formatNumber(breakout.priorLow, 5) +
+    (data.fakeout && data.fakeout.detected ? " · ระวัง Fakeout" : ""));
+  const risk = analysis.risk;
+  setText("riskLevels", risk ? "Entry " + formatNumber(risk.entry,5) +
+    " · SL " + formatNumber(risk.stopLoss,5) + " · TP1 " +
+    formatNumber(risk.takeProfit15,5) + " · TP2 " + formatNumber(risk.takeProfit20,5) :
+    "ระดับ Entry / SL / TP จะแสดงเมื่อมีสัญญาณที่ผ่านเกณฑ์");
   metrics.innerHTML = votes.length ? votes.map(v =>
     '<div class="ema-signal-row ' + String(v.direction || "standby").toLowerCase() + '">' +
     '<strong>' + String(v.name || "Strategy") + '</strong><span>' +
