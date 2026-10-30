@@ -53,6 +53,17 @@
       </span>
     </section>
 
+    <!-- SCAN SESSION CONTROLS -->
+    <section class="controls-card scan-controls">
+      <h3>ควบคุมการสแกนตลาด</h3>
+      <p id="scanStateText" class="scan-state">สถานะ: ปิดสแกน · รอให้กดเปิดสแกน</p>
+      <div class="button-row">
+        <button id="startScanBtn" class="primary-btn scan-start" type="button">เปิดสแกน</button>
+        <button id="stopScanBtn" class="control-btn scan-stop" type="button" disabled>ปิดสแกน</button>
+      </div>
+      <p class="footnote">เปิดสแกนเมื่อเริ่มใช้งาน ระบบจะดึงข้อมูลทุก 1 นาที และหยุดเองเมื่อปิด Mini App หรือไม่มีการใช้งานประมาณ 65 วินาที</p>
+    </section>
+
     <!-- MARKET INFORMATION -->
     <section class="market-card">
       <div class="market-heading">
@@ -163,17 +174,6 @@
     >
       <strong id="noticeTitle">แจ้งเตือน</strong>
       <p id="noticeText"></p>
-    </section>
-
-    <!-- SCAN SESSION CONTROLS -->
-    <section class="controls-card scan-controls">
-      <h3>ควบคุมการสแกนตลาด</h3>
-      <p id="scanStateText" class="scan-state">สถานะ: ปิดสแกน · รอให้กดเปิดสแกน</p>
-      <div class="button-row">
-        <button id="startScanBtn" class="primary-btn scan-start" type="button">เปิดสแกน</button>
-        <button id="stopScanBtn" class="control-btn scan-stop" type="button" disabled>ปิดสแกน</button>
-      </div>
-      <p class="footnote">เปิดสแกนเมื่อเริ่มใช้งาน ระบบจะดึงข้อมูลทุก 1 นาที และหยุดเองเมื่อปิด Mini App หรือไม่มีการใช้งานประมาณ 65 วินาที</p>
     </section>
 
     <!-- NOTIFICATION CONTROLS -->
