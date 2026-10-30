@@ -100,6 +100,40 @@ function renderEmaGrid(data) {
   ).join("") : '<p class="empty-state">ยังไม่มีแท่งปิดตัด EMA ตามแนวโน้มหลัก</p>';
 }
 
+
+function renderAIAnalysis(data) {
+  const analysis = data.aiAnalysis;
+  const summary = $("aiSummary");
+  const metrics = $("aiMetrics");
+  if (!summary || !metrics) return;
+  if (!analysis) { summary.textContent = "ยังไม่มีผลวิเคราะห์ AI"; metrics.innerHTML = ""; return; }
+  $("aiModeBadge").textContent = analysis.passed ? "FILTER PASSED" : "STRICT FILTER";
+  summary.textContent = (analysis.passed ? "ผ่านตัวกรอง · " : "STANDBY · ") +
+    (analysis.trend === "UP" ? "แนวโน้มขาขึ้น" : analysis.trend === "DOWN" ? "แนวโน้มขาลง" : "แนวโน้มเป็นกลาง") +
+    " · คะแนนความสอดคล้อง " + analysis.score + "% · เห็นพ้อง " + analysis.alignedVotes + "/8";
+  const tech = data.technicalIndicators || {};
+  const rows = [
+    ["ADX", tech.adx14, "แรงของแนวโน้ม"], ["RSI", tech.rsi14, "โมเมนตัม"],
+    ["MACD Histogram", tech.macdHistogram, "ทิศทางโมเมนตัม"],
+    ["Stochastic K/D", tech.stochastic ? tech.stochastic.k + " / " + tech.stochastic.d : "--", "แรงซื้อขาย"],
+    ["CCI", tech.cci20, "โมเมนตัมราคา"], ["Williams %R", tech.williamsR14, "ตำแหน่งในกรอบ"],
+    ["ATR", tech.atr14, "ความผันผวน"], ["Bollinger width", tech.bollinger ? tech.bollinger.width + "%" : "--", "ความกว้างกรอบ"]
+  ];
+  const gates = analysis.gates || {};
+  const gateLabels = {trendAligned:"ทิศทางตรงเทรนด์",adxStrongEnough:"ADX ≥ 18",confluence:"คะแนน/เสียงเห็นพ้อง",notOverextended:"ไม่ไล่ราคาห่าง EMA21",candleClosed:"ใช้แท่งปิดแล้ว"};
+  const gateHtml = Object.keys(gateLabels).map(key =>
+    '<div class="ema-signal-row ' + (gates[key] ? "call" : "standby") + '"><strong>' +
+    (gates[key] ? "ผ่าน" : "ไม่ผ่าน") + '</strong><span>' + gateLabels[key] + '</span></div>'
+  ).join("");
+  const rowHtml = rows.map(row =>
+    '<div class="ema-signal-row"><strong>' + row[0] + '</strong><span>' +
+    (row[1] === null || row[1] === undefined ? "--" : row[1]) + '</span><small>' + row[2] + '</small></div>'
+  ).join("");
+  metrics.innerHTML = '<p class="eyebrow">ตัวกรองเข้มงวด</p>' + gateHtml +
+    '<p class="eyebrow">เครื่องมือที่ AI ใช้</p>' + rowHtml +
+    '<p class="empty-state">' + (analysis.blockers || []).join(" · ") + '</p>';
+}
+
 function drawPriceChart(data) {
   const canvas = $("priceChart");
   const candles = data.candles || [];
@@ -202,6 +236,7 @@ function renderSignal(data) {
   const pairHeading = document.querySelector(".market-heading h2");
   if (pairHeading && data.symbol) pairHeading.textContent = data.symbol;
   renderEmaGrid(data);
+  renderAIAnalysis(data);
   drawPriceChart(data);
 }
 
@@ -242,8 +277,11 @@ function triggerSignalAtTwoSeconds(key) {
   if (state.lastSignalMinute === key) return;
   state.lastSignalMinute = key;
   const data = state.latestData;
+  const aiSignal = data && data.aiSignal;
   const signals = data && Array.isArray(data.emaSignals) ? data.emaSignals : [];
-  const signal = signals.find(item => item.score >= Number(data.minScore || 70) && !state.lastTriggeredSignalIds.has(item.id));
+  const signal = aiSignal && aiSignal.score >= Number(data.minScore || 78) &&
+    !state.lastTriggeredSignalIds.has(aiSignal.id) ? aiSignal :
+    signals.find(item => item.score >= Number(data.minScore || 78) && !state.lastTriggeredSignalIds.has(item.id));
   if (!data || data.dataFresh !== true || data.error || !signal) {
     state.activeDirection = "STANDBY";
     state.activeUntil = 0;
@@ -253,7 +291,7 @@ function triggerSignalAtTwoSeconds(key) {
   state.lastTriggeredSignalIds.add(signal.id);
   state.activeDirection = signal.direction;
   state.activeUntil = Date.now() + Number(data.signalDurationMs || 40000);
-  state.activeMessage = "EMA " + signal.ema + " · " + signal.reason;
+  state.activeMessage = (signal.ema ? "EMA " + signal.ema + " · " : "AI AUTO · ") + signal.reason;
   renderSignal(Object.assign({}, data, { candidate: signal.direction, score: signal.score, reason: state.activeMessage }));
   playBeep(signal.direction === "CALL" ? 1050 : 480, 320);
   vibrate([180, 70, 180]);
