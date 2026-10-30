@@ -5,4 +5,33 @@
 <section class="timer"><div><small>เวลานับถอยหลังแท่ง 1 นาที</small><span id="countdownMessage">อ้างอิงเวลาของอุปกรณ์</span></div><strong id="countdown">01:00</strong></section>
 <section class="monitor"><div class="monitor-head"><b>สถานะระบบ</b><span id="scanStateText">ยังไม่เริ่มเฝ้าระวัง</span></div><div class="status-row"><i id="connectionDot" class="dot loading"></i><span id="connectionText">กำลังตรวจสอบการเชื่อมต่อ</span></div><div id="notice" class="notice hidden" role="alert"><b id="noticeTitle">แจ้งเตือน</b><p id="noticeText"></p></div><div class="buttons"><button id="startScanBtn">เริ่มเฝ้าระวัง</button><button id="stopScanBtn" disabled>หยุดเฝ้าระวัง</button></div></section>
 <section class="alerts"><div class="monitor-head"><b>ระบบแจ้งเตือน</b><span class="ready">● ALERT READY</span></div><div class="buttons alert-buttons"><button id="soundBtn">♫ เปิดเสียง</button><button id="vibrateBtn">⌁ เปิดสั่น</button><button id="refreshBtn">↻ ตรวจ API</button></div><p>เสียงเตือนก่อนเปลี่ยนแท่ง 10 และ 2 วินาที · สัญญาณ CALL/PUT มีเสียงและสั่น · สัญญาณแสดง 40 วินาที</p></section><footer>TWELVE DATA · 1 MIN OHLC · NO AUTO ORDER</footer>
-<div class="legacy-hidden"><span id="rsi14"></span><span id="macd"></span><span id="aiModeBadge"></span><div id="emaGrid"></div><div id="emaSignals"></div><span id="emaSignalCount"></span><span id="trendLabel"></span><span id="breakoutStatus"></span><div id="riskLevels"></div><div id="aiSummary"></div><div id="aiMetrics"></div><canvas id="priceChart"></canvas><div id="chartLegend"></div></div></main><script src="/app.js?v=signal-lite-2"></script></body></html>
+<div class="legacy-hidden"><span id="rsi14"></span><span id="macd"></span><span id="aiModeBadge"></span><div id="emaGrid"></div><div id="emaSignals"></div><span id="emaSignalCount"></span><span id="trendLabel"></span><span id="breakoutStatus"></span><div id="riskLevels"></div><div id="aiSummary"></div><div id="aiMetrics"></div><canvas id="priceChart"></canvas><div id="chartLegend"></div></div></main><script>
+(function(){
+const dot=document.getElementById("apiDot"),label=document.getElementById("apiState");
+let pending=0;
+function state(mode,msg){if(dot)dot.className="dot "+mode;if(label)label.textContent=msg;}
+const original=window.fetch.bind(window);
+window.fetch=async function(){
+const args=arguments,url=String(args[0]&&args[0].url||args[0]||"");
+if(url.indexOf("/api/")===-1)return original.apply(null,args);
+pending++;state("loading","กำลังดึงข้อมูล API");
+try{
+const response=await original.apply(null,args);
+if(url.indexOf("/api/status")!==-1||url.indexOf("/api/health")!==-1){
+try{
+const data=await response.clone().json();
+const err=String(data.error||"");
+if(/429|quota|credit|api.?limit|run out|rate.?limit/i.test(err)){state("offline","โควต้า API หมด");const t=document.getElementById("noticeTitle"),m=document.getElementById("noticeText"),n=document.getElementById("notice");if(t)t.textContent="API QUOTA หมด";if(m)m.textContent="Twelve Data แจ้งว่าโควต้าหมดหรือถึงขีดจำกัด กรุณารอรอบรีเซ็ต";if(n)n.classList.remove("hidden");}
+else if(response.ok&&data.dataFresh!==false&&data.ok!==false){state("online","API เชื่อมต่อแล้ว");}
+else if(!response.ok||data.dataFresh===false||data.ok===false){state("offline","API ไม่มีข้อมูลสด");}
+}catch(e){}
+}
+return response;
+}catch(error){state("offline",navigator.onLine?"เชื่อมต่อ API ไม่สำเร็จ":"อินเทอร์เน็ตหลุด");throw error;}
+finally{pending=Math.max(0,pending-1);if(pending===0&&navigator.onLine&&dot&&dot.classList.contains("loading"))state("online","API พร้อมทำงาน");}
+};
+window.addEventListener("offline",()=>state("offline","อินเทอร์เน็ตหลุด"));
+window.addEventListener("online",()=>state("loading","กำลังเชื่อมต่อ API"));
+})();
+</script>
+<script src="/app.js?v=signal-lite-2"></script></body></html>
