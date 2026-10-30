@@ -153,6 +153,48 @@ function round(value, digits = 6) {
   return Number.isFinite(value) ? Number(value.toFixed(digits)) : null;
 }
 
+function detectFakeout(candles, ema21, indicators, baseDirection) {
+  const empty = { status:"NO_FAKEOUT", detected:false, confirmed:false, originalDirection:baseDirection,
+    reversalDirection:null, score:0, evidence:[], reason:"ไม่พบรูปแบบหลอกที่ยืนยันได้" };
+  if (!baseDirection || !["CALL","PUT"].includes(baseDirection) || candles.length < 15) return empty;
+  const current = candles[candles.length - 1], previous = candles[candles.length - 2];
+  const range = candles.slice(-13, -1);
+  const swingHigh = Math.max(...range.map(c => c.high));
+  const swingLow = Math.min(...range.map(c => c.low));
+  const span = Math.max(current.high - current.low, Number.EPSILON);
+  const upperWick = current.high - Math.max(current.open, current.close);
+  const lowerWick = Math.min(current.open, current.close) - current.low;
+  const upperReject = current.high > swingHigh && current.close < swingHigh && upperWick / span >= 0.35;
+  const lowerReject = current.low < swingLow && current.close > swingLow && lowerWick / span >= 0.35;
+  const reversalDirection = upperReject ? "PUT" : lowerReject ? "CALL" : null;
+  if (!reversalDirection || reversalDirection === baseDirection) return empty;
+  const bearish = current.close < current.open;
+  const bullish = current.close > current.open;
+  const oppositeBody = reversalDirection === "PUT" ? bearish : bullish;
+  const emaConfirm = reversalDirection === "PUT" ? current.close < ema21 : current.close > ema21;
+  const macdConfirm = reversalDirection === "PUT" ? indicators.macdHistogram < 0 : indicators.macdHistogram > 0;
+  const rsiConfirm = reversalDirection === "PUT" ? indicators.rsi14 <= 47 : indicators.rsi14 >= 53;
+  const followThrough = reversalDirection === "PUT" ? current.close < previous.close : current.close > previous.close;
+  const checks = [
+    { key:"แท่งปิดสวนทาง", passed:oppositeBody },
+    { key:"ราคาปิดข้าม EMA21", passed:emaConfirm },
+    { key:"MACD สนับสนุน", passed:macdConfirm },
+    { key:"RSI สนับสนุน", passed:rsiConfirm },
+    { key:"แรงต่อเนื่องจากแท่งก่อน", passed:followThrough }
+  ];
+  const passed = checks.filter(x => x.passed).length;
+  const confirmed = oppositeBody && passed >= 4;
+  return {
+    status:confirmed ? "REVERSAL_CONFIRMED" : "FAKEOUT_WATCH",
+    detected:true, confirmed, originalDirection:baseDirection, reversalDirection,
+    score:Math.round(passed / checks.length * 100),
+    evidence:checks.map(x => ({label:x.key, passed:x.passed})),
+    reason:confirmed
+      ? "พบการปฏิเสธราคาที่กรอบล่าสุดและมีหลักฐานกลับทิศ " + passed + "/5 ข้อ"
+      : "พบไส้เทียนปฏิเสธราคา แต่หลักฐานกลับทิศยังไม่ครบ (" + passed + "/5)"
+  };
+}
+
 function analyzeMarket(candles) {
   const closes = candles.map(c => c.close), last = closes.length - 1, prev = last - 1;
   const ema = {}, emaLines = {};
@@ -210,12 +252,25 @@ function analyzeMarket(candles) {
   if (!gates.confluence) reasons.push("คะแนนหรือจำนวน Indicator ที่เห็นตรงกันยังไม่ถึงเกณฑ์");
   if (!gates.notOverextended) reasons.push("ราคาเคลื่อนห่าง EMA21 เกิน 1.8 ATR");
   if (!gates.candleClosed) reasons.push("รอแท่งปิด");
-  const signal = passed ? {
+  let signal = passed ? {
     id: String(candle.datetime) + ":AI:" + direction,
     direction, score, alignedVotes, directionalVotes,
     candleTime:candle.datetime,
     reason:"AI เห็นพ้อง " + alignedVotes + "/8 เครื่องมือ · ADX " + round(adx14,1) + " · " + (trend === "UP" ? "แนวโน้มขาขึ้น" : "แนวโน้มขาลง")
   } : null;
+  const fakeout = detectFakeout(candles, ema[21], {
+    rsi14, macdHistogram:macd.histogram
+  }, signal ? signal.direction : null);
+  if (signal && fakeout.confirmed) {
+    signal = {
+      ...signal,
+      id:signal.id + ":REV:" + fakeout.reversalDirection,
+      originalDirection:signal.direction,
+      direction:fakeout.reversalDirection,
+      score:Math.min(signal.score, Math.max(78, fakeout.score)),
+      reason:"กลับทิศหลังยืนยัน Fakeout · " + fakeout.reason
+    };
+  }
 
   const emaSignals = [];
   for (const period of EMA_PERIODS) {
@@ -254,7 +309,7 @@ function analyzeMarket(candles) {
     minScore:MIN_SCORE, passed, gates, votes: votes.map(v=>({...v, aligned:v.direction===direction})),
     blockers:reasons.length ? reasons : ["ผ่านเกณฑ์ AI ทุกชั้น"]
   };
-  return { price, candle, emaValues, emaLines, emaSignals, chartCandles, trend, indicators, analysis, signal, score, closes };
+  return { price, candle, emaValues, emaLines, emaSignals, chartCandles, trend, indicators, analysis, signal, fakeout, score, closes };
 }
 
 async function fetchMarketData() {
@@ -289,7 +344,7 @@ async function fetchMarketData() {
     fetchedAt:new Date(stamp).toISOString(), fetchedAtMs:stamp,
     emaValues:result.emaValues, emaSignals:result.emaSignals, marketTrend:result.trend,
     rsi14:result.indicators.rsi14, macd:result.indicators.macdHistogram,
-    technicalIndicators:result.indicators, aiAnalysis:result.analysis, aiSignal:result.signal,
+    technicalIndicators:result.indicators, aiAnalysis:result.analysis, aiSignal:result.signal, fakeout:result.fakeout,
     bullVotes,bearVotes,score:result.signal?result.signal.score:0,
     candidate:result.signal?result.signal.direction:"STANDBY",
     reason:result.signal?result.signal.reason:"STANDBY · "+result.analysis.blockers.join(" / "),
@@ -322,7 +377,7 @@ function publicState() {
     emaPeriods:EMA_PERIODS,emaValues:state.emaValues,emaSignals:fresh?state.emaSignals:[],
     marketTrend:fresh?state.marketTrend:"NEUTRAL",candles:fresh?state.candles:[],
     rsi14:state.rsi14,macd:state.macd,bullVotes:state.bullVotes,bearVotes:state.bearVotes,
-    technicalIndicators:fresh?state.technicalIndicators:{},aiAnalysis:fresh?state.aiAnalysis:null,
+    technicalIndicators:fresh?state.technicalIndicators:{},aiAnalysis:fresh?state.aiAnalysis:null,fakeout:fresh?state.fakeout:null,
     aiSignal:fresh?state.aiSignal:null,score:fresh?state.score:0,
     candidate:fresh?state.candidate:"STANDBY",reason:fresh?state.reason:"ข้อมูลตลาดเก่าหรือยังไม่พร้อม",
     error:state.error,lastPollAt:state.lastPollAt,nextPollAt:state.nextPollAt,
@@ -339,7 +394,7 @@ app.get("/api/radar",(req,res)=>{
   const d=publicState();res.set("Cache-Control","no-store");
   res.json({source:d.source,dataFresh:d.dataFresh,marketTrend:d.marketTrend,
     pairs:[{symbol:d.symbol,price:d.price,candidate:d.candidate,score:d.score,rsi14:d.rsi14,
-      reason:d.reason,emaSignals:d.emaSignals,aiSignal:d.aiSignal,aiAnalysis:d.aiAnalysis}]});
+      reason:d.reason,emaSignals:d.emaSignals,aiSignal:d.aiSignal,aiAnalysis:d.aiAnalysis,fakeout:d.fakeout}]});
 });
 async function handleScan(req,res){
   res.set("Cache-Control","no-store");
