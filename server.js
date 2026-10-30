@@ -350,5 +350,15 @@ async function handleScan(req,res){
 app.get("/api/scan",handleScan);app.post("/api/scan",handleScan);
 app.get("/",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 app.get(/.*/,(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-app.listen(PORT,async()=>{console.log("AI Signal Radar running on port "+PORT);await pollMarket();pollTimer=setInterval(pollMarket,POLL_MS);});
-process.on("SIGTERM",()=>{if(pollTimer)clearInterval(pollTimer);process.exit(0);});
+function scheduleNextPoll() {
+  // Align one fetch to just after each UTC minute boundary so the newly closed
+  // one-minute candle is evaluated once it becomes available from the provider.
+  const delay = Math.max(1000, 60000 - (Date.now() % 60000) + 1500);
+  state.nextPollAt = new Date(Date.now() + delay).toISOString();
+  pollTimer = setTimeout(async () => {
+    await pollMarket();
+    scheduleNextPoll();
+  }, delay);
+}
+app.listen(PORT,async()=>{console.log("AI Signal Radar running on port "+PORT);await pollMarket();scheduleNextPoll();});
+process.on("SIGTERM",()=>{if(pollTimer)clearTimeout(pollTimer);process.exit(0);});
