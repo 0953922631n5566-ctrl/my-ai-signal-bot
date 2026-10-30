@@ -22,12 +22,12 @@ const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.TWELVE_DATA_API_KEY;
 const SYMBOL = process.env.FOREX_PAIR || "EUR/USD";
 const POLL_MS = Math.max(60000, Number(process.env.POLL_INTERVAL_MS) || 60000);
-const MIN_SCORE = Math.min(95, Math.max(70, Number(process.env.MIN_SIGNAL_SCORE) || 78));
+
 const MAX_DATA_AGE_MS = 90000;
-const HISTORY_BARS = 600;
-const MIN_COMPLETED_BARS = 500;
+const HISTORY_BARS = 200;
+const MIN_COMPLETED_BARS = 60;
 const SIGNAL_DURATION_MS = 40000;
-const EMA_PERIODS = [3, 5, 8, 9, 12, 15, 18, 21, 25, 30, 35, 40, 50, 75, 100];
+const EMA_PERIODS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 const state = {
   source: "Twelve Data", symbol: SYMBOL, interval: "1min",
@@ -230,127 +230,93 @@ function detectFakeout(candles, ema21, indicators, baseDirection) {
 }
 
 function analyzeMarket(candles) {
-  const closes = candles.map(c => c.close), last = closes.length - 1, prev = last - 1;
+  const closes = candles.map(c => c.close);
+  const last = closes.length - 1, prev = last - 1;
+  const price = closes[last], candle = candles[last];
   const ema = {}, emaLines = {};
-  for (const p of EMA_PERIODS) { emaLines[p] = emaSeries(closes, p); ema[p] = emaLines[p][last]; }
-  const ema50Slope = emaLines[50][last] - emaLines[50][last - 3];
-  const ema100Slope = emaLines[100][last] - emaLines[100][last - 3];
-  const price = closes[last], candle = candles[last], previous = candles[prev];
-  const rsi14 = rsi(closes, 14), macd = macdData(closes), atr14 = atrSeries(candles, 14).at(-1);
-  const adx14 = adxValue(candles, 14), bands = bollinger(closes, 20);
-  const stoch = stochastic(candles, 14, 3), cci20 = cci(candles, 20), wr14 = williamsR(candles, 14);
-  if (![rsi14, macd.histogram, atr14, adx14, bands?.middle, stoch?.k, cci20, wr14].every(Number.isFinite)) {
-    throw new Error("ข้อมูลแท่งเทียนไม่เพียงพอสำหรับ AI indicators");
+  for (const period of EMA_PERIODS) {
+    emaLines[period] = emaSeries(closes, period);
+    ema[period] = emaLines[period][last];
   }
 
-  let trend = "NEUTRAL";
-  if (ema[50] > ema[100] && ema50Slope > 0 && ema100Slope >= 0 && price > ema[50]) trend = "UP";
-  else if (ema[50] < ema[100] && ema50Slope < 0 && ema100Slope <= 0 && price < ema[50]) trend = "DOWN";
-
-  // Adaptive voting: indicator weights change with trend strength/regime.
-  const strongTrend = adx14 >= 25;
-  const weights = {
-    trend: strongTrend ? 2.2 : 1.7, macd: strongTrend ? 1.5 : 1.1,
-    rsi: 1.0, stochastic: 0.8, cci: 0.8, williams: 0.6, bollinger: 0.8, candle: 0.7
-  };
-  const votes = [
-    { key:"trend", label:"EMA trend", direction: trend === "UP" ? "CALL" : trend === "DOWN" ? "PUT" : null, weight:weights.trend, detail:"EMA50/100 + slope + price" },
-    { key:"macd", label:"MACD", direction:macd.histogram > 0 ? "CALL" : macd.histogram < 0 ? "PUT" : null, weight:weights.macd, detail:"Histogram " + round(macd.histogram,8) },
-    { key:"rsi", label:"RSI", direction:rsi14 >= 52 ? "CALL" : rsi14 <= 48 ? "PUT" : null, weight:weights.rsi, detail:"RSI " + round(rsi14,2) },
-    { key:"stochastic", label:"Stochastic", direction:stoch.k > stoch.d && stoch.k < 85 ? "CALL" : stoch.k < stoch.d && stoch.k > 15 ? "PUT" : null, weight:weights.stochastic, detail:"%K " + round(stoch.k,1) + " / %D " + round(stoch.d,1) },
-    { key:"cci", label:"CCI", direction:cci20 >= 50 ? "CALL" : cci20 <= -50 ? "PUT" : null, weight:weights.cci, detail:"CCI " + round(cci20,1) },
-    { key:"williams", label:"Williams %R", direction:wr14 > -50 ? "CALL" : wr14 < -50 ? "PUT" : null, weight:weights.williams, detail:"%R " + round(wr14,1) },
-    { key:"bollinger", label:"Bollinger mid", direction:price > bands.middle ? "CALL" : price < bands.middle ? "PUT" : null, weight:weights.bollinger, detail:"ตำแหน่งเทียบเส้นกลาง" },
-    { key:"candle", label:"Price action", direction:candle.close > candle.open ? "CALL" : candle.close < candle.open ? "PUT" : null, weight:weights.candle, detail:"แท่งปิดล่าสุด" }
-  ];
-  const totalWeight = votes.reduce((s,v)=>s+v.weight,0);
-  const callWeight = votes.filter(v=>v.direction==="CALL").reduce((s,v)=>s+v.weight,0);
-  const putWeight = votes.filter(v=>v.direction==="PUT").reduce((s,v)=>s+v.weight,0);
-  const direction = callWeight > putWeight ? "CALL" : putWeight > callWeight ? "PUT" : "STANDBY";
-  const winningWeight = Math.max(callWeight, putWeight);
-  const score = totalWeight ? Math.round(winningWeight / totalWeight * 100) : 0;
-  const alignedVotes = votes.filter(v=>v.direction===direction).length;
-  const directionalVotes = votes.filter(v=>v.direction).length;
-  const tooExtended = atr14 > 0 && Math.abs(price - ema[21]) > atr14 * 1.8;
-  const pressure = calculatePressure(candles, 5);
-  const pressureAligned = direction === "CALL" ? pressure.confirmed && pressure.direction === "CALL" :
-    direction === "PUT" ? pressure.confirmed && pressure.direction === "PUT" : false;
-  const gates = {
-    trendAligned: (direction === "CALL" && trend === "UP") || (direction === "PUT" && trend === "DOWN"),
-    adxStrongEnough: adx14 >= 18,
-    confluence: alignedVotes >= 6 && score >= MIN_SCORE,
-    buyingSellingPressure: pressureAligned,
-    notOverextended: !tooExtended,
-    candleClosed: true
-  };
-  const passed = Object.values(gates).every(Boolean) && direction !== "STANDBY";
-  const reasons = [];
-  if (!gates.trendAligned) reasons.push("ทิศทางยังไม่ตรงกับแนวโน้ม EMA50/100");
-  if (!gates.adxStrongEnough) reasons.push("ADX ต่ำกว่า 18");
-  if (!gates.confluence) reasons.push("คะแนนหรือจำนวน Indicator ที่เห็นตรงกันยังไม่ถึงเกณฑ์");
-  if (!gates.buyingSellingPressure) reasons.push("แรงซื้อ/แรงขายย้อนหลัง 5 แท่งยังไม่ยืนยัน หรือ 3 แท่งล่าสุดไม่ต่อเนื่อง");
-  if (!gates.notOverextended) reasons.push("ราคาเคลื่อนห่าง EMA21 เกิน 1.8 ATR");
-  if (!gates.candleClosed) reasons.push("รอแท่งปิด");
-  let signal = passed ? {
-    id: String(candle.datetime) + ":AI:" + direction,
-    direction, score, alignedVotes, directionalVotes,
-    candleTime:candle.datetime,
-    reason:"AI เห็นพ้อง " + alignedVotes + "/8 เครื่องมือ · ADX " + round(adx14,1) + " · " + (trend === "UP" ? "แนวโน้มขาขึ้น" : "แนวโน้มขาลง")
-  } : null;
-  const fakeout = detectFakeout(candles, ema[21], {
-    rsi14, macdHistogram:macd.histogram
-  }, signal ? signal.direction : null);
-  if (signal && fakeout.confirmed) {
-    signal = {
-      ...signal,
-      id:signal.id + ":REV:" + fakeout.reversalDirection,
-      originalDirection:signal.direction,
-      direction:fakeout.reversalDirection,
-      score:Math.min(signal.score, Math.max(78, fakeout.score)),
-      reason:"กลับทิศหลังยืนยัน Fakeout · " + fakeout.reason
-    };
-  }
-
+  // Each EMA is an independent rule. No RSI, MACD, ADX, trend consensus,
+  // pressure, or minimum-vote gate can veto an individual EMA signal.
   const emaSignals = [];
   for (const period of EMA_PERIODS) {
-    const prevEma = emaLines[period][prev], currEma = emaLines[period][last];
-    const up = closes[prev] <= prevEma && price > currEma;
-    const down = closes[prev] >= prevEma && price < currEma;
-    if (signal && ((up && direction === "CALL") || (down && direction === "PUT"))) {
+    const currentEma = emaLines[period][last];
+    const previousEma = emaLines[period][prev];
+    let direction = null;
+
+    // EMA 1 equals the close price by definition, so its independent
+    // direction is the slope of EMA 1 (the last closed candle vs prior close).
+    if (period === 1) {
+      if (currentEma > previousEma) direction = "CALL";
+      else if (currentEma < previousEma) direction = "PUT";
+    } else if (price > currentEma && currentEma > previousEma) {
+      direction = "CALL";
+    } else if (price < currentEma && currentEma < previousEma) {
+      direction = "PUT";
+    }
+
+    if (direction) {
       emaSignals.push({
-        id:String(candle.datetime)+":EMA"+period+":"+direction,
-        ema:period, direction, score, candleTime:candle.datetime,
-        reason:"EMA " + period + " ตัดตามสัญญาณ AI"
+        id: String(candle.datetime) + ":EMA" + period + ":" + direction,
+        ema: period, direction, score: 100, candleTime: candle.datetime,
+        reason: period === 1
+          ? "EMA 1: ราคาปิดล่าสุดเคลื่อนที่ " + (direction === "CALL" ? "ขึ้น" : "ลง")
+          : "EMA " + period + ": ราคาอยู่" + (direction === "CALL" ? "เหนือ" : "ใต้") +
+            "เส้น และความชัน EMA ไปทางเดียวกัน"
       });
     }
   }
 
+  const callCount = emaSignals.filter(x => x.direction === "CALL").length;
+  const putCount = emaSignals.filter(x => x.direction === "PUT").length;
+  const direction = callCount > putCount ? "CALL" : putCount > callCount ? "PUT" : "STANDBY";
+  const signalCount = emaSignals.length;
+  const score = signalCount ? Math.round(Math.max(callCount, putCount) / signalCount * 100) : 0;
+  const signal = direction === "STANDBY" ? null : {
+    id: String(candle.datetime) + ":EMA-AGGREGATE:" + direction,
+    direction, score, alignedVotes: Math.max(callCount, putCount),
+    directionalVotes: signalCount, candleTime: candle.datetime,
+    reason: "EMA อิสระ " + (direction === "CALL" ? callCount : putCount) +
+      "/20 เส้นให้ทิศทาง " + direction
+  };
+
   const emaValues = {};
-  for (const p of EMA_PERIODS) emaValues[p] = round(ema[p]);
+  for (const period of EMA_PERIODS) emaValues[period] = round(ema[period]);
   const chartStart = Math.max(0, candles.length - 80);
   const chartCandles = candles.slice(chartStart).map((c, offset) => {
     const i = chartStart + offset, emas = {};
-    for (const p of EMA_PERIODS) emas[p] = round(emaLines[p][i]);
+    for (const period of EMA_PERIODS) emas[period] = round(emaLines[period][i]);
     return { ...c, emas };
   });
+  const rsi14 = rsi(closes, 14);
+  const macd = macdData(closes);
+  const trend = ema[20] > emaLines[20][prev] ? "UP" :
+    ema[20] < emaLines[20][prev] ? "DOWN" : "NEUTRAL";
   const indicators = {
-    rsi14:round(rsi14,2), macd:round(macd.line,8), macdSignal:round(macd.signal,8),
-    macdHistogram:round(macd.histogram,8), adx14:round(adx14,2), atr14:round(atr14,8),
-    bollinger:{ upper:round(bands.upper), middle:round(bands.middle), lower:round(bands.lower), width:round(bands.width,3) },
-    stochastic:{ k:round(stoch.k,2), d:round(stoch.d,2) },
-    cci20:round(cci20,2), williamsR14:round(wr14,2), pressure,
-    sma20:round(sma(closes,20)), sma50:round(sma(closes,50))
+    rsi14: round(rsi14, 2),
+    macdHistogram: round(macd.histogram, 8)
   };
-  if (fakeout.confirmed) emaSignals.length = 0;
   const analysis = {
-    engine:"ADAPTIVE_MULTI_INDICATOR", mode:"AI เลือกน้ำหนักตามสภาพตลาด",
-    filter:"STRICT", trend, adxStrength:strongTrend?"STRONG":"MODERATE",
-    score, direction:signal ? signal.direction : direction, originalDirection:direction,
-    alignedVotes, directionalVotes, requiredVotes:6,
-    minScore:MIN_SCORE, passed, gates, votes: votes.map(v=>({...v, aligned:v.direction===direction})),
-    pressure, fakeout, blockers:reasons.length ? reasons : ["ผ่านเกณฑ์ AI ทุกชั้น"]
+    engine: "INDEPENDENT_EMA_1_TO_20",
+    mode: "EMA 20 เส้นวิเคราะห์แยกอิสระ",
+    filter: "INDEPENDENT",
+    trend,
+    score,
+    direction,
+    passed: signalCount > 0,
+    callSignals: callCount,
+    putSignals: putCount,
+    totalSignals: signalCount,
+    requiredVotes: 1,
+    blockers: signalCount ? [] : ["ขณะนี้ยังไม่มี EMA เส้นใดผ่านเงื่อนไขราคาและความชัน"]
   };
-  return { price, candle, emaValues, emaLines, emaSignals, chartCandles, trend, indicators, analysis, signal, fakeout, score, closes };
+  return {
+    price, candle, emaValues, emaLines, emaSignals, chartCandles,
+    trend, indicators, analysis, signal, fakeout: null, score, closes
+  };
 }
 
 function updateSignalReviews(candles, signal) {
@@ -418,7 +384,7 @@ async function fetchMarketData() {
     const opened = Date.parse(String(c.datetime || "").replace(" ","T") + "Z");
     return Number.isFinite(opened) && opened + 60000 <= now;
   });
-  if (completed.length < MIN_COMPLETED_BARS) throw new Error("ข้อมูลแท่งเทียนปิดแล้วมีเพียง " + completed.length + " แท่ง ต้องมีอย่างน้อย " + MIN_COMPLETED_BARS + " แท่งเพื่อให้ EMA100 และ AI indicators มีช่วง warm-up เพียงพอ");
+  if (completed.length < MIN_COMPLETED_BARS) throw new Error("ข้อมูลแท่งเทียนปิดแล้วมีเพียง " + completed.length + " แท่ง ต้องมีอย่างน้อย " + MIN_COMPLETED_BARS + " แท่งเพื่อให้ EMA 1–20 มีช่วง warm-up เพียงพอ");
   const candles = completed.map(c=>({datetime:c.datetime||null,open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}));
   if (candles.some(c=>[c.open,c.high,c.low,c.close].some(v=>!Number.isFinite(v)||v<=0)||c.high<Math.max(c.open,c.close)||c.low>Math.min(c.open,c.close))) {
     throw new Error("ข้อมูล OHLC ที่ได้รับไม่ถูกต้อง");
@@ -442,8 +408,8 @@ async function fetchMarketData() {
     nextPollAt:new Date(stamp+POLL_MS).toISOString()
   });
   console.log("[AI SCAN] "+SYMBOL+" price="+state.price+" trend="+state.marketTrend+
-    " score="+result.analysis.score+" votes="+result.analysis.alignedVotes+"/8"+
-    " ADX="+result.indicators.adx14+" signal="+state.candidate);
+    " score="+result.analysis.score+" EMA_CALL="+result.analysis.callSignals+
+    " EMA_PUT="+result.analysis.putSignals+" signal="+state.candidate);
 }
 
 async function pollMarket() {
@@ -476,7 +442,7 @@ function publicState() {
     scanActive, lastClientHeartbeatAt:lastClientHeartbeatMs?new Date(lastClientHeartbeatMs).toISOString():null,
     scanStopReason,
     signalReviews:state.signalReviews.slice(-10),signalReviewStats:getSignalReviewStats(state.signalReviews),
-    serverTime:Date.now(),signalDurationMs:SIGNAL_DURATION_MS,minScore:MIN_SCORE
+    serverTime:Date.now(),signalDurationMs:SIGNAL_DURATION_MS,minScore:0
   };
 }
 app.get("/api/health",(req,res)=>{
