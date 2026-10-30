@@ -426,3 +426,16 @@ footer p {
   .ema-signal-row { grid-template-columns:auto auto 1fr; }
   .ema-signal-row b { grid-column:3; }
 }
+
+
+/* On-demand scan controls */
+.scan-state {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.scan-state.scan-active { color: var(--green); }
+.scan-controls .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.scan-controls button:disabled { opacity: .45; cursor: not-allowed; }
+.scan-start { background: linear-gradient(135deg, #087c5a, #16b981); }
+.scan-stop { border-color: #7d3445; color: #ff9aaa; }
