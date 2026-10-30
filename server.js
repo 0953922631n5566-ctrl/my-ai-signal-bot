@@ -6,7 +6,17 @@ const path = require("path");
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "20kb" }));
-app.use(express.static(path.join(__dirname, "public"), { etag: true, maxAge: "1h" }));
+app.use(express.static(path.join(__dirname, "public"), {
+  etag: true,
+  maxAge: 0,
+  setHeaders: (res, filePath) => {
+    if (/\\.(?:html|js|css)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
+  }
+}));
 
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.TWELVE_DATA_API_KEY;
