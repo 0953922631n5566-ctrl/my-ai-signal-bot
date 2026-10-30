@@ -1,244 +1,87 @@
-
 <!doctype html>
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#080d18">
-  <meta
-    name="description"
-    content="AI Signal Radar with 20 independent EMA signals"
-  >
-
-  <title>AI Signal Radar</title>
-
-  <link rel="stylesheet" href="/styles.css?v=20261030-compact-floating-layout-1">
-
+  <meta name="description" content="Twelve Data EMA 1-20 signal radar">
+  <title>EMA SIGNAL RADAR</title>
+  <link rel="stylesheet" href="/styles.css?v=20261030-twelve-ema-clean-1">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-
 <body>
   <main class="app">
-
-    <!-- HEADER -->
     <header class="topbar">
-      <div class="brand-icon">AI</div>
-
-      <div class="brand">
-        <h1>AI SIGNAL RADAR</h1>
-        <p>SMART MARKET SCANNER</p>
-      </div>
-
-      <span
-        id="connectionDot"
-        class="dot offline"
-        aria-label="Connection status"
-      ></span>
+      <div class="brand-icon">EMA</div>
+      <div class="brand"><h1>EMA SIGNAL RADAR</h1><p>TWELVE DATA · 1 MINUTE</p></div>
+      <span id="connectionDot" class="dot offline" aria-label="สถานะการเชื่อมต่อ"></span>
     </header>
 
-    <!-- CONNECTION STATUS -->
     <section class="connection-card">
-      <div>
-        <span class="eyebrow">DATA CONNECTION</span>
-        <strong id="connectionText">
-          กำลังตรวจสอบการเชื่อมต่อ…
-        </strong>
-      </div>
-
-      <span id="lastUpdated" class="small">
-        รอข้อมูล
-      </span>
+      <div><span class="eyebrow">MARKET DATA</span><strong id="connectionText">กำลังเชื่อมต่อ Twelve Data…</strong></div>
+      <span id="lastUpdated" class="small">รอข้อมูล</span>
     </section>
 
-    <!-- SCAN SESSION CONTROLS -->
-    <section class="controls-card scan-controls">
-      <h3>ควบคุมการสแกนตลาด</h3>
-      <p id="scanStateText" class="scan-state">สถานะ: ปิดสแกน · รอให้กดเปิดสแกน</p>
-      <div class="button-row">
-        <button id="startScanBtn" class="primary-btn scan-start" type="button">เปิดสแกน</button>
-        <button id="stopScanBtn" class="control-btn scan-stop" type="button" disabled>ปิดสแกน</button>
-      </div>
-      <p class="footnote">เปิดสแกนเมื่อเริ่มใช้งาน ระบบจะดึงข้อมูลทุก 1 นาที และหยุดเองเมื่อปิด Mini App หรือไม่มีการใช้งานประมาณ 65 วินาที</p>
-    </section>
-
-    <!-- MARKET INFORMATION -->
     <section class="market-card">
       <div class="market-heading">
-        <div>
-          <span class="eyebrow">MARKET PAIR</span>
-          <h2>EUR/USD</h2>
-          <p>ตลาดหลัก · 1 นาที · Twelve Data</p>
-        </div>
-
-        <div class="price-box">
-          <span class="eyebrow">LAST PRICE</span>
-          <strong id="price">--</strong>
-        </div>
+        <div><span class="eyebrow">คู่เงินที่กำลังวิเคราะห์</span><h2>EUR/USD</h2><p>ตลาดหลัก · แท่ง 1 นาที · Twelve Data</p></div>
+        <div class="price-box"><span class="eyebrow">ราคาล่าสุด</span><strong id="price">--</strong></div>
       </div>
     </section>
 
-    <!-- TECHNICAL INDICATORS SUMMARY -->
-    <section class="indicators-card">
-      <div class="section-heading">
-        <div><h3>TECHNICAL INDICATORS</h3><p>ค่าคำนวณจากข้อมูลตลาดล่าสุด</p></div>
-      </div>
-      <div class="ema-grid">
-        <div class="ema-tile" style="--ema-color:#48d1cc">
-          <div class="ema-tile-top"><span>RSI 14</span></div>
-          <strong id="rsi14">--</strong>
-        </div>
-        <div class="ema-tile" style="--ema-color:#a78bfa">
-          <div class="ema-tile-top"><span>MACD</span></div>
-          <strong id="macd">--</strong>
-        </div>
-      </div>
-    </section>
-
-    <!-- SIGNAL DISPLAY -->
-    <section
-      id="signalCard"
-      class="signal-card standby"
-      aria-live="polite"
-    >
-      <span class="eyebrow">AI SIGNAL</span>
-
-      <div id="signalLight" class="signal-light">
-        <span id="signalArrow">●</span>
-      </div>
-
+    <section id="signalCard" class="signal-card standby" aria-live="polite">
+      <span class="eyebrow">TRADE DIRECTION</span>
+      <div id="signalLight" class="signal-light"><span id="signalArrow">●</span></div>
       <h2 id="signalTitle">STANDBY</h2>
-
-      <p id="signalMessage">
-        กำลังรอข้อมูลตลาดที่พร้อมใช้งาน
-      </p>
-
-      <div class="score-row">
-        <span>สัดส่วน EMA ที่เห็นตรงกัน</span>
-        <strong id="score">--</strong>
-      </div>
-
-      <div class="score-track">
-        <div id="scoreBar" class="score-fill"></div>
-      </div>
+      <p id="signalMessage">กำลังรอสัญญาณจาก EMA ของ Twelve Data</p>
+      <div class="signal-hint">ใช้เป็นสัญญาณประกอบการตัดสินใจ · ผู้ใช้กด Order เอง</div>
+      <div class="legacy-score" aria-hidden="true"><span id="score">0</span><div id="scoreBar"></div></div>
     </section>
 
-    <!-- COUNTDOWN: countdownCard ID IS REQUIRED BY app.js -->
-    <section
-      id="countdownCard"
-      class="countdown-card"
-      aria-live="off"
-    >
-      <span class="eyebrow">
-        นับถอยหลังถึงนาทีถัดไป
-      </span>
-
+    <section id="countdownCard" class="countdown-card" aria-live="off">
+      <div><span class="eyebrow">เวลาถึงแท่ง 1 นาทีถัดไป</span><p id="countdownMessage">อ้างอิงเวลานาฬิกาอุปกรณ์</p></div>
       <strong id="countdown">01:00</strong>
-
-      <p id="countdownMessage">
-        เวลาอ้างอิงจากนาฬิกาอุปกรณ์
-      </p>
     </section>
 
-    <!-- EMA 1–20 INDEPENDENT SCANNER -->
+    <section class="controls-card scan-controls">
+      <div class="section-heading"><div><h3>ควบคุมระบบ</h3><p id="scanStateText" class="scan-state">สถานะ: ปิดสแกน · รอเริ่มใช้งาน</p></div></div>
+      <div class="button-row">
+        <button id="startScanBtn" class="primary-btn scan-start" type="button">เริ่มเฝ้าระวัง</button>
+        <button id="stopScanBtn" class="control-btn scan-stop" type="button" disabled>หยุดสแกน</button>
+      </div>
+    </section>
+
     <section class="indicators-card">
       <div class="section-heading">
-        <div>
-          <h3>EMA 15 INDEPENDENT SCANNER</h3>
-          <p id="trendLabel" class="trend-label">แนวโน้มหลัก: กำลังคำนวณ</p>
-        </div>
+        <div><h3>EMA 1–20 · TWELVE DATA PRICE FEED</h3><p id="trendLabel" class="trend-label">แนวโน้ม: กำลังคำนวณ</p></div>
         <span id="emaSignalCount" class="signal-count">0 SIGNAL</span>
       </div>
       <div id="emaGrid" class="ema-grid"></div>
     </section>
 
-
-    <section class="indicators-card ai-engine-card">
-      <div class="section-heading">
-        <div><h3>INDEPENDENT EMA ENGINE</h3><p>แต่ละเส้นตัดสินใจแยกกัน · ไม่รอ EMA เส้นอื่น</p></div>
-        <span id="aiModeBadge" class="signal-count">AI AUTO</span>
-      </div>
-      <p id="aiSummary" class="empty-state">กำลังรอผลวิเคราะห์หลายชั้น</p>
-      <div id="aiMetrics" class="ema-signals"></div>
-    </section>
-
-    <section class="chart-card">
-      <div class="section-heading">
-        <div>
-          <h3>PRICE + 20 EMA LINES</h3>
-          <p>แท่งเทียนปิดแล้ว · 80 แท่งล่าสุด</p>
-        </div>
-      </div>
-      <div class="chart-wrap"><canvas id="priceChart" aria-label="กราฟราคาและ EMA 20 เส้น"></canvas></div>
-      <div id="chartLegend" class="chart-legend"></div>
-    </section>
-
-    <section class="indicators-card">
-      <h3>สัญญาณ EMA อิสระรายเส้น</h3>
-      <div id="emaSignals" class="ema-signals">
-        <p class="empty-state">รอแท่งปิดเพื่อประเมิน EMA แต่ละเส้นแยกกัน</p>
-      </div>
-    </section>
-
-    <!-- ERROR / WARNING MESSAGE -->
-    <section
-      id="notice"
-      class="notice hidden"
-      role="status"
-      aria-live="polite"
-    >
-      <strong id="noticeTitle">แจ้งเตือน</strong>
-      <p id="noticeText"></p>
-    </section>
-
-    <!-- NOTIFICATION CONTROLS -->
-    <section class="controls-card">
-      <h3>การแจ้งเตือน</h3>
-
+    <section class="controls-card notification-card">
+      <h3>ระบบแจ้งเตือน</h3>
       <div class="button-row">
-        <button
-          id="soundBtn"
-          class="control-btn"
-          type="button"
-        >
-          เปิดเสียง
-        </button>
-
-        <button
-          id="vibrateBtn"
-          class="control-btn"
-          type="button"
-        >
-          เปิดสั่น
-        </button>
+        <button id="soundBtn" class="control-btn" type="button">เปิดเสียง</button>
+        <button id="vibrateBtn" class="control-btn" type="button">เปิดสั่น</button>
       </div>
-
-      <button
-        id="refreshBtn"
-        class="primary-btn"
-        type="button"
-      >
-        รีเฟรชข้อมูล
-      </button>
-
-      <p class="footnote">
-        เปิดเสียงและการสั่นด้วยปุ่มก่อนใช้งาน
-        ความสามารถขึ้นอยู่กับอุปกรณ์และเบราว์เซอร์
-        สัญญาณเป็นข้อมูลประกอบการตัดสินใจเท่านั้น
-      </p>
+      <p class="footnote">คงรูปแบบเสียงและการสั่นแจ้งเตือนเดิมไว้ เปิดใช้งานปุ่มก่อนเริ่มสแกน</p>
+      <button id="refreshBtn" class="refresh-btn" type="button">รีเฟรชข้อมูล</button>
     </section>
 
-    <!-- FOOTER -->
-    <footer>
-      <p>AI SIGNAL RADAR · INFORMATION ONLY</p>
-      <p>ไม่มีการส่งคำสั่งซื้อขายอัตโนมัติ</p>
-    </footer>
+    <section id="notice" class="notice hidden" role="status" aria-live="polite">
+      <strong id="noticeTitle">แจ้งเตือน</strong><p id="noticeText"></p>
+    </section>
 
+    <footer><p>ข้อมูลจาก Twelve Data · EMA คำนวณจากแท่งราคาชุดเดียวกัน</p><p>ไม่มีการเชื่อมต่อหรือส่งคำสั่งซื้อขายอัตโนมัติ</p></footer>
+
+    <!-- Kept for compatibility with the existing alert engine; not shown in the new dashboard. -->
+    <div class="legacy-hidden" aria-hidden="true">
+      <span id="rsi14"></span><span id="macd"></span><span id="aiModeBadge"></span>
+      <p id="aiSummary"></p><div id="aiMetrics"></div><div id="emaSignals"></div>
+      <canvas id="priceChart"></canvas><div id="chartLegend"></div>
+    </div>
   </main>
-
-  <!-- Load JavaScript after all page elements -->
-  <script src="/app.js?v=20261030-ema-1-20-independent-1"></script>
+  <script src="/app.js?v=20261030-alerts-preserved-1"></script>
 </body>
 </html>
