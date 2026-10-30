@@ -231,11 +231,8 @@ function detectFakeout(candles, ema21, indicators, baseDirection) {
 
 function analyzeMarket(candles) {
   const closes = candles.map(c => c.close);
-  const last = closes.length - 1;
-  const prev = last - 1;
-  const price = closes[last];
-  const current = candles[last];
-  const previous = candles[prev];
+  const last = closes.length - 1, prev = last - 1;
+  const price = closes[last], current = candles[last], previous = candles[prev];
   const emaLines = {}, ema = {};
   for (const period of EMA_PERIODS) {
     emaLines[period] = emaSeries(closes, period);
@@ -247,193 +244,149 @@ function analyzeMarket(candles) {
   const atr14 = atrValues.length ? atrValues[last] : null;
   const adx14 = adxValue(candles, 14);
   const bb = bollinger(closes, 20, 2);
+  const stochastic14 = stochastic(candles, 14, 3);
+  const cci20 = cci(candles, 20);
+  const williams14 = williamsR(candles, 14);
 
-  // Wilder-style directional movement, calculated only from supplied OHLC candles.
-  let plusDI = null, minusDI = null;
-  if (candles.length >= 15) {
-    let trSum = 0, plusSum = 0, minusSum = 0;
-    for (let i = Math.max(1, candles.length - 14); i < candles.length; i++) {
-      const c = candles[i], p = candles[i - 1];
-      const up = c.high - p.high, down = p.low - c.low;
-      trSum += Math.max(c.high-c.low, Math.abs(c.high-p.close), Math.abs(c.low-p.close));
-      plusSum += up > down && up > 0 ? up : 0;
-      minusSum += down > up && down > 0 ? down : 0;
-    }
-    if (trSum > 0) { plusDI = plusSum / trSum * 100; minusDI = minusSum / trSum * 100; }
+  // EMA 5/20 cross is the sole primary entry trigger; only completed candles are supplied here.
+  const crossedUp = emaLines[5][prev] <= emaLines[20][prev] && ema[5] > ema[20];
+  const crossedDown = emaLines[5][prev] >= emaLines[20][prev] && ema[5] < ema[20];
+  const closeAboveBoth = price > ema[5] && price > ema[20];
+  const closeBelowBoth = price < ema[5] && price < ema[20];
+
+  // ATR must show minimum movement; volume must be present and above its previous-20-candle average.
+  const volumeWindow = candles.slice(Math.max(0, last - 20), last).map(c => Number(c.volume));
+  const currentVolume = Number(current.volume);
+  const volumeAvailable = volumeWindow.length === 20 &&
+    [...volumeWindow, currentVolume].every(v => Number.isFinite(v) && v > 0);
+  const averageVolume = volumeAvailable ? volumeWindow.reduce((sum,v)=>sum+v,0)/20 : null;
+  const volumeRatio = volumeAvailable && averageVolume > 0 ? currentVolume / averageVolume : null;
+  const volumeConfirmed = volumeRatio !== null && volumeRatio >= 1.05;
+  const atrConfirmed = Number.isFinite(atr14) && price > 0 && atr14 / price >= 0.00003;
+  const rsiBuy = Number.isFinite(rsi14) && rsi14 > 50;
+  const rsiSell = Number.isFinite(rsi14) && rsi14 < 50;
+
+  // Trap confirmation: a long rejection wick on the prior closed candle followed
+  // by a close through that candle's opposite extreme on the current closed candle.
+  const shape = c => {
+    const body = Math.max(Math.abs(c.close-c.open), Number.EPSILON);
+    return {body, upper:c.high-Math.max(c.open,c.close), lower:Math.min(c.open,c.close)-c.low};
+  };
+  const prevShape = shape(previous);
+  const bullTrap = previous.close > previous.open &&
+    prevShape.upper >= prevShape.body * 1.5 && current.close < previous.low;
+  const bearTrap = previous.close < previous.open &&
+    prevShape.lower >= prevShape.body * 1.5 && current.close > previous.high;
+
+  let direction = "STANDBY", score = 0;
+  let reason = "ยังไม่มี EMA 5/20 crossover ที่ผ่านตัวกรองทั้งหมด";
+  const commonFiltersPass = atrConfirmed && volumeConfirmed;
+  if (!volumeAvailable) {
+    reason = "ไม่มีข้อมูล Volume จริงครบ 21 แท่งจากผู้ให้บริการ จึงงดส่งสัญญาณ";
+  } else if (!volumeConfirmed) {
+    reason = "Volume ยังไม่ยืนยันแรงซื้อขาย (ต้องไม่น้อยกว่า 1.05 เท่าของค่าเฉลี่ย 20 แท่ง)";
+  } else if (!atrConfirmed) {
+    reason = "ATR 14 ต่ำกว่าเกณฑ์ ตลาดนิ่งเกินไป จึงงดเข้าออเดอร์";
+  } else if (bullTrap && rsiSell) {
+    direction = "PUT"; score = 85;
+    reason = "Bull Trap confirmed: แท่งก่อนมีไส้บนยาวและแท่งปิดล่าสุดหลุด Low ของแท่งกับดัก";
+  } else if (bearTrap && rsiBuy) {
+    direction = "CALL"; score = 85;
+    reason = "Bear Trap confirmed: แท่งก่อนมีไส้ล่างยาวและแท่งปิดล่าสุดทะลุ High ของแท่งกับดัก";
+  } else if (commonFiltersPass && crossedUp && closeAboveBoth && rsiBuy) {
+    direction = "CALL"; score = 80;
+    reason = "EMA 5 ตัดขึ้น EMA 20, แท่งปิดเหนือทั้งสองเส้น, RSI 14 > 50, ATR และ Volume ผ่าน";
+  } else if (commonFiltersPass && crossedDown && closeBelowBoth && rsiSell) {
+    direction = "PUT"; score = 80;
+    reason = "EMA 5 ตัดลง EMA 20, แท่งปิดต่ำกว่าทั้งสองเส้น, RSI 14 < 50, ATR และ Volume ผ่าน";
+  } else if (!crossedUp && !crossedDown) {
+    reason = "รอ EMA 5 ตัด EMA 20 บนแท่งที่ปิดแล้ว";
+  } else if ((crossedUp && !closeAboveBoth) || (crossedDown && !closeBelowBoth)) {
+    reason = "พบ EMA crossover แต่ราคาปิดยังไม่ยืนยันทิศทางเหนือ/ใต้ทั้งสองเส้น";
+  } else if ((crossedUp && !rsiBuy) || (crossedDown && !rsiSell)) {
+    reason = "RSI 14 ยังไม่ยืนยันโซนแรงซื้อ/แรงขาย";
   }
 
-  const prior = candles.slice(-21, -1);
-  const priorHigh = Math.max(...prior.map(c => c.high));
-  const priorLow = Math.min(...prior.map(c => c.low));
-  const candleRange = Math.max(current.high-current.low, Number.EPSILON);
-  const body = current.close-current.open;
-  const bodyRatio = Math.abs(body)/candleRange;
-  const upperWick = current.high-Math.max(current.open,current.close);
-  const lowerWick = Math.min(current.open,current.close)-current.low;
-  const atrBuffer = Number.isFinite(atr14) ? atr14 * 0.05 : 0;
-  const bullishBreakout = current.close > priorHigh + atrBuffer && body > 0 && bodyRatio >= 0.55;
-  const bearishBreakout = current.close < priorLow - atrBuffer && body < 0 && bodyRatio >= 0.55;
-
-  const slopeUp = p => emaLines[p][last] > emaLines[p][Math.max(0,last-3)];
-  const slopeDown = p => emaLines[p][last] < emaLines[p][Math.max(0,last-3)];
-  const fastBull = ema[9] > ema[21] && slopeUp(9) && slopeUp(21);
-  const fastBear = ema[9] < ema[21] && slopeDown(9) && slopeDown(21);
-  const mediumBull = ema[50] > ema[100] && slopeUp(50) && slopeUp(100);
-  const mediumBear = ema[50] < ema[100] && slopeDown(50) && slopeDown(100);
-  const longBull = price > ema[200] && slopeUp(200);
-  const longBear = price < ema[200] && slopeDown(200);
-  const allBull = EMA_PERIODS.filter(p => price > ema[p]).length;
-  const allBear = EMA_PERIODS.filter(p => price < ema[p]).length;
-  // Trend direction uses the fast EMA structure plus price relative to EMA50.
-  // Slower EMA alignment remains a weighted confirmation, not a hard veto.
-  const trendUp = fastBull && price > ema[50] && slopeUp(50);
-  const trendDown = fastBear && price < ema[50] && slopeDown(50);
-
-  const macdBull = Number.isFinite(macd.histogram) && macd.line > macd.signal && macd.histogram > 0;
-  const macdBear = Number.isFinite(macd.histogram) && macd.line < macd.signal && macd.histogram < 0;
-  const rsiBull = Number.isFinite(rsi14) && rsi14 >= 52 && rsi14 <= 75;
-  const rsiBear = Number.isFinite(rsi14) && rsi14 <= 48 && rsi14 >= 25;
-  const strengthBull = Number.isFinite(adx14) && adx14 >= 18 && plusDI !== null && plusDI > minusDI * 1.08;
-  const strengthBear = Number.isFinite(adx14) && adx14 >= 18 && minusDI !== null && minusDI > plusDI * 1.08;
-  const pressure = calculatePressure(candles, 5);
-  const pressureBull = pressure.confirmed && pressure.direction === "CALL";
-  const pressureBear = pressure.confirmed && pressure.direction === "PUT";
-
-  // Spot-FX volume is not supplied consistently by this feed; never fabricate a volume vote.
-  const callChecks = [
-    {name:"EMA 9/21 momentum",passed:fastBull,weight:20},
-    {name:"EMA 50/100 trend",passed:mediumBull,weight:15},
-    {name:"EMA 200 macro filter",passed:longBull,weight:15},
-    {name:"15 EMA alignment",passed:allBull>=8,weight:10},
-    {name:"Confirmed resistance breakout",passed:bullishBreakout,weight:20},
-    {name:"RSI 14 momentum",passed:rsiBull,weight:5},
-    {name:"MACD 12/26/9",passed:macdBull,weight:5},
-    {name:"ADX/DMI strength",passed:strengthBull,weight:5},
-    {name:"5-candle buying pressure",passed:pressureBull,weight:5}
-  ];
-  const putChecks = [
-    {name:"EMA 9/21 momentum",passed:fastBear,weight:20},
-    {name:"EMA 50/100 trend",passed:mediumBear,weight:15},
-    {name:"EMA 200 macro filter",passed:longBear,weight:15},
-    {name:"15 EMA alignment",passed:allBear>=8,weight:10},
-    {name:"Confirmed support breakdown",passed:bearishBreakout,weight:20},
-    {name:"RSI 14 momentum",passed:rsiBear,weight:5},
-    {name:"MACD 12/26/9",passed:macdBear,weight:5},
-    {name:"ADX/DMI strength",passed:strengthBear,weight:5},
-    {name:"5-candle selling pressure",passed:pressureBear,weight:5}
-  ];
-  const callScore = callChecks.filter(x=>x.passed).reduce((s,x)=>s+x.weight,0);
-  const putScore = putChecks.filter(x=>x.passed).reduce((s,x)=>s+x.weight,0);
-
-  // A failed breakout close, long rejection wick, or exhausted candle blocks entry.
-  const bullishReject = current.high > priorHigh && current.close < priorHigh && upperWick/candleRange >= 0.35;
-  const bearishReject = current.low < priorLow && current.close > priorLow && lowerWick/candleRange >= 0.35;
-  // Apply equal exhaustion and opposition filters to both directions.
-  const bullishExhausted = rsi14 >= 80 || bodyRatio < 0.15 || upperWick/candleRange > 0.68;
-  const bearishExhausted = rsi14 <= 20 || bodyRatio < 0.15 || lowerWick/candleRange > 0.68;
-  const callOpposition = putScore >= 25;
-  const putOpposition = callScore >= 25;
-
-  // Breakout is a high-value bonus, not a mandatory condition. This also
-  // allows confirmed trend-continuation entries before a 20-bar extreme breaks.
-  const MIN_SIGNAL_SCORE = 55;
-  const MIN_DIRECTIONAL_VOTES = 5;
-  let direction = "STANDBY";
-  let score = Math.max(callScore,putScore);
-  const callVotes = callChecks.filter(x=>x.passed).length;
-  const putVotes = putChecks.filter(x=>x.passed).length;
-  const callReady = trendUp && callScore >= MIN_SIGNAL_SCORE && callVotes >= MIN_DIRECTIONAL_VOTES && !callOpposition && !bullishReject && !bullishExhausted;
-  const putReady = trendDown && putScore >= MIN_SIGNAL_SCORE && putVotes >= MIN_DIRECTIONAL_VOTES && !putOpposition && !bearishReject && !bearishExhausted;
-  if (callReady && !putReady) direction = "CALL";
-  else if (putReady && !callReady) direction = "PUT";
-  else direction = "STANDBY";
-
-  const blockers = [];
-  if (direction === "STANDBY") {
-    if (!trendUp && !trendDown) blockers.push("EMA9/21 และตำแหน่งราคาเทียบ EMA50 ยังไม่ยืนยันทิศทาง");
-    if (!bullishBreakout && !bearishBreakout) blockers.push("ยังไม่เกิด Breakout 20 แท่ง (เป็นคะแนนเสริม ไม่ใช่เงื่อนไขบังคับ)");
-    if (callOpposition || putOpposition) blockers.push("พบแรงขัดแย้งจากฝั่งตรงข้าม");
-    if (bullishReject || bearishReject) blockers.push("พบไส้เทียนปฏิเสธ Breakout (เสี่ยง Fakeout)");
-    if (bullishExhausted || bearishExhausted) blockers.push("แท่งเทียนหรือ RSI อยู่ในภาวะเสี่ยงไล่ราคา");
-    if (score < MIN_SIGNAL_SCORE) blockers.push("คะแนนเงื่อนไขยังไม่ถึง 55/100");
-    if (Math.max(callVotes,putVotes) < MIN_DIRECTIONAL_VOTES) blockers.push("จำนวนกลยุทธ์ที่ยืนยันยังไม่ครบ 5 ข้อ");
-  }
-
-  const trend = trendUp ? "UP" : trendDown ? "DOWN" : "NEUTRAL";
+  const trend = ema[5] > ema[20] ? "UP" : ema[5] < ema[20] ? "DOWN" : "NEUTRAL";
   const emaValues = {};
   for (const p of EMA_PERIODS) emaValues[p] = round(ema[p]);
-  const emaSignals = [];
-  const chartStart = Math.max(0,candles.length-80);
-  const chartCandles = candles.slice(chartStart).map((c,offset)=>{
-    const i=chartStart+offset,emas={};
-    for(const p of EMA_PERIODS) emas[p]=round(emaLines[p][i]);
-    return {...c,emas};
+  const chartStart = Math.max(0, candles.length - 80);
+  const chartCandles = candles.slice(chartStart).map((c,offset) => {
+    const i = chartStart + offset, emas = {};
+    for (const p of EMA_PERIODS) emas[p] = round(emaLines[p][i]);
+    return {...c, emas};
   });
 
   const fakeout = {
-    status: bullishReject || bearishReject ? "FAKEOUT_WATCH" : "NO_FAKEOUT",
-    detected: Boolean(bullishReject || bearishReject),
-    confirmed: false,
-    originalDirection: direction === "STANDBY" ? null : direction,
-    reversalDirection: null,
-    score: (bullishReject || bearishReject) ? 60 : 0,
+    status: bullTrap || bearTrap ? "REVERSAL_CONFIRMED" : "NO_FAKEOUT",
+    detected: Boolean(bullTrap || bearTrap),
+    confirmed: Boolean(bullTrap || bearTrap),
+    originalDirection: bullTrap ? "CALL" : bearTrap ? "PUT" : null,
+    reversalDirection: bullTrap ? "PUT" : bearTrap ? "CALL" : null,
+    score: bullTrap || bearTrap ? 85 : 0,
     evidence: [
-      {label:"Close beyond prior 20-bar range",passed:bullishBreakout||bearishBreakout},
-      {label:"Candle body >= 55% of range",passed:bodyRatio>=0.55},
-      {label:"No long rejection wick",passed:!bullishReject&&!bearishReject}
+      {label:"Previous candle long rejection wick",passed:Boolean(bullTrap || bearTrap)},
+      {label:"Latest closed candle broke trap candle opposite extreme",passed:Boolean(bullTrap || bearTrap)},
+      {label:"RSI confirms reversal side",passed:Boolean((bullTrap && rsiSell) || (bearTrap && rsiBuy))}
     ],
-    reason: bullishReject || bearishReject ? "พบการปฏิเสธราคาบริเวณกรอบเดิม จึงงดเข้าเพื่อป้องกัน Fakeout" : "ไม่พบสัญญาณปฏิเสธ Breakout ที่ชัดเจน"
+    reason: bullTrap ? "Bull Trap: กลับฝั่งเป็น PUT" : bearTrap ? "Bear Trap: กลับฝั่งเป็น CALL" : "ไม่พบกับดักที่ยืนยันด้วยแท่งปิด"
   };
 
-  const stopDistance = Number.isFinite(atr14) ? Math.max(atr14*1.2,Math.abs(body)*0.8) : null;
-  const risk = direction !== "STANDBY" && stopDistance > 0 ? {
+  const riskDistance = Number.isFinite(atr14) ? atr14 * 1.2 : null;
+  const risk = direction !== "STANDBY" && riskDistance > 0 ? {
     entry:round(price),
-    stopLoss:round(direction==="CALL"?price-stopDistance:price+stopDistance),
-    takeProfit15:round(direction==="CALL"?price+stopDistance*1.5:price-stopDistance*1.5),
-    takeProfit20:round(direction==="CALL"?price+stopDistance*2:price-stopDistance*2),
+    stopLoss:round(direction==="CALL" ? price-riskDistance : price+riskDistance),
+    takeProfit15:round(direction==="CALL" ? price+riskDistance*1.5 : price-riskDistance*1.5),
+    takeProfit20:round(direction==="CALL" ? price+riskDistance*2 : price-riskDistance*2),
     riskReward:"1:1.5 / 1:2",
-    method:"ATR(14) based reference levels; not broker-executed"
+    method:"ATR(14) reference levels; no broker order execution"
   } : null;
 
-  const checks = direction==="CALL"?callChecks:direction==="PUT"?putChecks:[];
-  const alignedVotes = checks.filter(x=>x.passed).length;
-  const strategyVotes = (direction==="PUT"?putChecks:callChecks).map(x=>({
-    name:x.name,direction:x.passed?(direction==="STANDBY"?"PASS":"PASS"):"WAIT",
-    weight:x.weight,detail:x.passed?"ผ่านเงื่อนไข":"ยังไม่ผ่าน"
-  }));
-  const signal = direction==="STANDBY"?null:{
-    id:String(current.datetime)+":MOMENTUM_BREAKOUT:"+direction,
-    direction,score:Math.min(100,score),alignedVotes,directionalVotes:checks.length,
-    candleTime:current.datetime,
-    reason:(direction==="CALL"?"แนวโน้มขึ้น + แรงส่งยืนยัน":"แนวโน้มลง + แรงส่งยืนยัน")+" · EMA 15 เส้น + RSI/MACD/ADX"+(direction==="CALL"&&bullishBreakout||direction==="PUT"&&bearishBreakout?" + Breakout":"")+" ยืนยัน"
+  const checks = [
+    {name:"EMA 5/20 crossover",passed:direction!=="STANDBY" && (crossedUp||crossedDown),weight:35},
+    {name:"Closed candle above/below both EMAs",passed:direction==="CALL"?closeAboveBoth:direction==="PUT"?closeBelowBoth:false,weight:20},
+    {name:"RSI 14 zone confirmation",passed:direction==="CALL"?rsiBuy:direction==="PUT"?rsiSell:false,weight:15},
+    {name:"ATR 14 volatility filter",passed:atrConfirmed,weight:15},
+    {name:"Volume confirmation >= 1.05x",passed:volumeConfirmed,weight:15}
+  ];
+  const strategyVotes = checks.map(x=>({name:x.name,direction:x.passed?"PASS":"WAIT",weight:x.weight,detail:x.passed?"ผ่านเงื่อนไข":"ยังไม่ผ่าน"}));
+  const signal = direction === "STANDBY" ? null : {
+    id:String(current.datetime)+":EMA5-20:"+direction,
+    direction, originalDirection:bullTrap?"CALL":bearTrap?"PUT":direction,
+    score, alignedVotes:checks.filter(x=>x.passed).length, directionalVotes:5,
+    candleTime:current.datetime, reason
   };
   const indicators = {
-    rsi14:round(rsi14,2),macdLine:round(macd.line,8),macdSignal:round(macd.signal,8),
-    macdHistogram:round(macd.histogram,8),atr14:round(atr14,8),adx14:round(adx14,2),
-    plusDI:round(plusDI,2),minusDI:round(minusDI,2),
+    rsi14:round(rsi14,2), macdLine:round(macd.line,8), macdSignal:round(macd.signal,8),
+    macdHistogram:round(macd.histogram,8), atr14:round(atr14,8), adx14:round(adx14,2),
+    plusDI:null, minusDI:null,
     bollinger:bb?{upper:round(bb.upper),middle:round(bb.middle),lower:round(bb.lower),width:round(bb.width,3)}:null,
-    pressure,ema50:round(ema[50]),ema100:round(ema[100]),ema200:round(ema[200]),
-    emaAlignment:{bullish:allBull,bearish:allBear,total:EMA_PERIODS.length},
-    breakout:{direction:bullishBreakout?"CALL":bearishBreakout?"PUT":null,priorHigh:round(priorHigh),priorLow:round(priorLow),bodyRatio:round(bodyRatio,3)},
-    strategyVotes:strategyVotes,callWeight:callScore,putWeight:putScore,activeWeight:callScore+putScore,
-    risk
+    stochastic:stochastic14?{k:round(stochastic14.k,2),d:round(stochastic14.d,2)}:null,
+    cci20:round(cci20,2), williamsR14:round(williams14,2),
+    pressure:{buy:null,sell:null,delta:null,confirmed:false,direction:"NOT_USED",reason:"ไม่ได้ใช้เป็นเงื่อนไขหลักของกลยุทธ์ EMA 5/20"},
+    ema5:round(ema[5]), ema20:round(ema[20]),
+    emaAlignment:{bullish:ema[5]>ema[20]?1:0,bearish:ema[5]<ema[20]?1:0,total:1},
+    breakout:{direction:null,priorHigh:null,priorLow:null,bodyRatio:null},
+    strategyVotes,callWeight:direction==="CALL"?score:0,putWeight:direction==="PUT"?score:0,
+    activeWeight:score,volumeRatio:round(volumeRatio,3),volumeConfirmed,atrConfirmed,risk
   };
+  const blockers = direction==="STANDBY" ? [reason] : [];
   const analysis = {
-    engine:"BALANCED_TREND_MOMENTUM_V3",
+    engine:"EMA_5_20_TREND_MOMENTUM_TRAP_V1",
     dataSource:"Twelve Data 1-minute OHLC",
-    calculationSource:"คำนวณ EMA/RSI/MACD/ADX/ATR และ Breakout จากแท่ง OHLC ที่ปิดแล้ว",
-    mode:"Trend Following + Momentum Confluence + optional 20-bar Breakout · EMA 15 เส้น",
-    filter:"EMA9_21_EMA50_AND_WEIGHTED_CONFIRMATION",
+    calculationSource:"คำนวณ EMA5/EMA20, RSI14, ATR14 และ Volume จากแท่งเทียนที่ปิดแล้วเท่านั้น",
+    mode:"EMA 5/20 Trend Following + RSI/ATR/Volume Confirmation + Bull/Bear Trap",
+    filter:"CLOSED_CANDLE_EMA5_20_RSI_ATR_VOLUME_TRAP",
     trend,score,direction,passed:Boolean(signal),
-    callVotes:callChecks.filter(x=>x.passed).length,
-    putVotes:putChecks.filter(x=>x.passed).length,
-    callWeight:callScore,putWeight:putScore,alignedVotes,
-    totalStrategies:9,requiredVotes:MIN_DIRECTIONAL_VOTES,minimumScore:MIN_SIGNAL_SCORE,
-    blockers, strategyVotes,
-    breakout:indicators.breakout, fakeout, risk,
-    note:"ไม่มี Volume จริงในข้อมูล OHLC ชุดนี้ จึงไม่ใช้หรือสร้างตัวเลข Volume ปลอม"
+    callVotes:direction==="CALL"?checks.filter(x=>x.passed).length:0,
+    putVotes:direction==="PUT"?checks.filter(x=>x.passed).length:0,
+    callWeight:direction==="CALL"?score:0,putWeight:direction==="PUT"?score:0,
+    alignedVotes:checks.filter(x=>x.passed).length,totalStrategies:5,requiredVotes:5,minimumScore:80,
+    blockers,strategyVotes,breakout:indicators.breakout,fakeout,risk,
+    note:"ไม่สร้าง Volume ปลอมหรือแทน Volume ด้วย tick/price movement; หาก Twelve Data ไม่ส่ง Volume จะไม่ออกสัญญาณ"
   };
-  return {price,candle:current,emaValues,emaSignals,chartCandles,trend,indicators,analysis,signal,fakeout,score:signal?signal.score:0,closes};
+  return {price,candle:current,emaValues,emaSignals:signal?[{...signal,ema:"5/20"}]:[],
+    chartCandles,trend,indicators,analysis,signal,fakeout,score:signal?signal.score:0,closes};
 }
 
 function updateSignalReviews(candles, signal) {
@@ -502,7 +455,7 @@ async function fetchMarketData() {
     return Number.isFinite(opened) && opened + 60000 <= now;
   });
   if (completed.length < MIN_COMPLETED_BARS) throw new Error("ข้อมูลแท่งเทียนปิดแล้วมีเพียง " + completed.length + " แท่ง ต้องมีอย่างน้อย " + MIN_COMPLETED_BARS + " แท่งเพื่อให้ EMA 1–20 มีช่วง warm-up เพียงพอ");
-  const candles = completed.map(c=>({datetime:c.datetime||null,open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}));
+  const candles = completed.map(c=>({datetime:c.datetime||null,open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close),volume:c.volume===undefined||c.volume===null||c.volume===""?null:Number(c.volume)}));
   if (candles.some(c=>[c.open,c.high,c.low,c.close].some(v=>!Number.isFinite(v)||v<=0)||c.high<Math.max(c.open,c.close)||c.low>Math.min(c.open,c.close))) {
     throw new Error("ข้อมูล OHLC ที่ได้รับไม่ถูกต้อง");
   }
