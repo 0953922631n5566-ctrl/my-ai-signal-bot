@@ -116,7 +116,7 @@ function renderAIAnalysis(data) {
   const fakeoutLabel = !fakeout || fakeout.status === "NO_FAKEOUT" ? "ไม่พบสัญญาณหลอก" :
     fakeout.confirmed ? "ยืนยันกลับทิศ " + fakeout.originalDirection + " → " + fakeout.reversalDirection :
     "เฝ้าระวัง Fakeout · ยังไม่กลับสัญญาณ";
-  const fakeoutClass = fakeout && fakeout.confirmed ? "put" : fakeout && fakeout.detected ? "standby" : "call";
+  const fakeoutClass = fakeout && fakeout.confirmed ? fakeout.reversalDirection.toLowerCase() : fakeout && fakeout.detected ? "standby" : "call";
   const fakeoutEvidence = fakeout && Array.isArray(fakeout.evidence)
     ? fakeout.evidence.map(item => (item.passed ? "✓ " : "× ") + item.label).join(" · ")
     : "รอข้อมูลแท่งปิด";
