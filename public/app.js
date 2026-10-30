@@ -132,7 +132,11 @@ function renderAIAnalysis(data) {
   const pressure = tech.pressure || analysis.pressure || null;
   const pressureLabel = pressure ? "ซื้อ " + pressure.buy + "% · ขาย " + pressure.sell + "%" : "--";
   const pressureStatus = !pressure ? "รอข้อมูล" : pressure.confirmed ? "ยืนยันฝั่ง " + (pressure.direction === "CALL" ? "ซื้อ" : "ขาย") : "แรงยังไม่พอ · STANDBY";
+  const historyLabel = (data.historyBars || 0) + " / " + (data.historyBarsRequired || 500) + " แท่ง";
+  const creditLabel = data.apiCreditsLeft === null || data.apiCreditsLeft === undefined ? "--" : data.apiCreditsLeft + " เครดิต";
   const rows = [
+    ["ประวัติข้อมูลที่ใช้", historyLabel, "ใช้แท่งปิดย้อนหลังเพื่อให้ EMA100 มีช่วง warm-up มากขึ้น"],
+    ["API credits เหลือต่อนาที", creditLabel, data.apiCreditsUsed === null || data.apiCreditsUsed === undefined ? "รอข้อมูลจาก response headers ของ Twelve Data" : "คำขอล่าสุดใช้ " + data.apiCreditsUsed + " เครดิต"],
     ["แรงซื้อ / แรงขาย", pressureLabel, pressureStatus + " · 3 แท่งล่าสุด ซื้อ " + (pressure ? pressure.recentBuy : "--") + "% / ขาย " + (pressure ? pressure.recentSell : "--") + "%"],
     ["Fakeout / กลับทิศ", fakeoutLabel, fakeoutEvidence],
     reviewRow(1), reviewRow(2), reviewRow(3),
