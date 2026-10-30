@@ -132,71 +132,147 @@ async function fetchMarketData() {
   const rsi = calculateRSI(closes, 14);
   const macd = calculateMACD(closes);
   const price = closes[lastIndex];
-  if (!Number.isFinite(rsi) || !Number.isFinite(macd) ||
-      EMA_PERIODS.some(period => !Number.isFinite(latestEma[period]))) {
-    throw new Error("คำนวณ EMA/RSI/MACD จากแท่งปิดไม่สำเร็จ");
-  }
-
-  // Regime filter: EMA50/100 alignment and slope over three closed candles.
-  const slopeIndex = Math.max(0, lastIndex - 3);
-  const ema50Up = latestEma[50] > series[50][slopeIndex];
-  const ema100Up = latestEma[100] >= series[100][slopeIndex];
-  const ema50Down = latestEma[50] < series[50][slopeIndex];
-  const ema100Down = latestEma[100] <= series[100][slopeIndex];
-
-  let marketTrend = "NEUTRAL";
-  if (latestEma[50] > latestEma[100] && ema50Up && ema100Up && price > latestEma[50]) {
-    marketTrend = "UP";
-  } else if (latestEma[50] < latestEma[100] && ema50Down && ema100Down && price < latestEma[50]) {
-    marketTrend = "DOWN";
-  }
-
-  // Each EMA checks its own closed-candle crossover; trend filter is not a 15-line consensus.
-  const previousClose = closes[previousIndex];
-  const latestClose = closes[lastIndex];
   const lastCandle = parsedCandles[lastIndex];
-  const signals = [];
+  const previousCandle = parsedCandles[previousIndex];
 
-  for (const period of EMA_PERIODS) {
-    const previousEma = series[period][previousIndex];
-    const currentEma = series[period][lastIndex];
-    if (!Number.isFinite(previousEma) || !Number.isFinite(currentEma)) continue;
-
-    const crossedUp = previousClose <= previousEma && latestClose > currentEma;
-    const crossedDown = previousClose >= previousEma && latestClose < currentEma;
-
-    if (crossedUp && marketTrend === "UP") {
-      let score = 70;
-      if (rsi >= 50 && rsi <= 80) score += 5;
-      if (macd > 0) score += 5;
-      if (lastCandle.close > lastCandle.open) score += 5;
-      signals.push({
-        id: String(lastCandle.datetime) + ":EMA" + period + ":CALL",
-        ema: period, direction: "CALL", score: Math.min(95, score),
-        candleTime: lastCandle.datetime,
-        reason: "แท่งปิดตัดขึ้น EMA " + period + " และแนวโน้มหลักเป็นขาขึ้น"
-      });
-    } else if (crossedDown && marketTrend === "DOWN") {
-      let score = 70;
-      if (rsi >= 20 && rsi <= 50) score += 5;
-      if (macd < 0) score += 5;
-      if (lastCandle.close < lastCandle.open) score += 5;
-      signals.push({
-        id: String(lastCandle.datetime) + ":EMA" + period + ":PUT",
-        ema: period, direction: "PUT", score: Math.min(95, score),
-        candleTime: lastCandle.datetime,
-        reason: "แท่งปิดตัดลง EMA " + period + " และแนวโน้มหลักเป็นขาลง"
-      });
+  // ATR(14): Wilder-style smoothed true range, using completed candles only.
+  function calculateATR(candles, period = 14) {
+    if (!Array.isArray(candles) || candles.length <= period) return null;
+    const ranges = [];
+    for (let i = 1; i < candles.length; i++) {
+      const c = candles[i], prev = candles[i - 1];
+      ranges.push(Math.max(c.high - c.low, Math.abs(c.high - prev.close), Math.abs(c.low - prev.close)));
     }
+    let value = ranges.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    for (let i = period; i < ranges.length; i++) value = (value * (period - 1) + ranges[i]) / period;
+    return value;
   }
 
-  signals.sort((a, b) => b.score - a.score || a.ema - b.ema);
-  const primary = signals[0] || null;
+  const atr14 = calculateATR(parsedCandles, 14);
+  const volumeValues = parsedCandles.map(c => Number(c.volume));
+  const volumeAvailable = volumeValues.every(v => Number.isFinite(v) && v > 0);
+  const volumeWindow = volumeValues.slice(Math.max(0, lastIndex - 20), lastIndex);
+  const averageVolume = volumeWindow.length === 20
+    ? volumeWindow.reduce((a, b) => a + b, 0) / volumeWindow.length : null;
+  const volumeRatio = volumeAvailable && Number.isFinite(averageVolume) && averageVolume > 0
+    ? volumeValues[lastIndex] / averageVolume : null;
+
+  if (!Number.isFinite(rsi) || !Number.isFinite(macd) ||
+      !Number.isFinite(atr14) || !Number.isFinite(latestEma[5]) ||
+      !Number.isFinite(latestEma[20]) || !Number.isFinite(series[5][previousIndex]) ||
+      !Number.isFinite(series[20][previousIndex])) {
+    throw new Error("คำนวณ EMA 5/20, RSI 14, ATR 14 จากแท่งปิดไม่สำเร็จ");
+  }
+
+  // The strategy is based on a confirmed EMA 5/20 crossover on the latest closed candle.
+  const previousEma5 = series[5][previousIndex];
+  const previousEma20 = series[20][previousIndex];
+  const currentEma5 = latestEma[5];
+  const currentEma20 = latestEma[20];
+  const crossedUp = previousEma5 <= previousEma20 && currentEma5 > currentEma20;
+  const crossedDown = previousEma5 >= previousEma20 && currentEma5 < currentEma20;
+  const closeAboveBoth = price > currentEma5 && price > currentEma20;
+  const closeBelowBoth = price < currentEma5 && price < currentEma20;
+
+  // A missing/zero volume field is not treated as confirmation.
+  const volumeConfirmed = volumeRatio !== null && volumeRatio >= 1.05;
+  // Avoid dead markets: ATR must be at least 0.003% of price.
+  const atrConfirmed = atr14 / price >= 0.00003;
+  const buyMomentum = rsi > 50;
+  const sellMomentum = rsi < 50;
+
+  // Trap detector: previous completed candle has a long rejection wick;
+  // current completed candle must break its opposite edge to confirm reversal.
+  function candleShape(c) {
+    const body = Math.max(Math.abs(c.close - c.open), Number.EPSILON);
+    return {
+      upperWick: c.high - Math.max(c.open, c.close),
+      lowerWick: Math.min(c.open, c.close) - c.low,
+      body
+    };
+  }
+  const previousShape = candleShape(previousCandle);
+  const bullTrap = previousCandle.close > previousCandle.open &&
+    previousShape.upperWick >= previousShape.body * 1.5 &&
+    lastCandle.close < previousCandle.low;
+  const bearTrap = previousCandle.close < previousCandle.open &&
+    previousShape.lowerWick >= previousShape.body * 1.5 &&
+    lastCandle.close > previousCandle.high;
+
+  const signals = [];
+  let candidate = "STANDBY";
+  let reason = "ยังไม่มี EMA 5/20 crossover ที่ผ่านตัวกรองทั้งหมด";
+  let score = 0;
+  let marketTrend = currentEma5 > currentEma20 ? "UP" :
+    currentEma5 < currentEma20 ? "DOWN" : "NEUTRAL";
+
+  const commonFiltersPass = atrConfirmed && volumeConfirmed;
+  if (!volumeAvailable) {
+    reason = "ไม่มีข้อมูล Volume จากผู้ให้บริการ จึงไม่ยืนยันสัญญาณ";
+  } else if (!volumeConfirmed) {
+    reason = "Volume ยังไม่ยืนยันแรงซื้อขาย (ต้องไม่น้อยกว่า 1.05 เท่าของค่าเฉลี่ย 20 แท่ง)";
+  } else if (!atrConfirmed) {
+    reason = "ATR ต่ำเกินไป ตลาดนิ่ง จึงงดเข้าออเดอร์";
+  } else if (bullTrap && sellMomentum) {
+    candidate = "PUT";
+    score = 85;
+    reason = "ตรวจพบ Bull Trap: ไส้บนยาวและแท่งปิดถัดมาหลุด Low ของแท่งกับดัก";
+  } else if (bearTrap && buyMomentum) {
+    candidate = "CALL";
+    score = 85;
+    reason = "ตรวจพบ Bear Trap: ไส้ล่างยาวและแท่งปิดถัดมาทะลุ High ของแท่งกับดัก";
+  } else if (commonFiltersPass && crossedUp && closeAboveBoth && buyMomentum) {
+    candidate = "CALL";
+    score = 80;
+    reason = "EMA 5 ตัดขึ้น EMA 20, แท่งปิดเหนือทั้งสองเส้น, RSI > 50, ATR และ Volume ผ่าน";
+  } else if (commonFiltersPass && crossedDown && closeBelowBoth && sellMomentum) {
+    candidate = "PUT";
+    score = 80;
+    reason = "EMA 5 ตัดลง EMA 20, แท่งปิดต่ำกว่าทั้งสองเส้น, RSI < 50, ATR และ Volume ผ่าน";
+  }
+
+  if (candidate !== "STANDBY") {
+    signals.push({
+      id: String(lastCandle.datetime) + ":EMA5-20:" + candidate,
+      ema: "5/20", direction: candidate, score,
+      candleTime: lastCandle.datetime, reason
+    });
+  }
+
   let bullVotes = 0, bearVotes = 0;
   for (const period of EMA_PERIODS) {
     if (price > latestEma[period]) bullVotes++;
     else if (price < latestEma[period]) bearVotes++;
   }
+
+  const now = Date.now();
+  const emaValues = {};
+  for (const period of EMA_PERIODS) emaValues[period] = round(latestEma[period]);
+
+  const firstChartIndex = Math.max(0, parsedCandles.length - 80);
+  const chartCandles = parsedCandles.slice(firstChartIndex).map((c, offset) => {
+    const index = firstChartIndex + offset;
+    const emaAtCandle = {};
+    for (const period of EMA_PERIODS) emaAtCandle[period] = round(series[period][index]);
+    return { ...c, emas: emaAtCandle };
+  });
+
+  Object.assign(state, {
+    price: round(price), candleTime: lastCandle.datetime,
+    fetchedAt: new Date(now).toISOString(), fetchedAtMs: now,
+    emaValues, emaSignals: signals, marketTrend,
+    rsi14: round(rsi, 2), macd: round(macd, 8),
+    atr14: round(atr14, 8), volumeRatio: round(volumeRatio, 3),
+    bullVotes, bearVotes, score,
+    candidate, reason,
+    candles: chartCandles, error: null,
+    lastPollAt: new Date(now).toISOString(),
+    nextPollAt: new Date(now + POLL_MS).toISOString()
+  });
+
+  console.log("[MARKET] " + SYMBOL + " price=" + state.price +
+    " trend=" + marketTrend + " atr14=" + state.atr14 +
+    " volumeRatio=" + state.volumeRatio + " primary=" + state.candidate);
 
   const now = Date.now();
   const emaValues = {};
