@@ -27,7 +27,7 @@ const MAX_DATA_AGE_MS = 90000;
 const HISTORY_BARS = 300;
 const MIN_COMPLETED_BARS = 220;
 const SIGNAL_DURATION_MS = 40000;
-const EMA_PERIODS = [3,5,8,9,12,15,18,21,25,30,35,40,50,100,200];
+const EMA_PERIODS = [3,5,8,9,12,15,18,20,21,25,30,35,40,50,100,200];
 
 const state = {
   source: "Twelve Data", symbol: SYMBOL, interval: "1min",
