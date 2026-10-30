@@ -144,7 +144,7 @@ function renderAIAnalysis(data) {
     ["ATR", tech.atr14, "ความผันผวน"], ["Bollinger width", tech.bollinger ? tech.bollinger.width + "%" : "--", "ความกว้างกรอบ"]
   ];
   const gates = analysis.gates || {};
-  const gateLabels = {trendAligned:"ทิศทางตรงเทรนด์",adxStrongEnough:"ADX ≥ 18",confluence:"คะแนน/เสียงเห็นพ้อง",notOverextended:"ไม่ไล่ราคาห่าง EMA21",candleClosed:"ใช้แท่งปิดแล้ว"};
+  const gateLabels = {trendAligned:"ทิศทางตรงเทรนด์",adxStrongEnough:"ADX ≥ 18",confluence:"คะแนน/เสียงเห็นพ้อง",buyingSellingPressure:"แรงซื้อ/ขายยืนยัน 5 แท่ง",notOverextended:"ไม่ไล่ราคาห่าง EMA21",candleClosed:"ใช้แท่งปิดแล้ว"};
   const gateHtml = Object.keys(gateLabels).map(key =>
     '<div class="ema-signal-row ' + (gates[key] ? "call" : "standby") + '"><strong>' +
     (gates[key] ? "ผ่าน" : "ไม่ผ่าน") + '</strong><span>' + gateLabels[key] + '</span></div>'
