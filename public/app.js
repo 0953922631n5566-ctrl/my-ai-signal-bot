@@ -6,8 +6,8 @@ function setText(id, value) {
   if (element) element.textContent = value;
   else console.warn("ข้ามการอัปเดตข้อความ: ไม่พบ element #" + id);
 }
-const EMA_PERIODS = [3, 5, 8, 9, 12, 15, 18, 21, 25, 30, 35, 40, 50, 75, 100];
-const EMA_COLORS = ["#f6c453", "#ff8c42", "#e879f9", "#48d1cc", "#a3e635", "#fb7185", "#60a5fa", "#facc15", "#c084fc", "#34d399", "#f97316", "#38bdf8", "#e5e7eb", "#a78bfa", "#fda4af"];
+const EMA_PERIODS = Array.from({ length: 20 }, (_, i) => i + 1);
+const EMA_COLORS = ["#f6c453","#ff8c42","#e879f9","#48d1cc","#a3e635","#fb7185","#60a5fa","#facc15","#c084fc","#34d399","#f97316","#38bdf8","#e5e7eb","#a78bfa","#fda4af","#22d3ee","#fb923c","#a3e635","#f472b6","#818cf8"];
 
 const state = {
   sound: false, vibrate: false, audioContext: null, loading: false,
@@ -128,69 +128,23 @@ function renderEmaGrid(data) {
 
 
 function renderAIAnalysis(data) {
-  const analysis = data.aiAnalysis;
+  const analysis = data.aiAnalysis || {};
   const summary = $("aiSummary");
   const metrics = $("aiMetrics");
   if (!summary || !metrics) return;
-  if (!analysis) { summary.textContent = "ยังไม่มีผลวิเคราะห์ AI"; metrics.innerHTML = ""; return; }
-  setText("aiModeBadge", analysis.passed ? "FILTER PASSED" : "STRICT FILTER");
-  summary.textContent = (analysis.passed ? "ผ่านตัวกรอง · " : "STANDBY · ") +
-    (analysis.trend === "UP" ? "แนวโน้มขาขึ้น" : analysis.trend === "DOWN" ? "แนวโน้มขาลง" : "แนวโน้มเป็นกลาง") +
-    " · คะแนนความสอดคล้อง " + analysis.score + "% · เห็นพ้อง " + analysis.alignedVotes + "/8";
-  const tech = data.technicalIndicators || {};
-  const fakeout = data.fakeout || analysis.fakeout || null;
-  const fakeoutLabel = !fakeout || fakeout.status === "NO_FAKEOUT" ? "ไม่พบสัญญาณหลอก" :
-    fakeout.confirmed ? "ยืนยันกลับทิศ " + fakeout.originalDirection + " → " + fakeout.reversalDirection :
-    "เฝ้าระวัง Fakeout · ยังไม่กลับสัญญาณ";
-  const fakeoutClass = fakeout && fakeout.confirmed ? fakeout.reversalDirection.toLowerCase() : fakeout && fakeout.detected ? "standby" : "call";
-  const fakeoutEvidence = fakeout && Array.isArray(fakeout.evidence)
-    ? fakeout.evidence.map(item => (item.passed ? "✓ " : "× ") + item.label).join(" · ")
-    : "รอข้อมูลแท่งปิด";
-  const reviewStats = data.signalReviewStats || {};
-  const reviewRow = horizon => {
-    const stat = reviewStats[horizon] || {};
-    const original = stat.original || {}, final = stat.final || {};
-    const fmt = item => item.winRate === null || item.winRate === undefined ? "--" :
-      item.winRate + "% (" + item.wins + "/" + item.count + ")";
-    return ["ผลย้อนหลัง " + horizon + " แท่ง", "เดิม " + fmt(original) + " · หลังปรับ " + fmt(final),
-      "นับเฉพาะผลที่มีแท่งปิดครบแล้ว"];
-  };
-  const pressure = tech.pressure || analysis.pressure || null;
-  const pressureLabel = pressure ? "ซื้อ " + pressure.buy + "% · ขาย " + pressure.sell + "%" : "--";
-  const pressureStatus = !pressure ? "รอข้อมูล" : pressure.confirmed ? "ยืนยันฝั่ง " + (pressure.direction === "CALL" ? "ซื้อ" : "ขาย") : "แรงยังไม่พอ · STANDBY";
-  const historyLabel = (data.historyBars || 0) + " / " + (data.historyBarsRequired || 500) + " แท่ง";
-  const creditLabel = data.apiCreditsLeft === null || data.apiCreditsLeft === undefined ? "--" : data.apiCreditsLeft + " เครดิต";
-  const rows = [
-    ["ประวัติข้อมูลที่ใช้", historyLabel, "ใช้แท่งปิดย้อนหลังเพื่อให้ EMA100 มีช่วง warm-up มากขึ้น"],
-    ["API credits เหลือต่อนาที", creditLabel, data.apiCreditsUsed === null || data.apiCreditsUsed === undefined ? "รอข้อมูลจาก response headers ของ Twelve Data" : "คำขอล่าสุดใช้ " + data.apiCreditsUsed + " เครดิต"],
-    ["แรงซื้อ / แรงขาย", pressureLabel, pressureStatus + " · 3 แท่งล่าสุด ซื้อ " + (pressure ? pressure.recentBuy : "--") + "% / ขาย " + (pressure ? pressure.recentSell : "--") + "%"],
-    ["Fakeout / กลับทิศ", fakeoutLabel, fakeoutEvidence],
-    reviewRow(1), reviewRow(2), reviewRow(3),
-    ["คะแนนยืนยันกลับทิศ", fakeout && fakeout.detected ? fakeout.score + "%" : "--", "ต้องผ่านอย่างน้อย 4 ใน 5 เงื่อนไข"],
-    ["ADX", tech.adx14, "แรงของแนวโน้ม"], ["RSI", tech.rsi14, "โมเมนตัม"],
-    ["MACD Histogram", tech.macdHistogram, "ทิศทางโมเมนตัม"],
-    ["Stochastic K/D", tech.stochastic ? tech.stochastic.k + " / " + tech.stochastic.d : "--", "แรงซื้อขาย"],
-    ["CCI", tech.cci20, "โมเมนตัมราคา"], ["Williams %R", tech.williamsR14, "ตำแหน่งในกรอบ"],
-    ["ATR", tech.atr14, "ความผันผวน"], ["Bollinger width", tech.bollinger ? tech.bollinger.width + "%" : "--", "ความกว้างกรอบ"]
-  ];
-  const gates = analysis.gates || {};
-  const gateLabels = {trendAligned:"ทิศทางตรงเทรนด์",adxStrongEnough:"ADX ≥ 18",confluence:"คะแนน/เสียงเห็นพ้อง",buyingSellingPressure:"แรงซื้อ/ขายยืนยัน 5 แท่ง",notOverextended:"ไม่ไล่ราคาห่าง EMA21",candleClosed:"ใช้แท่งปิดแล้ว"};
-  const gateHtml = Object.keys(gateLabels).map(key =>
-    '<div class="ema-signal-row ' + (gates[key] ? "call" : "standby") + '"><strong>' +
-    (gates[key] ? "ผ่าน" : "ไม่ผ่าน") + '</strong><span>' + gateLabels[key] + '</span></div>'
-  ).join("");
-  const rowHtml = rows.map(row =>
-    '<div class="ema-signal-row"><strong>' + row[0] + '</strong><span>' +
-    (row[1] === null || row[1] === undefined ? "--" : row[1]) + '</span><small>' + row[2] + '</small></div>'
-  ).join("");
-  metrics.innerHTML = '<p class="eyebrow">ตัวกรองเข้มงวด</p>' + gateHtml +
-    '<p class="eyebrow">ตรวจจับสัญญาณหลอก / กลับทิศ</p>' +
-    '<div class="ema-signal-row ' + fakeoutClass + '"><strong>' + fakeoutLabel + '</strong><small>' +
-    (fakeout ? fakeout.reason : "รอข้อมูล") + '</small><b>' +
-    (fakeout && fakeout.detected ? fakeout.score + "%" : "--") + '</b></div>' +
-    '<p class="empty-state">' + fakeoutEvidence + '</p>' +
-    '<p class="eyebrow">เครื่องมือที่ AI ใช้</p>' + rowHtml +
-    '<p class="empty-state">' + (analysis.blockers || []).join(" · ") + '</p>';
+  const signals = data.emaSignals || [];
+  const calls = signals.filter(x => x.direction === "CALL");
+  const puts = signals.filter(x => x.direction === "PUT");
+  setText("aiModeBadge", "EMA 1–20 อิสระ");
+  summary.textContent = "วิเคราะห์แยกทีละเส้น · CALL " + calls.length +
+    " เส้น · PUT " + puts.length + " เส้น · ไม่ใช้ตัวกรอง RSI / MACD / ADX";
+  const rows = signals.map(signal =>
+    '<div class="ema-signal-row ' + signal.direction.toLowerCase() + '">' +
+    '<strong>EMA ' + signal.ema + '</strong><span>' + signal.direction +
+    '</span><small>' + signal.reason + '</small></div>'
+  );
+  metrics.innerHTML = rows.length ? rows.join("") :
+    '<p class="empty-state">แท่งปิดล่าสุดยังไม่มี EMA เส้นใดผ่านเงื่อนไขอิสระ</p>';
 }
 
 function drawPriceChart(data) {
@@ -342,22 +296,33 @@ function minuteKey(date) {
   return [date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes()].join("-");
 }
 function triggerSignalForClosedCandle(data) {
-  const signal = data && data.aiSignal;
-  if (!data || data.dataFresh !== true || data.error || !signal ||
-      !signal.id || state.lastTriggeredSignalIds.has(signal.id)) {
+  if (!data || data.dataFresh !== true || data.error) return;
+  const freshSignals = (data.emaSignals || []).filter(signal =>
+    signal.id && !state.lastTriggeredSignalIds.has(signal.id)
+  );
+  if (!freshSignals.length) {
     state.activeDirection = "STANDBY";
     state.activeUntil = 0;
-    renderSignal(data || { dataFresh: false, reason: "รอแท่ง 1 นาทีปิด" });
+    renderSignal(data);
     return;
   }
-  state.lastTriggeredSignalIds.add(signal.id);
-  state.activeDirection = signal.direction;
+  freshSignals.forEach(signal => state.lastTriggeredSignalIds.add(signal.id));
+  const calls = freshSignals.filter(x => x.direction === "CALL");
+  const puts = freshSignals.filter(x => x.direction === "PUT");
+  const aggregate = data.aiSignal;
+  state.activeDirection = aggregate ? aggregate.direction : "STANDBY";
   state.activeUntil = Date.now() + Number(data.signalDurationMs || 40000);
-  state.activeMessage = "ยืนยันหลังแท่งปิด · " + signal.reason;
+  state.activeMessage = "สัญญาณอิสระ: " +
+    (calls.length ? "CALL จาก " + calls.map(x => "EMA " + x.ema).join(", ") : "") +
+    (calls.length && puts.length ? " · " : "") +
+    (puts.length ? "PUT จาก " + puts.map(x => "EMA " + x.ema).join(", ") : "");
   renderSignal(Object.assign({}, data, {
-    candidate: signal.direction, score: signal.score, reason: state.activeMessage
+    candidate: state.activeDirection,
+    score: aggregate ? aggregate.score : 0,
+    reason: state.activeMessage
   }));
-  playBeep(signal.direction === "CALL" ? 1050 : 480, 320);
+  if (calls.length) playBeep(1050, 320);
+  if (puts.length) playBeep(480, 320);
   vibrate([180, 70, 180]);
 }
 
