@@ -24,7 +24,7 @@ const state = {
   rsi14: null, macd: null, bullVotes: 0, bearVotes: 0,
   score: 0, candidate: "STANDBY", reason: "กำลังรอข้อมูลตลาด",
   aiSignal: null, aiAnalysis: null, technicalIndicators: {},
-  error: null, candles: [], lastPollAt: null, nextPollAt: null
+  error: null, candles: [], signalReviews: [], lastPollAt: null, nextPollAt: null
 };
 
 let pollInProgress = false;
@@ -314,6 +314,50 @@ function analyzeMarket(candles) {
   return { price, candle, emaValues, emaLines, emaSignals, chartCandles, trend, indicators, analysis, signal, fakeout, score, closes };
 }
 
+function updateSignalReviews(candles, signal) {
+  const reviews = state.signalReviews || [];
+  for (const review of reviews) {
+    const entryIndex = candles.findIndex(c => c.datetime === review.candleTime);
+    if (entryIndex < 0) continue;
+    for (const horizon of [1, 2, 3]) {
+      if (review.originalOutcomes[horizon] !== null) continue;
+      const target = candles[entryIndex + horizon];
+      if (!target) continue;
+      const outcome = (direction, entry, close) => {
+        if (Math.abs(close - entry) < Number.EPSILON) return "FLAT";
+        return direction === "CALL" ? (close > entry ? "WIN" : "LOSS") :
+          (close < entry ? "WIN" : "LOSS");
+      };
+      review.originalOutcomes[horizon] = outcome(review.originalDirection, review.entryPrice, target.close);
+      review.finalOutcomes[horizon] = outcome(review.finalDirection, review.entryPrice, target.close);
+      review.reviewedThrough = target.datetime;
+    }
+  }
+  if (signal && signal.id && !reviews.some(r => r.id === signal.id)) {
+    reviews.push({
+      id:signal.id, candleTime:signal.candleTime, entryPrice:candles[candles.length - 1].close,
+      originalDirection:signal.originalDirection || signal.direction,
+      finalDirection:signal.direction, wasReversed:Boolean(signal.originalDirection),
+      originalOutcomes:{1:null,2:null,3:null}, finalOutcomes:{1:null,2:null,3:null},
+      reviewedThrough:null
+    });
+  }
+  return reviews.slice(-100);
+}
+function getSignalReviewStats(reviews) {
+  const stats = {};
+  for (const horizon of [1, 2, 3]) {
+    const summarize = key => {
+      const values = reviews.map(r => r[key][horizon]).filter(v => v === "WIN" || v === "LOSS");
+      const wins = values.filter(v => v === "WIN").length;
+      return { wins, losses:values.length-wins, count:values.length,
+        winRate:values.length ? Math.round(wins / values.length * 100) : null };
+    };
+    stats[horizon] = { original:summarize("originalOutcomes"), final:summarize("finalOutcomes") };
+  }
+  return stats;
+}
+
 async function fetchMarketData() {
   if (!API_KEY) throw new Error("ยังไม่ได้ตั้ง TWELVE_DATA_API_KEY ใน Render Environment Variables");
   const url = new URL("https://api.twelvedata.com/time_series");
@@ -338,6 +382,7 @@ async function fetchMarketData() {
     throw new Error("ข้อมูล OHLC ที่ได้รับไม่ถูกต้อง");
   }
   const result = analyzeMarket(candles);
+  state.signalReviews = updateSignalReviews(candles, result.signal);
   const stamp = Date.now();
   const bullVotes = Object.values(result.emaValues).filter(v=>result.price>v).length;
   const bearVotes = Object.values(result.emaValues).filter(v=>result.price<v).length;
@@ -383,6 +428,7 @@ function publicState() {
     aiSignal:fresh?state.aiSignal:null,score:fresh?state.score:0,
     candidate:fresh?state.candidate:"STANDBY",reason:fresh?state.reason:"ข้อมูลตลาดเก่าหรือยังไม่พร้อม",
     error:state.error,lastPollAt:state.lastPollAt,nextPollAt:state.nextPollAt,
+    signalReviews:state.signalReviews.slice(-10),signalReviewStats:getSignalReviewStats(state.signalReviews),
     serverTime:Date.now(),signalDurationMs:SIGNAL_DURATION_MS,minScore:MIN_SCORE
   };
 }
