@@ -129,7 +129,11 @@ function renderAIAnalysis(data) {
     return ["ผลย้อนหลัง " + horizon + " แท่ง", "เดิม " + fmt(original) + " · หลังปรับ " + fmt(final),
       "นับเฉพาะผลที่มีแท่งปิดครบแล้ว"];
   };
+  const pressure = tech.pressure || analysis.pressure || null;
+  const pressureLabel = pressure ? "ซื้อ " + pressure.buy + "% · ขาย " + pressure.sell + "%" : "--";
+  const pressureStatus = !pressure ? "รอข้อมูล" : pressure.confirmed ? "ยืนยันฝั่ง " + (pressure.direction === "CALL" ? "ซื้อ" : "ขาย") : "แรงยังไม่พอ · STANDBY";
   const rows = [
+    ["แรงซื้อ / แรงขาย", pressureLabel, pressureStatus + " · 3 แท่งล่าสุด ซื้อ " + (pressure ? pressure.recentBuy : "--") + "% / ขาย " + (pressure ? pressure.recentSell : "--") + "%"],
     ["Fakeout / กลับทิศ", fakeoutLabel, fakeoutEvidence],
     reviewRow(1), reviewRow(2), reviewRow(3),
     ["คะแนนยืนยันกลับทิศ", fakeout && fakeout.detected ? fakeout.score + "%" : "--", "ต้องผ่านอย่างน้อย 4 ใน 5 เงื่อนไข"],
