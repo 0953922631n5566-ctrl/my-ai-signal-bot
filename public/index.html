@@ -10,7 +10,7 @@
   <meta name="theme-color" content="#080d18">
   <meta
     name="description"
-    content="AI Signal Radar with 15 independent EMA signals"
+    content="AI Signal Radar with 20 independent EMA signals"
   >
 
   <title>AI Signal Radar</title>
@@ -142,7 +142,7 @@
       </p>
     </section>
 
-    <!-- EMA 15 INDEPENDENT SCANNER -->
+    <!-- EMA 1–20 INDEPENDENT SCANNER -->
     <section class="indicators-card">
       <div class="section-heading">
         <div>
@@ -157,7 +157,7 @@
 
     <section class="indicators-card ai-engine-card">
       <div class="section-heading">
-        <div><h3>ADAPTIVE AI CONFLUENCE</h3><p>AI เลือกน้ำหนัก Indicator อัตโนมัติ · STRICT FILTER</p></div>
+        <div><h3>INDEPENDENT EMA ENGINE</h3><p>แต่ละเส้นตัดสินใจแยกกัน · ไม่รอ EMA เส้นอื่น</p></div>
         <span id="aiModeBadge" class="signal-count">AI AUTO</span>
       </div>
       <p id="aiSummary" class="empty-state">กำลังรอผลวิเคราะห์หลายชั้น</p>
@@ -167,18 +167,18 @@
     <section class="chart-card">
       <div class="section-heading">
         <div>
-          <h3>PRICE + 15 EMA LINES</h3>
+          <h3>PRICE + 20 EMA LINES</h3>
           <p>แท่งเทียนปิดแล้ว · 80 แท่งล่าสุด</p>
         </div>
       </div>
-      <div class="chart-wrap"><canvas id="priceChart" aria-label="กราฟราคาและ EMA 15 เส้น"></canvas></div>
+      <div class="chart-wrap"><canvas id="priceChart" aria-label="กราฟราคาและ EMA 20 เส้น"></canvas></div>
       <div id="chartLegend" class="chart-legend"></div>
     </section>
 
     <section class="indicators-card">
-      <h3>INDEPENDENT EMA SIGNALS</h3>
+      <h3>สัญญาณ EMA อิสระรายเส้น</h3>
       <div id="emaSignals" class="ema-signals">
-        <p class="empty-state">ยังไม่มีแท่งปิดตัด EMA ตามแนวโน้มหลัก</p>
+        <p class="empty-state">รอแท่งปิดเพื่อประเมิน EMA แต่ละเส้นแยกกัน</p>
       </div>
     </section>
 
@@ -239,6 +239,6 @@
   </main>
 
   <!-- Load JavaScript after all page elements -->
-  <script src="/app.js?v=20261030-null-guard-6"></script>
+  <script src="/app.js?v=20261030-ema-1-20-independent-1"></script>
 </body>
 </html>
