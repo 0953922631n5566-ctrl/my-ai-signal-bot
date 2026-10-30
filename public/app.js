@@ -7,7 +7,7 @@ const EMA_COLORS = ["#f6c453", "#ff8c42", "#e879f9", "#48d1cc", "#a3e635", "#fb7
 const state = {
   sound: false, vibrate: false, audioContext: null, loading: false,
   latestData: null, activeDirection: "STANDBY", activeUntil: 0,
-  activeMessage: "", lastSignalMinute: null,
+  activeMessage: "", lastSignalMinute: null, lastTriggeredSignalIds: new Set(),
   warning10Minute: null, warning2Minute: null
 };
 
@@ -243,13 +243,14 @@ function triggerSignalAtTwoSeconds(key) {
   state.lastSignalMinute = key;
   const data = state.latestData;
   const signals = data && Array.isArray(data.emaSignals) ? data.emaSignals : [];
-  const signal = signals.find(item => item.score >= Number(data.minScore || 70));
+  const signal = signals.find(item => item.score >= Number(data.minScore || 70) && !state.lastTriggeredSignalIds.has(item.id));
   if (!data || data.dataFresh !== true || data.error || !signal) {
     state.activeDirection = "STANDBY";
     state.activeUntil = 0;
     if (data) renderSignal(data);
     return;
   }
+  state.lastTriggeredSignalIds.add(signal.id);
   state.activeDirection = signal.direction;
   state.activeUntil = Date.now() + Number(data.signalDurationMs || 40000);
   state.activeMessage = "EMA " + signal.ema + " · " + signal.reason;
