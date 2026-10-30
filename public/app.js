@@ -112,7 +112,17 @@ function renderAIAnalysis(data) {
     (analysis.trend === "UP" ? "แนวโน้มขาขึ้น" : analysis.trend === "DOWN" ? "แนวโน้มขาลง" : "แนวโน้มเป็นกลาง") +
     " · คะแนนความสอดคล้อง " + analysis.score + "% · เห็นพ้อง " + analysis.alignedVotes + "/8";
   const tech = data.technicalIndicators || {};
+  const fakeout = data.fakeout || analysis.fakeout || null;
+  const fakeoutLabel = !fakeout || fakeout.status === "NO_FAKEOUT" ? "ไม่พบสัญญาณหลอก" :
+    fakeout.confirmed ? "ยืนยันกลับทิศ " + fakeout.originalDirection + " → " + fakeout.reversalDirection :
+    "เฝ้าระวัง Fakeout · ยังไม่กลับสัญญาณ";
+  const fakeoutClass = fakeout && fakeout.confirmed ? "put" : fakeout && fakeout.detected ? "standby" : "call";
+  const fakeoutEvidence = fakeout && Array.isArray(fakeout.evidence)
+    ? fakeout.evidence.map(item => (item.passed ? "✓ " : "× ") + item.label).join(" · ")
+    : "รอข้อมูลแท่งปิด";
   const rows = [
+    ["Fakeout / กลับทิศ", fakeoutLabel, fakeoutEvidence],
+    ["คะแนนยืนยันกลับทิศ", fakeout && fakeout.detected ? fakeout.score + "%" : "--", "ต้องผ่านอย่างน้อย 4 ใน 5 เงื่อนไข"],
     ["ADX", tech.adx14, "แรงของแนวโน้ม"], ["RSI", tech.rsi14, "โมเมนตัม"],
     ["MACD Histogram", tech.macdHistogram, "ทิศทางโมเมนตัม"],
     ["Stochastic K/D", tech.stochastic ? tech.stochastic.k + " / " + tech.stochastic.d : "--", "แรงซื้อขาย"],
@@ -130,6 +140,11 @@ function renderAIAnalysis(data) {
     (row[1] === null || row[1] === undefined ? "--" : row[1]) + '</span><small>' + row[2] + '</small></div>'
   ).join("");
   metrics.innerHTML = '<p class="eyebrow">ตัวกรองเข้มงวด</p>' + gateHtml +
+    '<p class="eyebrow">ตรวจจับสัญญาณหลอก / กลับทิศ</p>' +
+    '<div class="ema-signal-row ' + fakeoutClass + '"><strong>' + fakeoutLabel + '</strong><small>' +
+    (fakeout ? fakeout.reason : "รอข้อมูล") + '</small><b>' +
+    (fakeout && fakeout.detected ? fakeout.score + "%" : "--") + '</b></div>' +
+    '<p class="empty-state">' + fakeoutEvidence + '</p>' +
     '<p class="eyebrow">เครื่องมือที่ AI ใช้</p>' + rowHtml +
     '<p class="empty-state">' + (analysis.blockers || []).join(" · ") + '</p>';
 }
