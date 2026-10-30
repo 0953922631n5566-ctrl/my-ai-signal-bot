@@ -75,6 +75,27 @@ async function getJson(url, timeoutMs = 15000) {
     return data;
   } finally { clearTimeout(timeout); }
 }
+async function postJson(url, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method:"POST", cache:"no-store", headers:{Accept:"application/json"}, signal:controller.signal });
+    const data = await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.error || "เซิร์ฟเวอร์ตอบกลับ "+response.status);
+    return data;
+  } finally { clearTimeout(timeout); }
+}
+function renderScanControls(data) {
+  const active=Boolean(data && data.scanActive);
+  $("startScanBtn").disabled=active;
+  $("stopScanBtn").disabled=!active;
+  $("startScanBtn").textContent=active?"กำลังสแกนอยู่":"เปิดสแกน";
+  $("stopScanBtn").textContent=active?"ปิดสแกน":"สแกนปิดอยู่";
+  $("scanStateText").textContent=active
+    ?"สถานะ: เปิดสแกน · ตรวจข้อมูลทุก 1 นาที"
+    :"สถานะ: ปิดสแกน · "+((data&&data.scanStopReason)||"รอให้กดเปิดสแกน");
+  $("scanStateText").classList.toggle("scan-active",active);
+}
 
 function renderEmaGrid(data) {
   const values = data.emaValues || {};
@@ -283,6 +304,7 @@ async function refreshDashboard() {
     const health = results[0], data = results[1];
     const previousCandleTime = state.latestData && state.latestData.candleTime;
     state.latestData = data;
+    renderScanControls(data);
     // Only alert after the server reports a different, fully closed candle.
     if (previousCandleTime && data.candleTime && data.candleTime !== previousCandleTime &&
         data.dataFresh === true && !data.error) {
@@ -369,14 +391,52 @@ $("vibrateBtn").addEventListener("click", () => {
   $("vibrateBtn").classList.toggle("active", state.vibrate);
   if (state.vibrate) vibrate([100]);
 });
-$("refreshBtn").addEventListener("click", async () => {
-  $("refreshBtn").disabled = true;
-  $("refreshBtn").textContent = "กำลังสแกน…";
-  try { await getJson("/api/scan", 20000); }
-  catch (error) { showNotice("สแกนไม่สำเร็จ", error.message || "กำลังรอข้อมูลตลาด"); }
-  await refreshDashboard();
+$("startScanBtn").addEventListener("click", async () => {
+  $("startScanBtn").disabled=true;
+  $("startScanBtn").textContent="กำลังเปิดสแกน…";
+  try {
+    const data=await postJson("/api/scan/start",30000);
+    state.latestData=data;
+    renderScanControls(data);
+    await refreshDashboard();
+  } catch(error) {
+    showNotice("เปิดสแกนไม่สำเร็จ",error.message||"ตรวจสอบการเชื่อมต่อ Render");
+    $("startScanBtn").disabled=false;
+    $("startScanBtn").textContent="เปิดสแกน";
+  }
 });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshDashboard(); });
+$("stopScanBtn").addEventListener("click", async () => {
+  $("stopScanBtn").disabled=true;
+  try {
+    const data=await postJson("/api/scan/stop");
+    state.latestData=data;
+    renderScanControls(data);
+    state.activeDirection="STANDBY";
+    state.activeUntil=0;
+    await refreshDashboard();
+  } catch(error) {
+    showNotice("ปิดสแกนไม่สำเร็จ",error.message||"ลองอีกครั้ง");
+    $("stopScanBtn").disabled=false;
+  }
+});
+$("refreshBtn").addEventListener("click", refreshDashboard);
+let heartbeatBusy=false;
+setInterval(async()=>{
+  if(document.hidden || heartbeatBusy) return;
+  heartbeatBusy=true;
+  try {
+    const data=await postJson("/api/scan/heartbeat",8000);
+    renderScanControls(data);
+  } catch(error) { console.warn("ส่ง heartbeat ไม่สำเร็จ:",error.message); }
+  finally { heartbeatBusy=false; }
+},20000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    refreshDashboard();
+    if(state.latestData && state.latestData.scanActive) postJson("/api/scan/heartbeat",8000).catch(()=>{});
+  }
+});
+window.addEventListener("pagehide",()=>{ /* Server watchdog stops scanning if this page closes. */ });
 window.addEventListener("resize", () => { if (state.latestData) drawPriceChart(state.latestData); });
 renderChartLegend();
 updateCountdown();
