@@ -248,7 +248,13 @@ async function refreshDashboard() {
   try {
     const results = await Promise.all([getJson("/api/health"), getJson("/api/status")]);
     const health = results[0], data = results[1];
+    const previousCandleTime = state.latestData && state.latestData.candleTime;
     state.latestData = data;
+    // Only alert after the server reports a different, fully closed candle.
+    if (previousCandleTime && data.candleTime && data.candleTime !== previousCandleTime &&
+        data.dataFresh === true && !data.error) {
+      triggerSignalForClosedCandle(data);
+    }
     const connected = health.apiKeyConfigured === true && data.dataFresh === true && !data.error && data.price !== null && data.price !== undefined;
     if (connected) { setConnection(true, "เชื่อมต่อข้อมูลตลาดแล้ว"); hideNotice(); }
     else {
@@ -273,26 +279,22 @@ async function refreshDashboard() {
 function minuteKey(date) {
   return [date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes()].join("-");
 }
-function triggerSignalAtTwoSeconds(key) {
-  if (state.lastSignalMinute === key) return;
-  state.lastSignalMinute = key;
-  const data = state.latestData;
-  const aiSignal = data && data.aiSignal;
-  const signals = data && Array.isArray(data.emaSignals) ? data.emaSignals : [];
-  const signal = aiSignal && aiSignal.score >= Number(data.minScore || 78) &&
-    !state.lastTriggeredSignalIds.has(aiSignal.id) ? aiSignal :
-    signals.find(item => item.score >= Number(data.minScore || 78) && !state.lastTriggeredSignalIds.has(item.id));
-  if (!data || data.dataFresh !== true || data.error || !signal) {
+function triggerSignalForClosedCandle(data) {
+  const signal = data && data.aiSignal;
+  if (!data || data.dataFresh !== true || data.error || !signal ||
+      !signal.id || state.lastTriggeredSignalIds.has(signal.id)) {
     state.activeDirection = "STANDBY";
     state.activeUntil = 0;
-    if (data) renderSignal(data);
+    renderSignal(data || { dataFresh: false, reason: "รอแท่ง 1 นาทีปิด" });
     return;
   }
   state.lastTriggeredSignalIds.add(signal.id);
   state.activeDirection = signal.direction;
   state.activeUntil = Date.now() + Number(data.signalDurationMs || 40000);
-  state.activeMessage = (signal.ema ? "EMA " + signal.ema + " · " : "AI AUTO · ") + signal.reason;
-  renderSignal(Object.assign({}, data, { candidate: signal.direction, score: signal.score, reason: state.activeMessage }));
+  state.activeMessage = "ยืนยันหลังแท่งปิด · " + signal.reason;
+  renderSignal(Object.assign({}, data, {
+    candidate: signal.direction, score: signal.score, reason: state.activeMessage
+  }));
   playBeep(signal.direction === "CALL" ? 1050 : 480, 320);
   vibrate([180, 70, 180]);
 }
@@ -308,9 +310,6 @@ function updateCountdown() {
   const key = minuteKey(now);
   if (remainingMs <= 10000 && remainingMs > 0 && state.warning10Minute !== key) {
     state.warning10Minute = key; playBeep(650, 220); vibrate([160]);
-  }
-  if (remainingMs <= 2000 && remainingMs > 0 && state.warning2Minute !== key) {
-    state.warning2Minute = key; triggerSignalAtTwoSeconds(key);
   }
   if (state.activeUntil && Date.now() >= state.activeUntil) {
     state.activeUntil = 0;
