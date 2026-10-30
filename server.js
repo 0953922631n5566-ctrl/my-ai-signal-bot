@@ -31,6 +31,10 @@ const state = {
 
 let pollInProgress = false;
 let pollTimer = null;
+let scanActive = false;
+let lastClientHeartbeatMs = 0;
+let scanStopReason = "ยังไม่ได้เปิดสแกน";
+let heartbeatWatchdog = null;
 
 function emaSeries(values, period) {
   if (!Array.isArray(values) || values.length < period) return [];
@@ -458,7 +462,9 @@ function publicState() {
     candidate:fresh?state.candidate:"STANDBY",reason:fresh?state.reason:"ข้อมูลตลาดเก่าหรือยังไม่พร้อม",
     error:state.error,historyBars:state.historyBars,historyBarsRequired:MIN_COMPLETED_BARS,
     apiCreditsUsed:state.apiCreditsUsed,apiCreditsLeft:state.apiCreditsLeft,
-    lastPollAt:state.lastPollAt,nextPollAt:state.nextPollAt,
+    lastPollAt:state.lastPollAt,nextPollAt:scanActive?state.nextPollAt:null,
+    scanActive, lastClientHeartbeatAt:lastClientHeartbeatMs?new Date(lastClientHeartbeatMs).toISOString():null,
+    scanStopReason,
     signalReviews:state.signalReviews.slice(-10),signalReviewStats:getSignalReviewStats(state.signalReviews),
     serverTime:Date.now(),signalDurationMs:SIGNAL_DURATION_MS,minScore:MIN_SCORE
   };
@@ -475,24 +481,46 @@ app.get("/api/radar",(req,res)=>{
     pairs:[{symbol:d.symbol,price:d.price,candidate:d.candidate,score:d.score,rsi14:d.rsi14,
       reason:d.reason,emaSignals:d.emaSignals,aiSignal:d.aiSignal,aiAnalysis:d.aiAnalysis,fakeout:d.fakeout}]});
 });
-async function handleScan(req,res){
-  res.set("Cache-Control","no-store");
-  const age=state.fetchedAtMs?Date.now()-state.fetchedAtMs:Infinity;
-  if((!state.fetchedAtMs||age>=POLL_MS)&&!pollInProgress) await pollMarket();
-  const d=publicState();res.status(d.error&&!d.fetchedAt?503:200).json({ok:!d.error&&d.dataFresh,...d});
+function sendScanState(res) {
+  const d=publicState(); res.set("Cache-Control","no-store");
+  res.status(d.error&&!d.fetchedAt?503:200).json({ok:!d.error&&d.dataFresh,...d});
 }
-app.get("/api/scan",handleScan);app.post("/api/scan",handleScan);
+app.post("/api/scan/start",async(req,res)=>{
+  res.set("Cache-Control","no-store");
+  scanActive=true; lastClientHeartbeatMs=Date.now(); scanStopReason=null;
+  if(heartbeatWatchdog) clearInterval(heartbeatWatchdog);
+  heartbeatWatchdog=setInterval(()=>{
+    if(scanActive && Date.now()-lastClientHeartbeatMs>65000) stopScanSession("หยุดสแกนอัตโนมัติ: ไม่พบการใช้งาน Mini App เกิน 65 วินาที");
+  },10000);
+  if(pollTimer) { clearTimeout(pollTimer); pollTimer=null; }
+  await pollMarket();
+  if(scanActive) scheduleNextPoll();
+  sendScanState(res);
+});
+app.post("/api/scan/stop",(req,res)=>{ stopScanSession("ปิดสแกนโดยผู้ใช้"); sendScanState(res); });
+app.post("/api/scan/heartbeat",(req,res)=>{ if(scanActive) lastClientHeartbeatMs=Date.now(); sendScanState(res); });
+app.get("/api/scan",(req,res)=>sendScanState(res));
+app.post("/api/scan",(req,res)=>sendScanState(res));
 app.get("/",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 app.get(/.*/,(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
+function stopScanSession(reason) {
+  scanActive=false; scanStopReason=reason||"ปิดสแกนแล้ว"; state.nextPollAt=null;
+  if(pollTimer) { clearTimeout(pollTimer); pollTimer=null; }
+  if(heartbeatWatchdog) { clearInterval(heartbeatWatchdog); heartbeatWatchdog=null; }
+  console.log("[SCAN SESSION] stopped: "+scanStopReason);
+}
 function scheduleNextPoll() {
+  if(!scanActive) return;
   // Align one fetch to just after each UTC minute boundary so the newly closed
   // one-minute candle is evaluated once it becomes available from the provider.
   const delay = Math.max(1000, 60000 - (Date.now() % 60000) + 1500);
   state.nextPollAt = new Date(Date.now() + delay).toISOString();
   pollTimer = setTimeout(async () => {
+    pollTimer=null;
+    if(!scanActive) return;
     await pollMarket();
-    scheduleNextPoll();
+    if(scanActive) scheduleNextPoll();
   }, delay);
 }
-app.listen(PORT,async()=>{console.log("AI Signal Radar running on port "+PORT);await pollMarket();scheduleNextPoll();});
-process.on("SIGTERM",()=>{if(pollTimer)clearTimeout(pollTimer);process.exit(0);});
+app.listen(PORT,()=>{console.log("AI Signal Radar running on port "+PORT+" (idle until Mini App starts scanning)");});
+process.on("SIGTERM",()=>{if(pollTimer)clearTimeout(pollTimer);if(heartbeatWatchdog)clearInterval(heartbeatWatchdog);process.exit(0);});
