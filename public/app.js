@@ -129,24 +129,20 @@ function renderEmaGrid(data) {
 
 function renderAIAnalysis(data) {
   const analysis = data.aiAnalysis || {};
-  const summary = $("aiSummary");
-  const metrics = $("aiMetrics");
+  const summary = $("aiSummary"), metrics = $("aiMetrics");
   if (!summary || !metrics) return;
-  const signals = data.emaSignals || [];
-  const calls = signals.filter(x => x.direction === "CALL");
-  const puts = signals.filter(x => x.direction === "PUT");
-  setText("aiModeBadge", "EMA 1–20 อิสระ");
-  summary.textContent = "วิเคราะห์แยกทีละเส้น · CALL " + calls.length +
-    " เส้น · PUT " + puts.length + " เส้น · ไม่ใช้ตัวกรอง RSI / MACD / ADX";
-  const rows = signals.map(signal =>
-    '<div class="ema-signal-row ' + signal.direction.toLowerCase() + '">' +
-    '<strong>EMA ' + signal.ema + '</strong><span>' + signal.direction +
-    '</span><small>' + signal.reason + '</small></div>'
-  );
-  metrics.innerHTML = rows.length ? rows.join("") :
-    '<p class="empty-state">แท่งปิดล่าสุดยังไม่มี EMA เส้นใดผ่านเงื่อนไขอิสระ</p>';
+  const votes = Array.isArray(analysis.strategyVotes) ? analysis.strategyVotes : [];
+  setText("aiModeBadge", "AI รวมหลายกลยุทธ์");
+  summary.textContent = "CALL " + (analysis.callVotes || 0) + " กลุ่ม · PUT " +
+    (analysis.putVotes || 0) + " กลุ่ม · ต้องเห็นตรงกันอย่างน้อย 4 กลุ่ม";
+  metrics.innerHTML = votes.length ? votes.map(v =>
+    '<div class="ema-signal-row ' + String(v.direction || "standby").toLowerCase() + '">' +
+    '<strong>' + String(v.name || "Strategy") + '</strong><span>' +
+    String(v.direction || "NO SIGNAL") + '</span><small>' +
+    String(v.detail || "") + '</small><b>' + Number(v.weight || 0) + ' pts</b></div>'
+  ).join("") : '<p class="empty-state">' +
+    ((analysis.blockers || []).join(" · ") || "กำลังรวบรวมข้อมูลหลายกลยุทธ์") + '</p>';
 }
-
 function drawPriceChart(data) {
   const canvas = $("priceChart");
   const candles = data.candles || [];
@@ -297,35 +293,29 @@ function minuteKey(date) {
 }
 function triggerSignalForClosedCandle(data) {
   if (!data || data.dataFresh !== true || data.error) return;
-  const freshSignals = (data.emaSignals || []).filter(signal =>
-    signal.id && !state.lastTriggeredSignalIds.has(signal.id)
-  );
-  if (!freshSignals.length) {
+  const signal = data.aiSignal;
+  if (!signal || !signal.id || !["CALL","PUT"].includes(signal.direction)) {
     state.activeDirection = "STANDBY";
     state.activeUntil = 0;
     renderSignal(data);
     return;
   }
-  freshSignals.forEach(signal => state.lastTriggeredSignalIds.add(signal.id));
-  const calls = freshSignals.filter(x => x.direction === "CALL");
-  const puts = freshSignals.filter(x => x.direction === "PUT");
-  const aggregate = data.aiSignal;
-  state.activeDirection = aggregate ? aggregate.direction : "STANDBY";
+  if (state.lastTriggeredSignalIds.has(signal.id)) return;
+  state.lastTriggeredSignalIds.add(signal.id);
+  if (state.lastTriggeredSignalIds.size > 300) {
+    state.lastTriggeredSignalIds = new Set(Array.from(state.lastTriggeredSignalIds).slice(-150));
+  }
+  state.activeDirection = signal.direction;
   state.activeUntil = Date.now() + Number(data.signalDurationMs || 40000);
-  state.activeMessage = "สัญญาณอิสระ: " +
-    (calls.length ? "CALL จาก " + calls.map(x => "EMA " + x.ema).join(", ") : "") +
-    (calls.length && puts.length ? " · " : "") +
-    (puts.length ? "PUT จาก " + puts.map(x => "EMA " + x.ema).join(", ") : "");
+  state.activeMessage = signal.reason || "AI Ensemble · " + signal.direction;
   renderSignal(Object.assign({}, data, {
     candidate: state.activeDirection,
-    score: aggregate ? aggregate.score : 0,
+    score: signal.score || data.score || 0,
     reason: state.activeMessage
   }));
-  if (calls.length) playBeep(1050, 320);
-  if (puts.length) playBeep(480, 320);
+  playBeep(signal.direction === "CALL" ? 1050 : 480, 360);
   vibrate([180, 70, 180]);
 }
-
 function updateCountdown() {
   const now = new Date();
   const elapsed = now.getSeconds() * 1000 + now.getMilliseconds();
@@ -337,6 +327,9 @@ function updateCountdown() {
   const key = minuteKey(now);
   if (remainingMs <= 10000 && remainingMs > 0 && state.warning10Minute !== key) {
     state.warning10Minute = key; playBeep(650, 220); vibrate([160]);
+  }
+  if (remainingMs <= 2000 && remainingMs > 0 && state.warning2Minute !== key) {
+    state.warning2Minute = key; playBeep(900, 300); vibrate([120, 60, 120]);
   }
   if (state.activeUntil && Date.now() >= state.activeUntil) {
     state.activeUntil = 0;
