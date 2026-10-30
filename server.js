@@ -250,11 +250,13 @@ function analyzeMarket(candles) {
     // EMA 1 equals the close price by definition, so its independent
     // direction is the slope of EMA 1 (the last closed candle vs prior close).
     if (period === 1) {
-      if (currentEma > previousEma) direction = "CALL";
-      else if (currentEma < previousEma) direction = "PUT";
-    } else if (price > currentEma && currentEma > previousEma) {
+      const priorSlope = previousEma - emaLines[1][prev - 1];
+      const currentSlope = currentEma - previousEma;
+      if (priorSlope <= 0 && currentSlope > 0) direction = "CALL";
+      else if (priorSlope >= 0 && currentSlope < 0) direction = "PUT";
+    } else if (closes[prev] <= previousEma && price > currentEma && currentEma > previousEma) {
       direction = "CALL";
-    } else if (price < currentEma && currentEma < previousEma) {
+    } else if (closes[prev] >= previousEma && price < currentEma && currentEma < previousEma) {
       direction = "PUT";
     }
 
