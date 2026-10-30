@@ -263,6 +263,8 @@ function analyzeMarket(candles) {
   const volumeRatio = volumeAvailable && averageVolume > 0 ? currentVolume / averageVolume : null;
   const volumeConfirmed = volumeRatio !== null && volumeRatio >= 1.05;
   const atrConfirmed = Number.isFinite(atr14) && price > 0 && atr14 / price >= 0.00003;
+  // ADX regime filter: avoid low-directional-strength / sideways conditions.
+  const adxConfirmed = Number.isFinite(adx14) && adx14 >= 20;
   const rsiBuy = Number.isFinite(rsi14) && rsi14 > 50;
   const rsiSell = Number.isFinite(rsi14) && rsi14 < 50;
 
@@ -280,13 +282,15 @@ function analyzeMarket(candles) {
 
   let direction = "STANDBY", score = 0;
   let reason = "ยังไม่มี EMA 5/20 crossover ที่ผ่านตัวกรองทั้งหมด";
-  const commonFiltersPass = atrConfirmed && volumeConfirmed;
+  const commonFiltersPass = atrConfirmed && volumeConfirmed && adxConfirmed;
   if (!volumeAvailable) {
     reason = "ไม่มีข้อมูล Volume จริงครบ 21 แท่งจากผู้ให้บริการ จึงงดส่งสัญญาณ";
   } else if (!volumeConfirmed) {
     reason = "Volume ยังไม่ยืนยันแรงซื้อขาย (ต้องไม่น้อยกว่า 1.05 เท่าของค่าเฉลี่ย 20 แท่ง)";
   } else if (!atrConfirmed) {
     reason = "ATR 14 ต่ำกว่าเกณฑ์ ตลาดนิ่งเกินไป จึงงดเข้าออเดอร์";
+  } else if (!adxConfirmed) {
+    reason = "ADX 14 ต่ำกว่า 20: ตลาดยังไม่มีเทรนด์ชัดเจน (Sideway) จึงงดเข้าออเดอร์";
   } else if (bullTrap && rsiSell) {
     direction = "PUT"; score = 85;
     reason = "Bull Trap confirmed: แท่งก่อนมีไส้บนยาวและแท่งปิดล่าสุดหลุด Low ของแท่งกับดัก";
@@ -332,22 +336,33 @@ function analyzeMarket(candles) {
     reason: bullTrap ? "Bull Trap: กลับฝั่งเป็น PUT" : bearTrap ? "Bear Trap: กลับฝั่งเป็น CALL" : "ไม่พบกับดักที่ยืนยันด้วยแท่งปิด"
   };
 
-  const riskDistance = Number.isFinite(atr14) ? atr14 * 1.2 : null;
+  // Structure-based stop: beyond EMA20 and the recent 5-candle swing, with a small ATR buffer.
+  const priorSwing = candles.slice(Math.max(0, last - 5), last);
+  const recentLow = priorSwing.length ? Math.min(...priorSwing.map(c => c.low)) : current.low;
+  const recentHigh = priorSwing.length ? Math.max(...priorSwing.map(c => c.high)) : current.high;
+  const stopBuffer = Number.isFinite(atr14) ? atr14 * 0.1 : 0;
+  const stopPrice = direction === "CALL"
+    ? Math.min(ema[20], recentLow) - stopBuffer
+    : direction === "PUT" ? Math.max(ema[20], recentHigh) + stopBuffer : null;
+  const riskDistance = Number.isFinite(stopPrice) ? Math.abs(price - stopPrice) : null;
   const risk = direction !== "STANDBY" && riskDistance > 0 ? {
     entry:round(price),
-    stopLoss:round(direction==="CALL" ? price-riskDistance : price+riskDistance),
+    stopLoss:round(stopPrice),
     takeProfit15:round(direction==="CALL" ? price+riskDistance*1.5 : price-riskDistance*1.5),
     takeProfit20:round(direction==="CALL" ? price+riskDistance*2 : price-riskDistance*2),
     riskReward:"1:1.5 / 1:2",
-    method:"ATR(14) reference levels; no broker order execution"
+    trailingReference:"EMA 5",
+    stopMethod:"Beyond EMA 20 and previous 5-candle swing, plus 0.1 ATR buffer",
+    method:"Structure-based reference levels; no broker order execution"
   } : null;
 
   const checks = [
     {name:"EMA 5/20 crossover",passed:direction!=="STANDBY" && (crossedUp||crossedDown),weight:35},
     {name:"Closed candle above/below both EMAs",passed:direction==="CALL"?closeAboveBoth:direction==="PUT"?closeBelowBoth:false,weight:20},
     {name:"RSI 14 zone confirmation",passed:direction==="CALL"?rsiBuy:direction==="PUT"?rsiSell:false,weight:15},
-    {name:"ATR 14 volatility filter",passed:atrConfirmed,weight:15},
-    {name:"Volume confirmation >= 1.05x",passed:volumeConfirmed,weight:15}
+    {name:"ATR 14 volatility filter",passed:atrConfirmed,weight:12},
+    {name:"Volume confirmation >= 1.05x",passed:volumeConfirmed,weight:12},
+    {name:"ADX 14 trend regime >= 20",passed:adxConfirmed,weight:8}
   ];
   const strategyVotes = checks.map(x=>({name:x.name,direction:x.passed?"PASS":"WAIT",weight:x.weight,detail:x.passed?"ผ่านเงื่อนไข":"ยังไม่ผ่าน"}));
   const signal = direction === "STANDBY" ? null : {
@@ -368,7 +383,7 @@ function analyzeMarket(candles) {
     emaAlignment:{bullish:ema[5]>ema[20]?1:0,bearish:ema[5]<ema[20]?1:0,total:1},
     breakout:{direction:null,priorHigh:null,priorLow:null,bodyRatio:null},
     strategyVotes,callWeight:direction==="CALL"?score:0,putWeight:direction==="PUT"?score:0,
-    activeWeight:score,volumeRatio:round(volumeRatio,3),volumeConfirmed,atrConfirmed,risk
+    activeWeight:score,volumeRatio:round(volumeRatio,3),volumeConfirmed,atrConfirmed,adxConfirmed,risk
   };
   const blockers = direction==="STANDBY" ? [reason] : [];
   const analysis = {
@@ -381,9 +396,9 @@ function analyzeMarket(candles) {
     callVotes:direction==="CALL"?checks.filter(x=>x.passed).length:0,
     putVotes:direction==="PUT"?checks.filter(x=>x.passed).length:0,
     callWeight:direction==="CALL"?score:0,putWeight:direction==="PUT"?score:0,
-    alignedVotes:checks.filter(x=>x.passed).length,totalStrategies:5,requiredVotes:5,minimumScore:80,
+    alignedVotes:checks.filter(x=>x.passed).length,totalStrategies:6,requiredVotes:6,minimumScore:80,
     blockers,strategyVotes,breakout:indicators.breakout,fakeout,risk,
-    note:"ไม่สร้าง Volume ปลอมหรือแทน Volume ด้วย tick/price movement; หาก Twelve Data ไม่ส่ง Volume จะไม่ออกสัญญาณ"
+    note:"ใช้แท่งปิดแล้วเท่านั้น; คัด Sideway ด้วย ADX < 20; ไม่สร้าง Volume ปลอมหรือแทน Volume ด้วย tick/price movement; หาก Twelve Data ไม่ส่ง Volume จะไม่ออกสัญญาณ; Win Rate ต้องวัดจากผลย้อนหลังจริง"
   };
   return {price,candle:current,emaValues,emaSignals:signal?[{...signal,ema:"5/20"}]:[],
     chartCandles,trend,indicators,analysis,signal,fakeout,score:signal?signal.score:0,closes};
