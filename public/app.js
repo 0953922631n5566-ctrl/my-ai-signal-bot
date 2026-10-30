@@ -1,6 +1,11 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
+function setText(id, value) {
+  const element = $(id);
+  if (element) element.textContent = value;
+  else console.warn("ข้ามการอัปเดตข้อความ: ไม่พบ element #" + id);
+}
 const EMA_PERIODS = [3, 5, 8, 9, 12, 15, 18, 21, 25, 30, 35, 40, 50, 75, 100];
 const EMA_COLORS = ["#f6c453", "#ff8c42", "#e879f9", "#48d1cc", "#a3e635", "#fb7185", "#60a5fa", "#facc15", "#c084fc", "#34d399", "#f97316", "#38bdf8", "#e5e7eb", "#a78bfa", "#fda4af"];
 
@@ -15,14 +20,14 @@ const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
 function showNotice(title, message) {
-  $("noticeTitle").textContent = title;
-  $("noticeText").textContent = message;
+  setText("noticeTitle", title);
+  setText("noticeText", message);
   $("notice").classList.remove("hidden");
 }
 function hideNotice() { $("notice").classList.add("hidden"); }
 function setConnection(online, text) {
   $("connectionDot").className = online ? "dot online" : "dot offline";
-  $("connectionText").textContent = text;
+  setText("connectionText", text);
 }
 function formatNumber(value, digits = 5) {
   if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return "--";
@@ -89,11 +94,11 @@ function renderScanControls(data) {
   const active=Boolean(data && data.scanActive);
   $("startScanBtn").disabled=active;
   $("stopScanBtn").disabled=!active;
-  $("startScanBtn").textContent=active?"กำลังสแกนอยู่":"เปิดสแกน";
-  $("stopScanBtn").textContent=active?"ปิดสแกน":"สแกนปิดอยู่";
-  $("scanStateText").textContent=active
+  setText("startScanBtn", active?"กำลังสแกนอยู่":"เปิดสแกน");
+  setText("stopScanBtn", active?"ปิดสแกน":"สแกนปิดอยู่");
+  setText("scanStateText", active
     ?"สถานะ: เปิดสแกน · ตรวจข้อมูลทุก 1 นาที"
-    :"สถานะ: ปิดสแกน · "+((data&&data.scanStopReason)||"รอให้กดเปิดสแกน");
+    :"สถานะ: ปิดสแกน · "+((data&&data.scanStopReason)||"รอให้กดเปิดสแกน"));
   $("scanStateText").classList.toggle("scan-active",active);
 }
 
@@ -108,9 +113,9 @@ function renderEmaGrid(data) {
       '<strong>' + formatNumber(values[period], 5) + '</strong><small>' + status + '</small></div>';
   }).join("");
 
-  $("emaSignalCount").textContent = (data.emaSignals || []).length + " SIGNAL";
+  setText("emaSignalCount", (data.emaSignals || []).length + " SIGNAL");
   const trend = data.marketTrend || "NEUTRAL";
-  $("trendLabel").textContent = "แนวโน้มหลัก: " + (trend === "UP" ? "ขาขึ้น" : trend === "DOWN" ? "ขาลง" : "เป็นกลาง");
+  setText("trendLabel", "แนวโน้มหลัก: " + (trend === "UP" ? "ขาขึ้น" : trend === "DOWN" ? "ขาลง" : "เป็นกลาง"));
   $("trendLabel").className = "trend-label " + trend.toLowerCase();
 
   const signals = data.emaSignals || [];
@@ -128,7 +133,7 @@ function renderAIAnalysis(data) {
   const metrics = $("aiMetrics");
   if (!summary || !metrics) return;
   if (!analysis) { summary.textContent = "ยังไม่มีผลวิเคราะห์ AI"; metrics.innerHTML = ""; return; }
-  $("aiModeBadge").textContent = analysis.passed ? "FILTER PASSED" : "STRICT FILTER";
+  setText("aiModeBadge", analysis.passed ? "FILTER PASSED" : "STRICT FILTER");
   summary.textContent = (analysis.passed ? "ผ่านตัวกรอง · " : "STANDBY · ") +
     (analysis.trend === "UP" ? "แนวโน้มขาขึ้น" : analysis.trend === "DOWN" ? "แนวโน้มขาลง" : "แนวโน้มเป็นกลาง") +
     " · คะแนนความสอดคล้อง " + analysis.score + "% · เห็นพ้อง " + analysis.alignedVotes + "/8";
@@ -277,18 +282,18 @@ function renderSignal(data) {
   const card = $("signalCard");
   card.classList.remove("call", "put", "standby");
   card.classList.add(direction.toLowerCase());
-  $("signalTitle").textContent = direction;
-  $("signalArrow").textContent = direction === "CALL" ? "↑" : direction === "PUT" ? "↓" : "●";
-  $("signalMessage").textContent = message;
+  setText("signalTitle", direction);
+  setText("signalArrow", direction === "CALL" ? "↑" : direction === "PUT" ? "↓" : "●");
+  setText("signalMessage", message);
   const score = direction === "STANDBY" ? 0 : Math.max(0, Math.min(100, Number(data.score) || 0));
-  $("score").textContent = score + "%";
+  setText("score", score + "%");
   $("scoreBar").style.width = score + "%";
-  $("price").textContent = formatNumber(data.price, 5);
+  setText("price", formatNumber(data.price, 5));
   const rsiElement = $("rsi14");
   if (rsiElement) rsiElement.textContent = formatNumber(data.rsi14, 2);
   const macdElement = $("macd");
   if (macdElement) macdElement.textContent = formatNumber(data.macd, 6);
-  $("lastUpdated").textContent = formatTime(data.fetchedAt || data.lastPollAt);
+  setText("lastUpdated", formatTime(data.fetchedAt || data.lastPollAt));
   const pairHeading = document.querySelector(".market-heading h2");
   if (pairHeading && data.symbol) pairHeading.textContent = data.symbol;
   renderEmaGrid(data);
@@ -300,7 +305,7 @@ async function refreshDashboard() {
   if (state.loading) return;
   state.loading = true;
   $("refreshBtn").disabled = true;
-  $("refreshBtn").textContent = "กำลังตรวจสอบ…";
+  setText("refreshBtn", "กำลังตรวจสอบ…");
   try {
     const results = await Promise.all([getJson("/api/health"), getJson("/api/status")]);
     const health = results[0], data = results[1];
@@ -329,7 +334,7 @@ async function refreshDashboard() {
   } finally {
     state.loading = false;
     $("refreshBtn").disabled = false;
-    $("refreshBtn").textContent = "สแกนข้อมูลอีกครั้ง";
+    setText("refreshBtn", "สแกนข้อมูลอีกครั้ง");
   }
 }
 
@@ -361,8 +366,8 @@ function updateCountdown() {
   const elapsed = now.getSeconds() * 1000 + now.getMilliseconds();
   const remainingMs = 60000 - elapsed;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
-  $("countdown").textContent = String(Math.floor(remainingSeconds / 60)).padStart(2, "0") + ":" + String(remainingSeconds % 60).padStart(2, "0");
-  $("countdownMessage").textContent = "อ้างอิงนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุที่ยืนยันจาก IQ Option";
+  setText("countdown", String(Math.floor(remainingSeconds / 60)).padStart(2, "0") + ":" + String(remainingSeconds % 60).padStart(2, "0"));
+  setText("countdownMessage", "อ้างอิงนาฬิกาอุปกรณ์ ไม่ใช่เวลาหมดอายุที่ยืนยันจาก IQ Option");
   $("countdownCard").classList.toggle("warning", remainingSeconds <= 10);
   const key = minuteKey(now);
   if (remainingMs <= 10000 && remainingMs > 0 && state.warning10Minute !== key) {
@@ -384,18 +389,18 @@ $("soundBtn").addEventListener("click", async () => {
       await playBeep(720, 100);
     } catch (error) { console.warn("เปิดเสียงไม่ได้:", error.message); }
   }
-  $("soundBtn").textContent = state.sound ? "ปิดเสียง" : "เปิดเสียง";
+  setText("soundBtn", state.sound ? "ปิดเสียง" : "เปิดเสียง");
   $("soundBtn").classList.toggle("active", state.sound);
 });
 $("vibrateBtn").addEventListener("click", () => {
   state.vibrate = !state.vibrate;
-  $("vibrateBtn").textContent = state.vibrate ? "ปิดสั่น" : "เปิดสั่น";
+  setText("vibrateBtn", state.vibrate ? "ปิดสั่น" : "เปิดสั่น");
   $("vibrateBtn").classList.toggle("active", state.vibrate);
   if (state.vibrate) vibrate([100]);
 });
 $("startScanBtn").addEventListener("click", async () => {
   $("startScanBtn").disabled=true;
-  $("startScanBtn").textContent="กำลังเปิดสแกน…";
+  setText("startScanBtn", "กำลังเปิดสแกน…");
   try {
     const data=await postJson("/api/scan/start",30000);
     state.latestData=data;
@@ -404,7 +409,7 @@ $("startScanBtn").addEventListener("click", async () => {
   } catch(error) {
     showNotice("เปิดสแกนไม่สำเร็จ",error.message||"ตรวจสอบการเชื่อมต่อ Render");
     $("startScanBtn").disabled=false;
-    $("startScanBtn").textContent="เปิดสแกน";
+    setText("startScanBtn", "เปิดสแกน");
   }
 });
 $("stopScanBtn").addEventListener("click", async () => {
