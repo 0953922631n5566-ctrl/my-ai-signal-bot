@@ -238,86 +238,200 @@ function analyzeMarket(candles) {
     emaLines[period] = emaSeries(closes, period);
     ema[period] = emaLines[period][last];
   }
+  const ema50Line = emaSeries(closes, 50);
+  const ema100Line = emaSeries(closes, 100);
+  const ema50 = ema50Line[last], ema100 = ema100Line[last];
+  const rsi14 = rsi(closes, 14);
+  const macd = macdData(closes);
+  const atrValues = atrSeries(candles, 14);
+  const atr14 = atrValues.length ? atrValues[atrValues.length - 1] : null;
+  const adx14 = adxValue(candles, 14);
+  const bb = bollinger(closes, 20, 2);
+  const stoch = stochastic(candles, 14, 3);
+  const cci20 = cci(candles, 20);
+  const willR14 = williamsR(candles, 14);
+  const pressure = calculatePressure(candles, 5);
 
-  // Each EMA is an independent rule. No RSI, MACD, ADX, trend consensus,
-  // pressure, or minimum-vote gate can veto an individual EMA signal.
-  const emaSignals = [];
-  for (const period of EMA_PERIODS) {
-    const currentEma = emaLines[period][last];
-    const previousEma = emaLines[period][prev];
-    let direction = null;
-
-    // EMA 1 equals the close price by definition, so its independent
-    // direction is the slope of EMA 1 (the last closed candle vs prior close).
-    if (period === 1) {
-      const priorSlope = previousEma - emaLines[1][prev - 1];
-      const currentSlope = currentEma - previousEma;
-      if (priorSlope <= 0 && currentSlope > 0) direction = "CALL";
-      else if (priorSlope >= 0 && currentSlope < 0) direction = "PUT";
-    } else if (closes[prev] <= previousEma && price > currentEma && currentEma > previousEma) {
-      direction = "CALL";
-    } else if (closes[prev] >= previousEma && price < currentEma && currentEma < previousEma) {
-      direction = "PUT";
+  // Directional movement (DMI) is calculated from the same Twelve Data OHLC candles.
+  let plusDI = null, minusDI = null;
+  if (candles.length >= 15) {
+    const tr = [], plus = [], minus = [];
+    for (let i = 1; i < candles.length; i++) {
+      const cur = candles[i], before = candles[i - 1];
+      const up = cur.high - before.high, down = before.low - cur.low;
+      tr.push(Math.max(cur.high-cur.low, Math.abs(cur.high-before.close), Math.abs(cur.low-before.close)));
+      plus.push(up > down && up > 0 ? up : 0);
+      minus.push(down > up && down > 0 ? down : 0);
     }
-
-    if (direction) {
-      emaSignals.push({
-        id: String(candle.datetime) + ":EMA" + period + ":" + direction,
-        ema: period, direction, score: 100, candleTime: candle.datetime,
-        reason: period === 1
-          ? "EMA 1: ราคาปิดล่าสุดเคลื่อนที่ " + (direction === "CALL" ? "ขึ้น" : "ลง")
-          : "EMA " + period + ": ราคาอยู่" + (direction === "CALL" ? "เหนือ" : "ใต้") +
-            "เส้น และความชัน EMA ไปทางเดียวกัน"
-      });
-    }
+    const p = tr.slice(-14).reduce((a,v)=>a+v,0);
+    const up = plus.slice(-14).reduce((a,v)=>a+v,0);
+    const down = minus.slice(-14).reduce((a,v)=>a+v,0);
+    if (p > 0) { plusDI = 100*up/p; minusDI = 100*down/p; }
   }
 
-  const callCount = emaSignals.filter(x => x.direction === "CALL").length;
-  const putCount = emaSignals.filter(x => x.direction === "PUT").length;
-  const direction = callCount > putCount ? "CALL" : putCount > callCount ? "PUT" : "STANDBY";
-  const signalCount = emaSignals.length;
-  const score = signalCount ? Math.round(Math.max(callCount, putCount) / signalCount * 100) : 0;
-  const signal = direction === "STANDBY" ? null : {
-    id: String(candle.datetime) + ":EMA-AGGREGATE:" + direction,
-    direction, score, alignedVotes: Math.max(callCount, putCount),
-    directionalVotes: signalCount, candleTime: candle.datetime,
-    reason: "EMA อิสระ " + (direction === "CALL" ? callCount : putCount) +
-      "/20 เส้นให้ทิศทาง " + direction
+  const votes = [];
+  const addVote = (name, direction, weight, detail) => {
+    if (direction === "CALL" || direction === "PUT") votes.push({name,direction,weight,detail});
   };
+  const emaTrendUp = ema[5] > ema[9] && ema[9] > ema[20] && ema[20] > emaLines[20][prev];
+  const emaTrendDown = ema[5] < ema[9] && ema[9] < ema[20] && ema[20] < emaLines[20][prev];
+  addVote("EMA trend", emaTrendUp ? "CALL" : emaTrendDown ? "PUT" : null, 25,
+    "EMA5/9/20 alignment and EMA20 slope");
+
+  const macdUp = Number.isFinite(macd.histogram) && macd.histogram > 0 && macd.line > macd.signal;
+  const macdDown = Number.isFinite(macd.histogram) && macd.histogram < 0 && macd.line < macd.signal;
+  addVote("MACD momentum", macdUp ? "CALL" : macdDown ? "PUT" : null, 15,
+    "MACD line, signal line and histogram");
+
+  let oscillatorDirection = null;
+  const rsiUp = Number.isFinite(rsi14) && rsi14 >= 55 && rsi14 < 78;
+  const rsiDown = Number.isFinite(rsi14) && rsi14 <= 45 && rsi14 > 22;
+  const stochUp = stoch && stoch.k > stoch.d && stoch.k >= 50;
+  const stochDown = stoch && stoch.k < stoch.d && stoch.k <= 50;
+  const cciUp = Number.isFinite(cci20) && cci20 > 25;
+  const cciDown = Number.isFinite(cci20) && cci20 < -25;
+  const willUp = Number.isFinite(willR14) && willR14 > -50;
+  const willDown = Number.isFinite(willR14) && willR14 < -50;
+  const oscBull = [rsiUp,stochUp,cciUp,willUp].filter(Boolean).length;
+  const oscBear = [rsiDown,stochDown,cciDown,willDown].filter(Boolean).length;
+  if (oscBull >= 3 && oscBull > oscBear) oscillatorDirection = "CALL";
+  else if (oscBear >= 3 && oscBear > oscBull) oscillatorDirection = "PUT";
+  addVote("RSI / Stochastic / CCI / Williams %R", oscillatorDirection, 15,
+    "Multi-oscillator consensus");
+
+  let strengthDirection = null;
+  if (Number.isFinite(adx14) && adx14 >= 18 && Number.isFinite(plusDI) && Number.isFinite(minusDI)) {
+    if (plusDI > minusDI * 1.12) strengthDirection = "CALL";
+    else if (minusDI > plusDI * 1.12) strengthDirection = "PUT";
+  }
+  addVote("ADX / DMI strength", strengthDirection, 15, "ADX and directional movement");
+
+  const current = candles[last], previous = candles[prev];
+  const priorRange = candles.slice(-21, -1);
+  const priorHigh = Math.max(...priorRange.map(c=>c.high));
+  const priorLow = Math.min(...priorRange.map(c=>c.low));
+  const body = current.close - current.open;
+  const range = Math.max(current.high-current.low, Number.EPSILON);
+  const upperWick = current.high-Math.max(current.open,current.close);
+  const lowerWick = Math.min(current.open,current.close)-current.low;
+  const bullishEngulf = current.close > current.open && previous.close < previous.open &&
+    current.open <= previous.close && current.close >= previous.open;
+  const bearishEngulf = current.close < current.open && previous.close > previous.open &&
+    current.open >= previous.close && current.close <= previous.open;
+  const bullishBreak = current.close > priorHigh && body > 0;
+  const bearishBreak = current.close < priorLow && body < 0;
+  const bullishReject = current.low < priorLow && current.close > priorLow && lowerWick/range >= 0.35;
+  const bearishReject = current.high > priorHigh && current.close < priorHigh && upperWick/range >= 0.35;
+  let priceActionDirection = null;
+  if (bullishBreak || bullishEngulf || bullishReject || (pressure.confirmed && pressure.direction === "CALL")) {
+    priceActionDirection = "CALL";
+  } else if (bearishBreak || bearishEngulf || bearishReject || (pressure.confirmed && pressure.direction === "PUT")) {
+    priceActionDirection = "PUT";
+  }
+  addVote("Price action / breakout / rejection", priceActionDirection, 20,
+    "Candle structure, swing breakout, rejection and buying pressure");
+
+  let volatilityDirection = null;
+  if (bb && Number.isFinite(bb.upper) && Number.isFinite(bb.lower)) {
+    const width = bb.width;
+    if (Number.isFinite(width) && width > 0) {
+      if (adx14 >= 20 && price > bb.upper && body > 0) volatilityDirection = "CALL";
+      else if (adx14 >= 20 && price < bb.lower && body < 0) volatilityDirection = "PUT";
+      else if (adx14 < 20 && price < bb.lower && rsi14 < 35 && body > 0) volatilityDirection = "CALL";
+      else if (adx14 < 20 && price > bb.upper && rsi14 > 65 && body < 0) volatilityDirection = "PUT";
+    }
+  }
+  addVote("Bollinger / volatility regime", volatilityDirection, 10,
+    "Bollinger breakout in trend or mean-reversion in range");
+
+  const callWeight = votes.filter(v=>v.direction==="CALL").reduce((s,v)=>s+v.weight,0);
+  const putWeight = votes.filter(v=>v.direction==="PUT").reduce((s,v)=>s+v.weight,0);
+  const activeWeight = callWeight + putWeight;
+  const callVotes = votes.filter(v=>v.direction==="CALL").length;
+  const putVotes = votes.filter(v=>v.direction==="PUT").length;
+  const winningDirection = callWeight > putWeight ? "CALL" : putWeight > callWeight ? "PUT" : "STANDBY";
+  const winningWeight = Math.max(callWeight,putWeight);
+  const score = activeWeight ? Math.round(winningWeight/activeWeight*100) : 0;
+  const oppositeWeight = winningDirection === "CALL" ? putWeight : callWeight;
+  const alignedVotes = winningDirection === "CALL" ? callVotes : putVotes;
+  const hasTrendOrPriceAction = votes.some(v =>
+    v.direction === winningDirection && (v.name === "EMA trend" || v.name === "Price action / breakout / rejection"));
+  const strongOpposition = oppositeWeight >= 20;
+  const enoughConsensus = alignedVotes >= 4 && score >= 72 && hasTrendOrPriceAction && !strongOpposition;
+  const direction = enoughConsensus ? winningDirection : "STANDBY";
+
+  // Retain per-EMA crossover diagnostics for the dashboard; they no longer fire separate trade alerts.
+  const emaSignals = [];
+  for (const period of EMA_PERIODS) {
+    const currentEma = emaLines[period][last], previousEma = emaLines[period][prev];
+    let signalDirection = null;
+    if (period === 1) {
+      const priorSlope = emaLines[1][prev] - emaLines[1][prev-1];
+      const currentSlope = currentEma - previousEma;
+      if (priorSlope <= 0 && currentSlope > 0) signalDirection = "CALL";
+      else if (priorSlope >= 0 && currentSlope < 0) signalDirection = "PUT";
+    } else if (closes[prev] <= previousEma && price > currentEma && currentEma > previousEma) signalDirection = "CALL";
+    else if (closes[prev] >= previousEma && price < currentEma && currentEma < previousEma) signalDirection = "PUT";
+    if (signalDirection) emaSignals.push({
+      id:String(candle.datetime)+":EMA"+period+":"+signalDirection,
+      ema:period,direction:signalDirection,score:100,candleTime:candle.datetime,
+      reason:"EMA "+period+" crossover diagnostic"
+    });
+  }
 
   const emaValues = {};
   for (const period of EMA_PERIODS) emaValues[period] = round(ema[period]);
-  const chartStart = Math.max(0, candles.length - 80);
-  const chartCandles = candles.slice(chartStart).map((c, offset) => {
-    const i = chartStart + offset, emas = {};
-    for (const period of EMA_PERIODS) emas[period] = round(emaLines[period][i]);
-    return { ...c, emas };
+  const chartStart = Math.max(0,candles.length-80);
+  const chartCandles = candles.slice(chartStart).map((c,offset)=>{
+    const i=chartStart+offset,emas={};
+    for(const period of EMA_PERIODS) emas[period]=round(emaLines[period][i]);
+    return {...c,emas};
   });
-  const trend = ema[20] > emaLines[20][prev] ? "UP" :
-    ema[20] < emaLines[20][prev] ? "DOWN" : "NEUTRAL";
-  const indicators = { rsi14: null, macdHistogram: null };
+  const trend = ema[20] > emaLines[20][prev] ? "UP" : ema[20] < emaLines[20][prev] ? "DOWN" : "NEUTRAL";
+  const fakeout = direction === "STANDBY" ? null : detectFakeout(candles,ema[20],{
+    macdHistogram:macd.histogram,rsi14
+  },direction);
+  const finalDirection = fakeout && fakeout.confirmed ? fakeout.reversalDirection : direction;
+  const finalScore = fakeout && fakeout.confirmed ? Math.min(score,80) : score;
+  const signal = finalDirection === "STANDBY" ? null : {
+    id:String(candle.datetime)+":ENSEMBLE:"+finalDirection,
+    direction:finalDirection,score:finalScore,alignedVotes,
+    directionalVotes:votes.length,candleTime:candle.datetime,
+    reason:"AI รวม "+alignedVotes+"/"+votes.length+" กลยุทธ์เห็นตรงกัน · "+finalDirection+
+      (fakeout && fakeout.confirmed ? " · ตรวจพบสัญญาณกลับตัว" : "")
+  };
+  const indicators = {
+    rsi14:round(rsi14,2),
+    macdLine:round(macd.line,8),macdSignal:round(macd.signal,8),
+    macdHistogram:round(macd.histogram,8),atr14:round(atr14,8),
+    adx14:round(adx14,2),plusDI:round(plusDI,2),minusDI:round(minusDI,2),
+    bollinger:bb?{upper:round(bb.upper),middle:round(bb.middle),lower:round(bb.lower),width:round(bb.width,3)}:null,
+    stochastic:stoch?{k:round(stoch.k,2),d:round(stoch.d,2)}:null,
+    cci20:round(cci20,2),williamsR14:round(willR14,2),
+    pressure,ema50:round(ema50),ema100:round(ema100),
+    strategyVotes:votes.map(v=>({name:v.name,direction:v.direction,weight:v.weight,detail:v.detail})),
+    callWeight,putWeight,activeWeight
+  };
   const analysis = {
-    engine: "TWELVE_DATA_EMA_1_TO_20",
-    dataSource: "Twelve Data time_series OHLC",
-    emaSource: "Twelve Data close prices",
-    mode: "EMA 1–20 คำนวณจากราคาปิด Twelve Data และวิเคราะห์แยกอิสระ",
-    filter: "INDEPENDENT",
-    trend,
-    score,
-    direction,
-    passed: signalCount > 0,
-    callSignals: callCount,
-    putSignals: putCount,
-    totalSignals: signalCount,
-    requiredVotes: 1,
-    blockers: signalCount ? [] : ["ขณะนี้ยังไม่มี EMA เส้นใดผ่านเงื่อนไขราคาและความชัน"]
+    engine:"MULTI_STRATEGY_CONFLUENCE_V1",
+    dataSource:"Twelve Data 1-minute OHLC",
+    calculationSource:"คำนวณอินดิเคเตอร์และกลยุทธ์ทั้งหมดภายในระบบจาก OHLC",
+    mode:"AI Ensemble · EMA 1–20 + RSI + MACD + Stochastic + CCI + Williams %R + ADX/DMI + ATR + Bollinger + Price Action",
+    filter:"CONFLUENCE",
+    trend,score:finalScore,direction:finalDirection,passed:Boolean(signal),
+    callVotes,putVotes,callWeight,putWeight,alignedVotes,
+    totalStrategies:votes.length,requiredVotes:4,minimumScore:72,
+    blockers:signal?[]:[
+      alignedVotes<4?"กลยุทธ์สนับสนุนทิศทางเดียวกันยังไม่ถึง 4 กลุ่ม":null,
+      score<72?"คะแนนความสอดคล้องต่ำกว่า 72%":null,
+      !hasTrendOrPriceAction?"ยังไม่มี Trend หรือ Price Action ยืนยัน":null,
+      strongOpposition?"พบแรงขัดแย้งจากกลยุทธ์ฝั่งตรงข้าม":null,
+      winningDirection==="STANDBY"?"กลยุทธ์ยังไม่เห็นทิศทางร่วมกัน":null
+    ].filter(Boolean),
+    strategyVotes:indicators.strategyVotes
   };
-  return {
-    price, candle, emaValues, emaLines, emaSignals, chartCandles,
-    trend, indicators, analysis, signal, fakeout: null, score, closes
-  };
+  return {price,candle,emaValues,emaSignals,chartCandles,trend,indicators,analysis,signal,fakeout,score:finalScore,closes};
 }
-
 function updateSignalReviews(candles, signal) {
   const reviews = state.signalReviews || [];
   for (const review of reviews) {
