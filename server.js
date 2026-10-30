@@ -302,12 +302,14 @@ function analyzeMarket(candles) {
     cci20:round(cci20,2), williamsR14:round(wr14,2),
     sma20:round(sma(closes,20)), sma50:round(sma(closes,50))
   };
+  if (fakeout.confirmed) emaSignals.length = 0;
   const analysis = {
     engine:"ADAPTIVE_MULTI_INDICATOR", mode:"AI เลือกน้ำหนักตามสภาพตลาด",
     filter:"STRICT", trend, adxStrength:strongTrend?"STRONG":"MODERATE",
-    score, direction, alignedVotes, directionalVotes, requiredVotes:6,
+    score, direction:signal ? signal.direction : direction, originalDirection:direction,
+    alignedVotes, directionalVotes, requiredVotes:6,
     minScore:MIN_SCORE, passed, gates, votes: votes.map(v=>({...v, aligned:v.direction===direction})),
-    blockers:reasons.length ? reasons : ["ผ่านเกณฑ์ AI ทุกชั้น"]
+    fakeout, blockers:reasons.length ? reasons : ["ผ่านเกณฑ์ AI ทุกชั้น"]
   };
   return { price, candle, emaValues, emaLines, emaSignals, chartCandles, trend, indicators, analysis, signal, fakeout, score, closes };
 }
