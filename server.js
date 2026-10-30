@@ -293,17 +293,14 @@ function analyzeMarket(candles) {
     for (const period of EMA_PERIODS) emas[period] = round(emaLines[period][i]);
     return { ...c, emas };
   });
-  const rsi14 = rsi(closes, 14);
-  const macd = macdData(closes);
   const trend = ema[20] > emaLines[20][prev] ? "UP" :
     ema[20] < emaLines[20][prev] ? "DOWN" : "NEUTRAL";
-  const indicators = {
-    rsi14: round(rsi14, 2),
-    macdHistogram: round(macd.histogram, 8)
-  };
+  const indicators = { rsi14: null, macdHistogram: null };
   const analysis = {
-    engine: "INDEPENDENT_EMA_1_TO_20",
-    mode: "EMA 20 เส้นวิเคราะห์แยกอิสระ",
+    engine: "TWELVE_DATA_EMA_1_TO_20",
+    dataSource: "Twelve Data time_series OHLC",
+    emaSource: "Twelve Data close prices",
+    mode: "EMA 1–20 คำนวณจากราคาปิด Twelve Data และวิเคราะห์แยกอิสระ",
     filter: "INDEPENDENT",
     trend,
     score,
@@ -430,9 +427,9 @@ function publicState() {
   const age=state.fetchedAtMs?Date.now()-state.fetchedAtMs:Infinity;
   const fresh=age<=MAX_DATA_AGE_MS&&!state.error;
   return {
-    source:state.source,symbol:state.symbol,interval:state.interval,price:state.price,
+    source:state.source,calculationSource:"Twelve Data OHLC close prices",emaPeriods:EMA_PERIODS,symbol:state.symbol,interval:state.interval,price:state.price,
     candleTime:state.candleTime,fetchedAt:state.fetchedAt,dataAgeMs:Number.isFinite(age)?age:null,dataFresh:fresh,
-    emaPeriods:EMA_PERIODS,emaValues:state.emaValues,emaSignals:fresh?state.emaSignals:[],
+    emaValues:state.emaValues,emaSignals:fresh?state.emaSignals:[],
     marketTrend:fresh?state.marketTrend:"NEUTRAL",candles:fresh?state.candles:[],
     rsi14:state.rsi14,macd:state.macd,bullVotes:state.bullVotes,bearVotes:state.bearVotes,
     technicalIndicators:fresh?state.technicalIndicators:{},aiAnalysis:fresh?state.aiAnalysis:null,fakeout:fresh?state.fakeout:null,
