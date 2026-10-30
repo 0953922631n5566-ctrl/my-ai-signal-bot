@@ -284,8 +284,10 @@ function renderSignal(data) {
   $("score").textContent = score + "%";
   $("scoreBar").style.width = score + "%";
   $("price").textContent = formatNumber(data.price, 5);
-  $("rsi14").textContent = formatNumber(data.rsi14, 2);
-  $("macd").textContent = formatNumber(data.macd, 6);
+  const rsiElement = $("rsi14");
+  if (rsiElement) rsiElement.textContent = formatNumber(data.rsi14, 2);
+  const macdElement = $("macd");
+  if (macdElement) macdElement.textContent = formatNumber(data.macd, 6);
   $("lastUpdated").textContent = formatTime(data.fetchedAt || data.lastPollAt);
   const pairHeading = document.querySelector(".market-heading h2");
   if (pairHeading && data.symbol) pairHeading.textContent = data.symbol;
