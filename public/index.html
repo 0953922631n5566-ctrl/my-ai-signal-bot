@@ -4,16 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#080d18">
-  <meta name="description" content="Twelve Data EMA 1-20 signal radar">
-  <title>EMA SIGNAL RADAR</title>
-  <link rel="stylesheet" href="/styles.css?v=20261030-twelve-ema-clean-1">
+  <meta name="description" content="Twelve Data 15 EMA Momentum Breakout Radar">
+  <title>AI MOMENTUM RADAR</title>
+  <link rel="stylesheet" href="/styles.css?v=20261030-momentum-breakout-2">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div class="brand-icon">EMA</div>
-      <div class="brand"><h1>EMA SIGNAL RADAR</h1><p>TWELVE DATA · 1 MINUTE</p></div>
+      <div class="brand"><h1>AI MOMENTUM RADAR</h1><p>TWELVE DATA · 1 MINUTE</p></div>
       <span id="connectionDot" class="dot offline" aria-label="สถานะการเชื่อมต่อ"></span>
     </header>
 
@@ -53,12 +53,19 @@
 
     <section class="indicators-card">
       <div class="section-heading">
-        <div><h3>EMA 1–20 · TWELVE DATA PRICE FEED</h3><p id="trendLabel" class="trend-label">แนวโน้ม: กำลังคำนวณ</p></div>
+        <div><h3>15 EMA · TREND FILTER</h3><p id="trendLabel" class="trend-label">แนวโน้ม: กำลังคำนวณ</p></div>
         <span id="emaSignalCount" class="signal-count">0 SIGNAL</span>
       </div>
       <div id="emaGrid" class="ema-grid"></div>
     </section>
 
+
+    <section class="indicators-card">
+      <div class="section-heading"><div><h3>AI MOMENTUM · BREAKOUT ANALYSIS</h3><p id="aiSummary">กำลังประเมินเทรนด์และแท่งปิด</p></div></div>
+      <p id="breakoutStatus" class="footnote">รอข้อมูล Breakout</p>
+      <div id="aiMetrics"></div>
+      <p id="riskLevels" class="footnote">ระดับ Entry / SL / TP จะแสดงเมื่อมีสัญญาณที่ผ่านเกณฑ์</p>
+    </section>
     <section class="controls-card notification-card">
       <h3>ระบบแจ้งเตือน</h3>
       <div class="button-row">
@@ -77,11 +84,10 @@
 
     <!-- Kept for compatibility with the existing alert engine; not shown in the new dashboard. -->
     <div class="legacy-hidden" aria-hidden="true">
-      <span id="rsi14"></span><span id="macd"></span><span id="aiModeBadge"></span>
-      <p id="aiSummary"></p><div id="aiMetrics"></div><div id="emaSignals"></div>
+      <span id="rsi14"></span><span id="macd"></span><span id="aiModeBadge"></span><div id="emaSignals"></div>
       <canvas id="priceChart"></canvas><div id="chartLegend"></div>
     </div>
   </main>
-  <script src="/app.js?v=20261030-alerts-preserved-1"></script>
+  <script src="/app.js?v=20261030-momentum-breakout-2"></script>
 </body>
 </html>
