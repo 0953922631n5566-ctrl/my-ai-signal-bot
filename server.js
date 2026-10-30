@@ -112,7 +112,8 @@ async function fetchMarketData() {
 
   const parsedCandles = completedCandles.map(c => ({
     datetime: c.datetime || null,
-    open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close)
+    open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close),
+    volume: c.volume === undefined || c.volume === null || c.volume === "" ? null : Number(c.volume)
   }));
   if (parsedCandles.some(c => [c.open, c.high, c.low, c.close].some(v => !Number.isFinite(v) || v <= 0))) {
     throw new Error("ข้อมูล OHLC ที่ได้รับไม่ถูกต้อง");
@@ -335,6 +336,7 @@ function publicState() {
     marketTrend: fresh ? state.marketTrend : "NEUTRAL",
     candles: fresh ? state.candles : [],
     rsi14: state.rsi14, macd: state.macd,
+    atr14: state.atr14, volumeRatio: state.volumeRatio,
     bullVotes: state.bullVotes, bearVotes: state.bearVotes,
     score: fresh ? state.score : 0,
     candidate: fresh ? state.candidate : "STANDBY",
