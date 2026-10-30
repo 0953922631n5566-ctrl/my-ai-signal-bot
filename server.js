@@ -151,8 +151,9 @@ async function fetchMarketData() {
 
   const atr14 = calculateATR(parsedCandles, 14);
   const volumeValues = parsedCandles.map(c => Number(c.volume));
-  const volumeAvailable = volumeValues.every(v => Number.isFinite(v) && v > 0);
   const volumeWindow = volumeValues.slice(Math.max(0, lastIndex - 20), lastIndex);
+  const volumeAvailable = volumeWindow.length === 20 &&
+    [...volumeWindow, volumeValues[lastIndex]].every(v => Number.isFinite(v) && v > 0);
   const averageVolume = volumeWindow.length === 20
     ? volumeWindow.reduce((a, b) => a + b, 0) / volumeWindow.length : null;
   const volumeRatio = volumeAvailable && Number.isFinite(averageVolume) && averageVolume > 0
