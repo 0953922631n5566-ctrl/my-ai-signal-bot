@@ -333,8 +333,8 @@ function analyzeMarket(candles) {
 
   let direction = "STANDBY";
   let score = Math.max(callScore,putScore);
-  const callReady = trendUp && bullishBreakout && callScore >= 85 && !callOpposition && !bullishReject && !bullishExhausted;
-  const putReady = trendDown && bearishBreakout && putScore >= 85 && !putOpposition && !bearishReject && !bearishExhausted;
+  const callReady = trendUp && bullishBreakout && callScore >= 64 && !callOpposition && !bullishReject && !bullishExhausted;
+  const putReady = trendDown && bearishBreakout && putScore >= 64 && !putOpposition && !bearishReject && !bearishExhausted;
   if (callReady && !putReady) direction = "CALL";
   else if (putReady && !callReady) direction = "PUT";
   else direction = "STANDBY";
@@ -346,7 +346,7 @@ function analyzeMarket(candles) {
     if (callOpposition || putOpposition) blockers.push("พบแรงขัดแย้งจากฝั่งตรงข้าม");
     if (bullishReject || bearishReject) blockers.push("พบไส้เทียนปฏิเสธ Breakout (เสี่ยง Fakeout)");
     if (bullishExhausted || bearishExhausted) blockers.push("แท่งเทียนหรือ RSI อยู่ในภาวะเสี่ยงไล่ราคา");
-    if (score < 85) blockers.push("คะแนนเงื่อนไขยังไม่ถึง 85/100");
+    if (score < 64) blockers.push("คะแนนเงื่อนไขยังไม่ถึง 64/100");
   }
 
   const trend = trendUp ? "UP" : trendDown ? "DOWN" : "NEUTRAL";
@@ -418,7 +418,7 @@ function analyzeMarket(candles) {
     callVotes:callChecks.filter(x=>x.passed).length,
     putVotes:putChecks.filter(x=>x.passed).length,
     callWeight:callScore,putWeight:putScore,alignedVotes,
-    totalStrategies:9,requiredVotes:7,minimumScore:85,
+    totalStrategies:9,requiredVotes:7,minimumScore:64,
     blockers, strategyVotes,
     breakout:indicators.breakout, fakeout, risk,
     note:"ไม่มี Volume จริงในข้อมูล OHLC ชุดนี้ จึงไม่ใช้หรือสร้างตัวเลข Volume ปลอม"
