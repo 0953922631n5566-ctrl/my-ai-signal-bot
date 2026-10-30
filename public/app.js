@@ -32,4 +32,4 @@ window.addEventListener("offline",()=>{setApi("offline","อินเทอร�
 window.addEventListener("online",()=>{setApi("loading","กำลังเชื่อมต่อใหม่");refresh();});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){refresh();if(state.latest?.scanActive)request("/api/scan/heartbeat","POST",8000).catch(()=>{});}});
 let hb=false;setInterval(async()=>{if(document.hidden||hb)return;hb=true;try{const d=await request("/api/scan/heartbeat","POST",8000);renderScan(d);if(d.error){const m=errorMessage(d.error);notice("API ขัดข้อง",m);}}catch(e){if(!navigator.onLine){setApi("offline","อินเทอร์เน็ตหลุด");connection(false,"อินเทอร์เน็ตหลุด");}}finally{hb=false;}},20000);
-countdown();setInterval(countdown,200);refresh();setInterval(refresh,5000);
+countdown();setInterval(countdown,200);refresh();setInterval(refresh,1000);
