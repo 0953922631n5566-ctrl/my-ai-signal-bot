@@ -56,7 +56,10 @@
 - แสดงผลเป็น `LIVE CANDIDATE: <price>` เท่านั้น ไม่ใช่ราคา verified; หากกำกวมแสดง `UNCONFIRMED` และยังห้ามใช้สร้างสัญญาณ
 - แก้ปุ่ม Manual Scan ให้ส่ง `ACTION_MANUAL_SCAN` ไป CaptureService เพื่อข้าม frame throttle และสั่งอ่านเฟรมถัดไปจริง
 - Source commits: CaptureService `0fb73e7937f94b9e3ec4bcd80da7fe215bb5a27c`; MainActivity `abaf8e53e5891961672ce427fb7c83da83883e40`
-- Build ใหม่: รอผล GitHub Actions หลัง source push; ยังไม่ส่ง APK ให้ติดตั้งจนกว่าจะยืนยัน build สำเร็จ
+- GitHub Actions Build #6: run ID `41196754318`, commit `abaf8e53e5891961672ce427fb7c83da83883e40`, ผล `SUCCESS`; build step และ upload step ผ่าน
+- Artifact ใหม่: `AI-Signal-Radar-OCR-Clean-debug`, ID `13040563824`, ZIP 22,848,298 bytes, หมดอายุ 30 พ.ย. 2026 เวลา 11:25:48 UTC
+- ดาวน์โหลด APK ใหม่จาก https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41196754318 (เลื่อนลงไปที่ Artifacts แล้วดาวน์โหลด ZIP และแตกไฟล์ `app-debug.apk`)
+- Build ผ่านในระดับ compile/package เท่านั้น; ยังต้องทดสอบ OCR กับป้ายราคาที่เคลื่อนจริงก่อนถือว่าราคาแม่นยำ
 
 ## สถานะ / ข้อจำกัด
 - GitHub Actions run #1 `41194243643` จบด้วย `success` และอัปโหลด artifact แล้ว
