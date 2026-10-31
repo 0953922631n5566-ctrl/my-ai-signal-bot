@@ -196,7 +196,8 @@ class CaptureService : Service() {
         val pairMatch = Regex("""(?i)\b([A-Z]{3})\s*/\s*([A-Z]{3})\b""").find(ocrText)
             ?: return
         val symbol = pairMatch.groupValues[1].uppercase() + "/" + pairMatch.groupValues[2].uppercase()
-        val marketType = if (Regex("""(?i)\bOTC\b""").containsMatchIn(ocrText)) "OTC" else "DIGITAL_OR_UNKNOWN"
+        // Market is deliberately unconfirmed: other OTC tabs may be visible elsewhere on screen.
+        val marketType = "UNCONFIRMED"
         val prices = Regex("""(?<![\d.])\d{1,3}\.\d{3,6}(?!\d)""")
             .findAll(ocrText)
             .mapNotNull { it.value.toDoubleOrNull() }
