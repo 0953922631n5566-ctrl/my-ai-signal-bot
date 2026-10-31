@@ -104,3 +104,14 @@
 Build #7 run 41197501581 succeeded (artifact 13041109349). User confirmed pair EUR/USD and market OTC are now parsed correctly. Price remained UNCONFIRMED with zero live-lane candidates; the prior x >= 55% screen-width threshold excluded the visible chart quote area. Source was adjusted in commit ae3d0273561a6e3b54e8937fd9cb9c8f54e08a3a: lane now starts at 40% screen width and vertical range is 15-93%. Ambiguous candidates remain UNCONFIRMED. Build #8 run 41198590130 is currently in progress; do not distribute Build #7 as containing this lane fix.
 
 Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54e8937fd9cb9c8f54e08a3a. Artifact ID 13041746670, ZIP 22,851,328 bytes, SHA-256 dff69cd78f98fa7ddc99721d28d91e241ff7ffa7601ce20a7e0959a9e6126785, expires 30 Nov 2026. Download from https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41198590130. Build success confirms APK packaging only; live price remains unverified pending user test.
+
+
+## User-defined live-price red rectangle ROI (31 Oct 2026)
+ผู้ใช้ยืนยันให้ถือว่าราคาอยู่ภายในกรอบสี่เหลี่ยมสีแดงบริเวณพื้นที่ว่างด้านขวาของกราฟ โดยประมาณ:
+- ความกว้าง 25–30% ของพื้นที่กราฟ; เริ่มบริเวณเส้นแบ่งเวลาแนวตั้งและจบก่อนแผงปุ่มเทรด
+- ความสูง 75–80%; เริ่มใต้แถบยอดเงินและจบเหนือแถบเวลาใต้กราฟ
+- ปรับ CaptureService.kt ให้ใช้ normalized ROI โดยประมาณบนภาพเต็มจอ: X = 55–85%, Y = 11–90%; กรองเฉพาะเลขทศนิยม 5–6 ตำแหน่งที่อยู่ภายในกรอบนี้
+- ยังคงติดตาม X/Y ของป้ายราคาในเฟรมถัดไป; ถ้าพบหลาย candidate และแยกไม่ได้ให้เป็น UNCONFIRMED ห้ามเดา
+- Source commit: 9b84f406c2adf5b75d38c75e20d4b1e319091212
+- การกำหนดนี้เป็นพิกัดประมาณจากคำอธิบายสัดส่วน ยังไม่ใช่ pixel-perfect calibration จาก screenshot เต็มจอ; ต้องตรวจผลจาก APK บนโทรศัพท์จริงก่อนยืนยันความถูกต้อง
+- Build ใหม่จะเริ่มจาก push source ไป branch ocr-dual-scan-clean; รอ GitHub Actions run และ artifact ก่อนส่ง APK
