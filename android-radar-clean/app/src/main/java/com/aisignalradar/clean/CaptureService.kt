@@ -33,6 +33,9 @@ class CaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private val busy = AtomicBoolean(false)
     private var lastFrameAt = 0L
+    private val manualScanRequested = AtomicBoolean(false)
+    private var lastLivePriceX = -1
+    private var lastLivePriceY = -1
     private var screenWidth = 0
     private var screenHeight = 0
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
@@ -40,6 +43,10 @@ class CaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_MANUAL_SCAN) {
+            manualScanRequested.set(true)
+            return START_STICKY
+        }
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data: Intent? = if (Build.VERSION.SDK_INT >= 33) intent?.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
         else {
@@ -80,10 +87,12 @@ class CaptureService : Service() {
         reader?.setOnImageAvailableListener({ imageReader ->
             val frame = imageReader.acquireLatestImage() ?: return@setOnImageAvailableListener
             val now = SystemClock.elapsedRealtime()
-            if (now - lastFrameAt < MIN_FRAME_INTERVAL_MS || !busy.compareAndSet(false, true)) {
+            val manual = manualScanRequested.get()
+            if ((!manual && now - lastFrameAt < MIN_FRAME_INTERVAL_MS) || !busy.compareAndSet(false, true)) {
                 frame.close()
                 return@setOnImageAvailableListener
             }
+            if (manual) manualScanRequested.set(false)
             lastFrameAt = now
             processFrame(frame)
         }, null)
@@ -126,7 +135,13 @@ class CaptureService : Service() {
         return cropped
     }
 
-    private data class NumericCandidate(val value: String, val x: Int, val y: Int, val text: String)
+    private data class NumericCandidate(
+        val value: String,
+        val x: Int,
+        val y: Int,
+        val text: String,
+        val decimals: Int
+    )
 
     private fun publishRecognizedText(result: Text) {
         val rawText = result.text
@@ -141,26 +156,73 @@ class CaptureService : Service() {
         val timeMatcher = Pattern.compile("\\b(?:[01]?\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?\\b").matcher(normalized)
         val clock = if (timeMatcher.find()) timeMatcher.group() else "NOT_FOUND"
 
-        // Deliberately reject grouped numbers such as account balance 10,000.00.
-        // This is a candidate extractor only: screen-wide OCR cannot prove which
-        // decimal belongs to the active quote without platform-specific ROI validation.
+        // Keep all decimal values for diagnostics, but only consider 5-6 decimal
+        // quotes in the chart's right-hand live-price lane as live-price candidates.
+        // Designed for the observed EUR/USD quote format (e.g. 1.121115).
         val pricePattern = Pattern.compile("(?<![\\d,.])\\d{1,3}\\.\\d{2,6}(?![\\d])")
         val candidates = mutableListOf<NumericCandidate>()
         result.textBlocks.forEach { block ->
             block.lines.forEach { line ->
                 val box = line.boundingBox
                 val matcher = pricePattern.matcher(line.text)
-                while (matcher.find() && candidates.size < 12) {
-                    val x = box?.centerX() ?: -1
-                    val y = box?.centerY() ?: -1
-                    candidates.add(NumericCandidate(matcher.group(), x, y, line.text))
+                while (matcher.find() && candidates.size < 20) {
+                    val value = matcher.group()
+                    val decimals = value.substringAfter('.', "").length
+                    candidates.add(
+                        NumericCandidate(value, box?.centerX() ?: -1, box?.centerY() ?: -1, line.text, decimals)
+                    )
                 }
             }
         }
-        val price = if (candidates.size == 1) "CANDIDATE: ${candidates.first().value}" else "UNCONFIRMED (${candidates.size} candidates)"
-        val diagnostics = candidates.joinToString("\\n") { candidate ->
-            "${candidate.value} @ ${candidate.x},${candidate.y} | ${candidate.text}"
-        }.ifBlank { "ไม่พบตัวเลขทศนิยมที่เข้าเงื่อนไข" }
+
+        val liveLane = candidates.filter { candidate ->
+            candidate.decimals in 5..6 &&
+                candidate.x >= (screenWidth * 0.55f).toInt() &&
+                candidate.y in (screenHeight * 0.18f).toInt()..(screenHeight * 0.88f).toInt()
+        }
+
+        // The live quote label moves vertically with the active candle. Track its
+        // chart-edge position between frames instead of relying on a fixed Y value.
+        val selectedLive = when {
+            liveLane.size == 1 -> liveLane.first()
+            liveLane.size > 1 && lastLivePriceX >= 0 -> {
+                val ranked = liveLane.sortedBy { candidate ->
+                    kotlin.math.abs(candidate.x - lastLivePriceX) * 2 +
+                        kotlin.math.abs(candidate.y - lastLivePriceY)
+                }
+                val best = ranked.first()
+                val bestDistance = kotlin.math.abs(best.x - lastLivePriceX) * 2 +
+                    kotlin.math.abs(best.y - lastLivePriceY)
+                val secondDistance = ranked.getOrNull(1)?.let {
+                    kotlin.math.abs(it.x - lastLivePriceX) * 2 +
+                        kotlin.math.abs(it.y - lastLivePriceY)
+                } ?: Int.MAX_VALUE
+                if (kotlin.math.abs(best.x - lastLivePriceX) <= 100 &&
+                    kotlin.math.abs(best.y - lastLivePriceY) <= 240 &&
+                    secondDistance - bestDistance >= 25
+                ) best else null
+            }
+            else -> null
+        }
+
+        val price = if (selectedLive != null) {
+            lastLivePriceX = selectedLive.x
+            lastLivePriceY = selectedLive.y
+            "LIVE CANDIDATE: " + selectedLive.value
+        } else {
+            "UNCONFIRMED (" + liveLane.size + " live-lane candidates)"
+        }
+
+        val diagnostics = buildString {
+            append("LIVE LANE (5-6 decimals, right chart area):\n")
+            append(liveLane.joinToString("\n") {
+                it.value + " @ " + it.x + "," + it.y + " | " + it.text
+            }.ifBlank { "ไม่พบราคา 5-6 ตำแหน่งในบริเวณราคาปัจจุบัน" })
+            append("\n\nALL DECIMAL CANDIDATES:\n")
+            append(candidates.joinToString("\n") {
+                it.value + " (" + it.decimals + "dp) @ " + it.x + "," + it.y + " | " + it.text
+            }.ifBlank { "ไม่พบตัวเลขทศนิยมที่เข้าเงื่อนไข" })
+        }
 
         val output = Intent(ACTION_OCR_RESULT).setPackage(packageName).apply {
             putExtra("pair", pair)
@@ -168,7 +230,7 @@ class CaptureService : Service() {
             putExtra("price", price)
             putExtra("clock", clock)
             putExtra("raw", rawText.take(2600))
-            putExtra("candidates", diagnostics.take(1800))
+            putExtra("candidates", diagnostics.take(2400))
             putExtra("screen_width", screenWidth)
             putExtra("screen_height", screenHeight)
         }
@@ -190,6 +252,7 @@ class CaptureService : Service() {
 
     companion object {
         const val ACTION_OCR_RESULT = "com.aisignalradar.clean.OCR_RESULT"
+        const val ACTION_MANUAL_SCAN = "com.aisignalradar.clean.MANUAL_SCAN"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         private const val NOTIFICATION_ID = 501
