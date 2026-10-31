@@ -198,11 +198,11 @@ class CaptureService : Service() {
         val symbol = pairMatch.groupValues[1].uppercase() + "/" + pairMatch.groupValues[2].uppercase()
         // Confirm OTC only when the selected pair is visibly labelled OTC.
         // Mixed tabs or unclear market labels remain unconfirmed.
-        val pairPattern = Regex("(?i)" + Regex.escape(symbol).replace("/", "\\\\s*/\\\\s*") + "\\\\s*\\\\(OTC\\\\)")
+        val pairPattern = Regex("(?i)" + Regex.escape(symbol) + "\\s*\\(OTC\\)")
         val marketType = when {
             pairPattern.containsMatchIn(ocrText) -> "OTC"
-            Regex("""(?i)\\bDIGITAL\\b""").containsMatchIn(ocrText) &&
-                !Regex("""(?i)\\bOTC\\b""").containsMatchIn(ocrText) -> "DIGITAL"
+            Regex("""(?i)\bDIGITAL\b""").containsMatchIn(ocrText) &&
+                !Regex("""(?i)\bOTC\b""").containsMatchIn(ocrText) -> "DIGITAL"
             else -> "UNCONFIRMED"
         }
         val prices = Regex("""(?<![\d.])\d{1,3}\.\d{3,6}(?!\d)""")
