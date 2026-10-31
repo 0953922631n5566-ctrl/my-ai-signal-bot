@@ -41,6 +41,7 @@ class CaptureService : Service() {
     private var windowManager: WindowManager? = null
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     private var busy = false
+    private var firstFrameReceived = false
     private lateinit var workerThread: HandlerThread
     private lateinit var worker: Handler
 
@@ -94,7 +95,7 @@ class CaptureService : Service() {
             showOverlay()
             startCapture()
         } catch (e: Exception) {
-            output?.text = "เริ่มจับภาพไม่สำเร็จ: ${e.javaClass.simpleName}"
+            output?.post { output?.text = "เริ่มจับภาพไม่สำเร็จ: ${e.javaClass.simpleName} ${e.message ?: ""}" }
             stopSelf()
             return START_NOT_STICKY
         }
@@ -103,16 +104,28 @@ class CaptureService : Service() {
 
     private fun startCapture() {
         val metrics = resources.displayMetrics
-        reader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+        output?.post { output?.text = "กำลังเตรียมรับภาพหน้าจอ..." }
+        reader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 3)
         reader?.setOnImageAvailableListener({ source ->
-            val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
+            val image = try {
+                source.acquireLatestImage()
+            } catch (e: Exception) {
+                output?.post { output?.text = "รับภาพไม่สำเร็จ: ${e.javaClass.simpleName}" }
+                null
+            } ?: return@setOnImageAvailableListener
+
             if (busy) {
                 image.close()
                 return@setOnImageAvailableListener
             }
             busy = true
+            if (!firstFrameReceived) {
+                firstFrameReceived = true
+                output?.post { output?.text = "ได้รับภาพหน้าจอแล้ว • กำลังอ่านข้อความ..." }
+            }
             recognize(image)
         }, worker)
+
         display = projection?.createVirtualDisplay(
             "AISignalOCR",
             metrics.widthPixels,
@@ -123,6 +136,9 @@ class CaptureService : Service() {
             null,
             worker
         )
+        if (display == null) {
+            output?.post { output?.text = "สร้างจอจับภาพไม่สำเร็จ • กรุณาหยุดแล้วเริ่มใหม่" }
+        }
     }
 
     private fun recognize(image: Image) {
@@ -143,18 +159,25 @@ class CaptureService : Service() {
             recognizer.process(InputImage.fromBitmap(cropped, 0))
                 .addOnSuccessListener { result ->
                     val text = result.text.lineSequence().take(12).joinToString("\n")
-                    output?.post { output?.text = if (text.isBlank()) "กำลังอ่านหน้าจอ..." else text }
+                    output?.post {
+                        output?.text = if (text.isBlank()) {
+                            "ได้รับภาพแล้ว แต่ยังไม่พบตัวอักษร\nลองขยับกราฟให้ชัดและไม่ถูกหน้าต่างบัง"
+                        } else {
+                            "อ่านข้อความได้แล้ว ✓\n$text"
+                        }
+                    }
                 }
-                .addOnFailureListener {
-                    output?.post { output?.text = "อ่านภาพไม่สำเร็จ ลองปรับกราฟให้ชัดขึ้น" }
+                .addOnFailureListener { error ->
+                    output?.post { output?.text = "ML Kit อ่านภาพไม่สำเร็จ: ${error.javaClass.simpleName} ${error.message ?: ""}" }
                 }
                 .addOnCompleteListener {
                     cropped.recycle()
                     bitmap.recycle()
                     busy = false
                 }
-        } catch (_: Exception) {
-            image.close()
+        } catch (error: Exception) {
+            try { image.close() } catch (_: Exception) { }
+            output?.post { output?.text = "ประมวลผลภาพผิดพลาด: ${error.javaClass.simpleName} ${error.message ?: ""}" }
             busy = false
         }
     }
