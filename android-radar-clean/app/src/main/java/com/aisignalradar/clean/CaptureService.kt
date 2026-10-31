@@ -146,10 +146,13 @@ class CaptureService : Service() {
 
     private fun detectOrangePriceBadge(bitmap: Bitmap): Rect? {
         // HSV-based orange tag detection adapted from the supplied OpenCV algorithm.
-        // Keep the scan inside the chart's right-side quote zone.
-        val left = (bitmap.width * 0.55f).toInt().coerceAtLeast(0)
-        val right = (bitmap.width * 0.85f).toInt().coerceAtMost(bitmap.width - 1)
-        val top = (bitmap.height * 0.11f).toInt().coerceAtLeast(0)
+        // User-provided Xiaomi 11T crop: X 82%-100%, Y 15%-90%.
+        // Start at 78% instead of exactly 82% to retain the measured badge's
+        // left edge (previous diagnostics: x=868 on an approximately 1080px-wide frame).
+        // The right edge remains the screen edge; y follows the supplied crop.
+        val left = (bitmap.width * 0.78f).toInt().coerceAtLeast(0)
+        val right = (bitmap.width * 1.00f).toInt().coerceAtMost(bitmap.width - 1)
+        val top = (bitmap.height * 0.15f).toInt().coerceAtLeast(0)
         val bottom = (bitmap.height * 0.90f).toInt().coerceAtMost(bitmap.height - 1)
         val step = 2
         val gridWidth = ((right - left) / step) + 1
