@@ -196,3 +196,15 @@ Working branch: `ocr-dual-scan-clean`
 
 ### 31 Oct 2026 follow-up
 Build #7 (run 41197501581) succeeded; artifact 13041109349. User verified pair and OTC label, but price stayed UNCONFIRMED because the old horizontal OCR lane was too narrow. Source commit ae3d0273561a6e3b54e8937fd9cb9c8f54e08a3a widens the lane for portrait layout while retaining ambiguity rejection. Build #8 (run 41198590130) succeeded; artifact 13041746670, ZIP 22,851,328 bytes, SHA-256 dff69cd78f98fa7ddc99721d28d91e241ff7ffa7601ce20a7e0959a9e6126785, expires 30 Nov 2026. This is a compile/package success only; price accuracy still requires another on-device test.
+
+
+### User-confirmed red rectangle ROI for live price (31 Oct 2026)
+ผู้ใช้ระบุให้กรอบสีแดงบนพื้นที่ว่างด้านขวาของกราฟเป็นบริเวณราคา โดยสัดส่วนคร่าว ๆ กว้าง 25–30% และสูง 75–80% ของจอ/พื้นที่กราฟ เริ่มใต้แถบยอดเงิน จบเหนือแถบเวลา และขอบขวาจบก่อนแผงควบคุมเทรด
+
+การปรับ source:
+- กำหนด ROI แบบ normalized บนภาพจับเต็มจอ: X 55–85%, Y 11–90% เพื่อแทนกรอบที่ผู้ใช้อธิบาย (ค่าประมาณสำหรับ layout นี้ ไม่ใช่พิกัด pixel ที่วัดจากภาพต้นฉบับ)
+- กรอง candidate ราคาเฉพาะทศนิยม 5–6 ตำแหน่งภายใน ROI; คง temporal tracking ของตำแหน่งป้ายราคา X/Y
+- หาก candidate หลายค่าไม่สามารถแยกด้วยตำแหน่งต่อเนื่องได้ ยังคง UNCONFIRMED เพื่อป้องกันการนำแกนราคา/ตัวเลขอื่นมาใช้
+- Source commit: 9b84f406c2adf5b75d38c75e20d4b1e319091212
+- เอกสารส่งต่องาน CONTINUE_HERE อัปเดต commit: d5bf23e1006b0f80e3aa57eefa0f7f74ab03bf1f
+- ต้องรอ GitHub Actions build และทดสอบ APK บนหน้าจอจริง; การกำหนด ROI จากสัดส่วนอย่างเดียวไม่ยืนยันว่าราคา OCR ถูกต้อง
