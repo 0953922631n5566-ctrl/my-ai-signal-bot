@@ -196,3 +196,14 @@ Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54
 3. Add UI diagnostics for sample count, current minute, candle completeness and STANDBY reason.
 4. Add deterministic unit tests for minute boundaries, out-of-order ticks, stale data, pair/market isolation, and incomplete candles.
 5. Trigger the clean Android workflow on the Build #15 branch; record the resulting run, artifact ID, digest, and test results here.
+
+### Build #15 implementation progress (31 Oct 2026)
+- Added android-radar-clean/app/src/main/java/com/aisignalradar/clean/PriceCandleBuilder.kt: isolated one-minute OCR-observed candle aggregator. It validates pair, explicit MAIN/OTC market, positive numeric price, freshness (2.5 s), timestamp ordering, and minute bucket boundaries. It records only observed open/high/low/close values and marks a closed minute complete only when it has at least 3 OCR samples.
+- Updated CaptureService.kt to feed the builder only when exactly one 5–6 decimal OCR candidate is confirmed inside the dynamically detected orange badge. No fallback to general decimal candidates.
+- Updated MainActivity.kt to display the OCR-observed candle status and sample/OHLC summary.
+- Orange badge detection, dynamic bounding box, 4x crop OCR, and existing candidate diagnostics were intentionally retained.
+- Build run #15 (commit 65199a7dd3d074a552c7b9c740aa0a4c862ec248) succeeded but predates CaptureService/MainActivity integration; do not treat its artifact as the complete Build #15 app. Artifact ID 13048122400, SHA-256 2942b25265ef6ddc9d82b3ac8b1eb99c2aa95a8cb2c00707a8f780337f5c1fc4.
+- Run #16 (771e4a4094ffde5c7ceeac8a67ef33f6f32f5a7f) and run #17 (1e3a6f5afdff64882907a54cf32c8cd14b9af70e) were triggered by sequential source pushes; at the time of this note their build jobs were still in progress and had no artifact yet. Run #17 is the latest integrated source snapshot.
+- No device test has been performed for Build #15. The aggregator currently holds in-memory candles for the lifetime of the capture service; persistence, multi-minute continuity tests, indicators, and CALL/PUT logic are not implemented.
+- Timestamp currently uses the OCR processing callback time (System.currentTimeMillis()), not the exact frame acquisition timestamp. This is an approximation and should be improved before relying on candle boundaries for signals.
+- Do not claim that the app has accurate market candles or usable trade signals. These are OCR-observed sample aggregates only.
