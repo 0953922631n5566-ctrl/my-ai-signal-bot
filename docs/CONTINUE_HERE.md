@@ -115,3 +115,9 @@ Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54
 - Source commit: 9b84f406c2adf5b75d38c75e20d4b1e319091212
 - การกำหนดนี้เป็นพิกัดประมาณจากคำอธิบายสัดส่วน ยังไม่ใช่ pixel-perfect calibration จาก screenshot เต็มจอ; ต้องตรวจผลจาก APK บนโทรศัพท์จริงก่อนยืนยันความถูกต้อง
 - Build ใหม่จะเริ่มจาก push source ไป branch ocr-dual-scan-clean; รอ GitHub Actions run และ artifact ก่อนส่ง APK
+
+### ROI Build #9 result (31 Oct 2026)
+- GitHub Actions run: 41200690320; status completed / conclusion SUCCESS; source commit 9b84f406c2adf5b75d38c75e20d4b1e319091212
+- Artifact: AI-Signal-Radar-OCR-Clean-debug, ID 13042815806, ZIP 22,851,460 bytes, SHA-256 02351f80d7b08de727176775f996ae50a12ca60386db6561472090069a696090; expires 30 Nov 2026 12:21:29 UTC
+- Workflow URL: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41200690320
+- Build ผ่าน compile/package; ยังไม่ใช่การยืนยัน OCR ราคาบนอุปกรณ์จริง ต้องติดตั้งและทดสอบกรอบ ROI ใหม่ก่อน
