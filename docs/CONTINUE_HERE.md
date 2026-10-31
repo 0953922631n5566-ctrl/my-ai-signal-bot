@@ -24,8 +24,10 @@
 - Android OCR ใช้ MediaProjection และ on-device ML Kit text recognition
 - Workflow: `.github/workflows/build-android-ocr.yml`
 - Render config: `render.yaml`
-- Commit ล่าสุดที่ตรวจ: `18f397570e8ef4e7697c659b9e9200d6b408d717` — ตั้ง market type เป็น `UNCONFIRMED` หาก OCR ยังไม่ยืนยัน เพื่อป้องกันการเดาจากแท็บ OTC อื่นบนหน้าจอ
-- Commit ก่อนหน้าเชื่อม Android ML Kit OCR feed เข้ากับ dual radar API แต่ต้องตรวจสอบและทดสอบ runtime จริงก่อนสรุปว่าใช้งานได้สมบูรณ์
+- Commit `18f397570e8ef4e7697c659b9e9200d6b408d717` — ตั้ง market type เป็น `UNCONFIRMED` หาก OCR ยังไม่ยืนยัน
+- Commit `badb9344d034fc4efc23e4fa31de9dadfa180984` — แก้ Android OCR ให้ POST ไป `https://my-ai-signal-bot-v2.onrender.com/api/ocr` ซึ่งตรงกับ route ใน backend repository นี้ (เดิมส่งไปคนละ Render service และ path `/api/ocr/text`)
+- Commit `d28bbdea70df89f1bbbe86446568593467b0ddd3` — backend เก็บ `UNCONFIRMED` ไว้ตามจริง แทนการแปลงเป็น `DIGITAL_OR_UNKNOWN`
+- การแก้ endpoint เป็นการแก้ความผิดพลาดที่ตรวจพบจาก source code; ยังต้องรอ GitHub Actions build APK และทดสอบรับข้อมูลบน Render/Android จริงก่อนยืนยันว่าทำงานครบ
 
 ## ข้อกำหนดที่ต้องรักษา
 1. อ่านทั้งราคา คู่เงิน และเวลาจากหน้าจอ ไม่ใช่จับเวลาอย่างเดียว
@@ -37,8 +39,9 @@
 7. ไม่มีการรับประกัน win rate หรือจำนวนไม้ชนะ
 
 ## ขั้นตอนต่อไป
-1. ตรวจสอบ Android capture service ว่าส่ง OCR payload ที่มี symbol, price, marketType และ timestamp ไป backend จริงหรือไม่
-2. ตรวจสอบ backend ว่ารับ payload และแสดงค่าที่อ่านได้ใน dashboard ตรงกันหรือไม่
+1. ตรวจ GitHub Actions ว่า build APK หลัง commit `badb9344` ผ่านหรือไม่
+2. ติดตั้ง APK ที่ build ใหม่ แล้วตรวจ `/api/ocr/status` ว่า backend รับ symbol, priceCandidates, countdown และ capturedAt จริงหรือไม่
+3. ตรวจว่าหน้า dashboard แสดงคู่เงิน/ราคาที่ OCR พบตรงกับหน้าจอจริงหรือไม่; ปัจจุบันส่งเป็น priceCandidates หลายค่า ไม่ได้เลือกค่าราคาเดียวโดยอัตโนมัติ
 3. ทดสอบกรณีราคาไม่ครบ / คู่เงินไม่ชัด / marketType เป็น UNCONFIRMED
 4. เพิ่มภาพอ้างอิงที่ 2 เมื่อมีไฟล์ต้นฉบับให้เข้าถึง
 5. Build APK ผ่าน GitHub Actions และติดตั้งทดสอบบน Android จริง
