@@ -44,12 +44,12 @@ async function isolatePriceTag(dataUrl){
  });
 }
 async function sendFrame(dataUrl){
- const token=$("screenToken").value.trim()||sessionStorage.getItem("screenToken")||"";
+ const token=$("screenToken").value.trim()||localStorage.getItem("screenToken")||"";
  if(!token){$("ocrState").textContent="กรุณาใส่ SCREEN_INGEST_TOKEN ก่อนส่งภาพ";return;}
  if(sendingFrame)return;
  sendingFrame=true;
  const m=market(),sym=symbol(),otcConfirmed=$("otcConfirm").checked;
- sessionStorage.setItem("screenToken",token);
+ localStorage.setItem("screenToken",token);
  try{
   const priceImage=await isolatePriceTag(dataUrl);
   const d=await api("/api/ocr/frame",{method:"POST",headers:{"Content-Type":"application/json","x-screen-token":token},body:JSON.stringify({image:priceImage||dataUrl,market:m,symbol:sym,otcConfirmed})});
@@ -67,6 +67,6 @@ $("startBtn").addEventListener("click",async()=>{try{if(mode==="old"){if(scan)aw
 $("captureBtn").addEventListener("click",capture);
 $("imageFile").addEventListener("change",e=>{const f=e.target.files?.[0];if(!f)return;if(!f.type.startsWith("image/")){$("ocrState").textContent="ไฟล์นี้ไม่ใช่รูปภาพ กรุณาเลือกรูปภาพกราฟ";e.target.value="";return;}const reader=new FileReader();reader.onload=()=>{if(typeof reader.result==="string")sendFrame(reader.result);else $("ocrState").textContent="อ่านไฟล์ภาพไม่สำเร็จ กรุณาลองใหม่";};reader.onerror=()=>$("ocrState").textContent="เปิดรูปภาพไม่สำเร็จ กรุณาเลือกรูปใหม่";reader.readAsDataURL(f);e.target.value="";});
 $("marketSelect").addEventListener("change",marketChanged);$("symbolSelect").addEventListener("change",()=>{newSignalId=null;refresh();});
-const savedToken=sessionStorage.getItem("screenToken")||"";if(savedToken)$("screenToken").value=savedToken;$("screenToken").addEventListener("input",()=>$("screenToken").value.trim()?sessionStorage.setItem("screenToken",$("screenToken").value.trim()):sessionStorage.removeItem("screenToken"));
+const savedToken=localStorage.getItem("screenToken")||"";if(savedToken)$("screenToken").value=savedToken;$("screenToken").addEventListener("input",()=>$("screenToken").value.trim()?localStorage.setItem("screenToken",$("screenToken").value.trim()):localStorage.removeItem("screenToken"));
 if("Notification"in window&&Notification.permission==="default")Notification.requestPermission().catch(()=>{});
 marketChanged();selectMode("new");refresh();setInterval(refresh,5000);setInterval(()=>{if(scan)api("/api/old/scan/heartbeat",{method:"POST"}).catch(()=>{});},20000);
