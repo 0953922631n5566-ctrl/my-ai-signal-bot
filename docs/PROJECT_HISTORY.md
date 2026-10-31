@@ -192,3 +192,7 @@ Working branch: `ocr-dual-scan-clean`
 - ZIP size: 22,848,298 bytes; หมดอายุ 30 พ.ย. 2026 เวลา 11:25:48 UTC
 - Workflow: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41196754318
 - ข้อควรทราบ: ผ่านการ compile/package เท่านั้น ยังต้องติดตั้งและทดสอบเทียบป้ายราคาที่ขยับจริงบนโทรศัพท์ก่อนยืนยันความแม่นยำ
+
+
+### 31 Oct 2026 follow-up
+Build #7 (run 41197501581) succeeded; artifact 13041109349. User verified pair and OTC label, but price stayed UNCONFIRMED because the old horizontal OCR lane was too narrow. Source commit ae3d0273561a6e3b54e8937fd9cb9c8f54e08a3a widens the lane for portrait layout while retaining ambiguity rejection. Build #8 (run 41198590130) succeeded; artifact 13041746670, ZIP 22,851,328 bytes, SHA-256 dff69cd78f98fa7ddc99721d28d91e241ff7ffa7601ce20a7e0959a9e6126785, expires 30 Nov 2026. This is a compile/package success only; price accuracy still requires another on-device test.
