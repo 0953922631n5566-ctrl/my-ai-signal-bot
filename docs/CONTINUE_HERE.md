@@ -207,3 +207,12 @@ Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54
 - No device test has been performed for Build #15. The aggregator currently holds in-memory candles for the lifetime of the capture service; persistence, multi-minute continuity tests, indicators, and CALL/PUT logic are not implemented.
 - Timestamp currently uses the OCR processing callback time (System.currentTimeMillis()), not the exact frame acquisition timestamp. This is an approximation and should be improved before relying on candle boundaries for signals.
 - Do not claim that the app has accurate market candles or usable trade signals. These are OCR-observed sample aggregates only.
+
+### Build #15 validation hardening (31 Oct 2026)
+- Corrected tick timestamps: CaptureService now records wall-clock time when the screen frame is acquired and passes that timestamp through asynchronous OCR processing. Candle minute boundaries no longer use OCR callback completion time.
+- Added JUnit 4.13.2 and PriceCandleBuilderTest coverage for observed OHLC aggregation, minute rollover, stale/duplicate ticks, unknown market rejection, MAIN/OTC stream isolation, and incomplete-minute status.
+- Updated .github/workflows/build-android-clean.yml to run :app:testDebugUnitTest before assembleDebug and artifact upload.
+- Integrated source snapshot before timestamp/tests: run #17 ID 41216344137, commit 1e3a6f5afdff64882907a54cf32c8cd14b9af70e, completed SUCCESS; artifact ID 13048810370, size 22,858,522 bytes, SHA-256 4154e4f056fb6035cc017f84ce8a297e7772c0a930d406b77373793e8317038a. This proves compile/package for the integration snapshot only, not the latest timestamp/test changes.
+- Latest source commit at this note: 89ccfaecf89c72033964ec5a59c7e0787087c858.
+- Latest validation workflow run #21: ID 41216540311, branch feature/build-15-ocr-candles. It includes the unit-test step and APK build. At note time it was still running; no final test/build conclusion or artifact had been observed. Do not distribute earlier run #15 or #17 artifacts as the latest validated build.
+- Device testing remains pending. No EMA/RSI/MACD, signal generation, persistent candle history, or broker integration has been added.
