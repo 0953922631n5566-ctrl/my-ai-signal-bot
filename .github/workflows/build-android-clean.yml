@@ -20,6 +20,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Run unit tests
+        working-directory: android-radar-clean
+        run: gradle --no-daemon :app:testDebugUnitTest
       - name: Build clean debug APK
         working-directory: android-radar-clean
         run: gradle --no-daemon :app:assembleDebug
