@@ -98,3 +98,7 @@
 - GitHub Actions run: `41197501581` (เริ่ม build แล้ว; รอผล)
 - ข้อสังเกต: `LIVE CANDIDATE 1.120825` ยังเป็น candidate ไม่ใช่ verified quote; ต้องเทียบกับป้ายราคาในกราฟ ณ เวลาเดียวกันต่อเนื่องหลายเฟรมก่อนใช้คำนวณสัญญาณ
 - เวลาที่อ่านได้ `18:25:00` อาจเป็นเวลา tick/แกนกราฟ ไม่ควรถือเป็นนาฬิกาปัจจุบันจนกว่าจะกำหนด ROI และทดสอบตำแหน่งเวลาให้ชัด
+
+
+## Latest user test and follow-up fix (31 Oct 2026)
+Build #7 run 41197501581 succeeded (artifact 13041109349). User confirmed pair EUR/USD and market OTC are now parsed correctly. Price remained UNCONFIRMED with zero live-lane candidates; the prior x >= 55% screen-width threshold excluded the visible chart quote area. Source was adjusted in commit ae3d0273561a6e3b54e8937fd9cb9c8f54e08a3a: lane now starts at 40% screen width and vertical range is 15-93%. Ambiguous candidates remain UNCONFIRMED. Build #8 run 41198590130 is currently in progress; do not distribute Build #7 as containing this lane fix.
