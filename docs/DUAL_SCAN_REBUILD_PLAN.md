@@ -44,5 +44,7 @@ Branch: `ocr-dual-scan-clean`
 - สร้าง branch `ocr-dual-scan-clean` แยกจาก main แล้ว
 - สร้างแอป Android ใหม่ `android-radar-clean/` และ workflow `.github/workflows/build-android-clean.yml`
 - มี MediaProjection capture service และ ML Kit OCR เบื้องต้น
-- ยังไม่ยืนยันว่า build ผ่าน และยังไม่ได้ทดสอบบนโทรศัพท์จริง
-- APK รุ่นใหม่ยังไม่พร้อมดาวน์โหลดจนกว่า GitHub Actions จะจบสำเร็จและตรวจ artifact ได้
+- GitHub Actions Build Clean Android OCR APK run #1: SUCCESS, run ID `41194243643`
+- Artifact `AI-Signal-Radar-OCR-Clean-debug`, artifact ID `13040107932`, ZIP 22,836,511 bytes, SHA-256 `976218326c9c206624b7c55732c83e27a05f61bebf0256032fd0597293cf9419`, expires 30 พ.ย. 2026
+- Workflow URL: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194243643
+- Build ผ่าน แต่ยังไม่ได้ทดสอบบนโทรศัพท์จริง; จึงยังไม่รับรอง OCR ราคา/ตลาดในทุก layout
