@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
                 (intent.getStringExtra("candidates") ?: "—") +
                 "\\nขนาดจอ: ${intent.getIntExtra("screen_width", 0)} × ${intent.getIntExtra("screen_height", 0)}"
             raw.text = "ข้อความ OCR ดิบ:\\n" + (intent.getStringExtra("raw") ?: "")
-            status.text = "กำลังอ่านหน้าจอ • ราคาเป็นเพียง candidate จนกว่าจะตรวจสอบกับกราฟ"
+            status.text = "กำลังอ่านหน้าจอ • ติดตามป้ายราคาที่เลื่อนตามแท่งเทียน"
         }
     }
 
@@ -84,7 +84,13 @@ class MainActivity : ComponentActivity() {
         }
         val manual = Button(this).apply {
             text = "อ่านซ้ำ (Manual Scan)"
-            setOnClickListener { status.text = "อ่านหน้าจออัตโนมัติทุกประมาณ 0.9 วินาทีอยู่แล้ว" }
+            setOnClickListener {
+                val scanIntent = Intent(this@MainActivity, CaptureService::class.java).apply {
+                    action = CaptureService.ACTION_MANUAL_SCAN
+                }
+                ContextCompat.startForegroundService(this@MainActivity, scanIntent)
+                status.text = "ส่งคำสั่งอ่านหน้าจอซ้ำแล้ว..."
+            }
         }
         root.addView(heading); root.addView(status); root.addView(start); root.addView(stop); root.addView(manual)
         root.addView(pair); root.addView(market); root.addView(price); root.addView(clock)
