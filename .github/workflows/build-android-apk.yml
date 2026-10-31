@@ -1,0 +1,30 @@
+name: Build Android capture APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "android-capture/**"
+      - ".github/workflows/build-android-apk.yml"
+    branches: ["dual-system-independent"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+        working-directory: android-capture
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-signal-radar-capture-debug
+          path: android-capture/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
