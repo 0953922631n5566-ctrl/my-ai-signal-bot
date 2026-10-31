@@ -1,22 +1,23 @@
-# AI Signal Radar OCR — Clean Android App
+# AI SIGNAL RADAR OCR — Clean Rebuild
 
-A new isolated Android application, separate from the previous Android source tree.
+## Current milestone: OCR diagnostics build
+- Separate Android project: `android-radar-clean/`
+- MediaProjection screen capture + foreground service
+- On-device ML Kit Latin text recognition
+- Screen OCR extracts visible pair label, explicit OTC/MAIN indicator, clock text, and decimal candidates with bounding-box coordinates
+- Grouped numbers such as `10,000.00` are excluded from the decimal candidate parser to reduce account-balance confusion
+- OCR runs at a throttled interval (about 0.9 seconds) to reduce unnecessary CPU load
+- The app displays candidate coordinates and raw recognized text to support layout-specific calibration
 
-## Current milestone
-- MediaProjection screen-capture consent flow
-- Foreground capture service
-- On-device ML Kit text recognition
-- Basic extraction of visible currency pair, explicit market label, clock text and decimal-number candidates
-- Ambiguous market labels remain UNKNOWN; ambiguous price candidates remain UNCONFIRMED
-- No broker login, no order execution, and no trading signal in this capture-validation milestone
+## Safety / correctness
+- A single decimal candidate is still labeled CANDIDATE, not a verified quote.
+- Multiple candidates remain UNCONFIRMED; no signal is generated.
+- Market not explicit = UNKNOWN.
+- No broker login, order execution, or simulated quote data.
+- OCR sees only pixels currently shown on screen; it cannot read hidden pairs or reconstruct candles not captured.
 
 ## Build
-Use JDK 17 and Gradle 8.9:
-
+JDK 17 + Gradle 8.9:
 ```bash
 gradle --no-daemon :app:assembleDebug
 ```
-
-APK: `app/build/outputs/apk/debug/app-debug.apk`
-
-OCR only sees pixels currently displayed. It cannot retrieve hidden symbols or historical candles. A decimal OCR candidate is not a verified quote until region-based parsing and real-device checks confirm it against the chart.
