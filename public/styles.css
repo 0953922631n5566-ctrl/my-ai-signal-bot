@@ -8,3 +8,14 @@
 .monitor,.alerts{padding:13px}.monitor-head{font-size:12px;margin-bottom:11px}.monitor-head span{font-size:9px;color:var(--muted)}.ready{color:var(--green)!important}.status-row{justify-content:flex-start;font-size:10px;color:#c3d0dc;padding:8px 0 12px}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}.buttons button{min-height:42px;border-radius:10px;border:1px solid #2d5360;background:#0c2a2d;color:#dffcff;font-size:11px;font-weight:600}.buttons button:disabled{opacity:.45}.buttons button:nth-child(2){border-color:#68414b;background:#281922;color:#ffb0bd}.alert-buttons{grid-template-columns:1fr 1fr 1fr}.alert-buttons button{background:#132235;border-color:#30465d;color:#dce9f5}.alert-buttons button.active{border-color:#29996d;background:#103528;color:#9effd2}.alerts p{font-size:9px;line-height:1.6;color:var(--muted);margin:10px 0 0}.notice{border:1px solid #a44a5d;background:#321b25;border-radius:10px;padding:10px;margin:5px 0 12px}.notice b{font-size:11px;color:#ff9eae}.notice p{font-size:10px;line-height:1.5;margin:4px 0 0;color:#f0dce1}.hidden,.legacy-hidden{display:none!important}footer{text-align:center;padding:5px;color:#63778b;font:9px var(--mono)}
 @keyframes pulse{50%{opacity:.25;transform:scale(.78)}}@keyframes signalblink{50%{opacity:.38;box-shadow:0 0 2px currentColor}}
 @media(max-height:700px){.app-shell{padding-top:8px}.market{padding:10px 4px}.signal-core{padding:12px 2px}.signal-light{height:58px;width:58px;flex-basis:58px}.signal,.timer,.monitor,.alerts{padding:11px;margin-bottom:8px}.timer strong{font-size:29px}}
+
+/* Single-link dual-mode navigation; original Twelve Data dashboard remains untouched. */
+.mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}
+.mode-switch button{min-height:42px;border:1px solid #2d5360;border-radius:10px;background:#0c1b27;color:#c8d7e4;font:600 12px var(--thai);touch-action:manipulation}
+.mode-switch button.active{border-color:#35e6a1;background:#103528;color:#9effd2;box-shadow:0 0 14px #35e6a11c}
+.ocr-frame-wrap{width:100%;height:calc(100dvh - 132px);min-height:480px;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#080d18}
+.ocr-frame-wrap[hidden]{display:none!important}
+.ocr-frame-wrap iframe{display:block;width:100%;height:100%;border:0;background:#080d18}
+body.ocr-mode .app-shell{padding-bottom:8px}
+body.ocr-mode .app-shell #mainMode{display:none!important}
+@media(max-height:650px){.ocr-frame-wrap{height:calc(100dvh - 112px);min-height:420px}}
