@@ -89,6 +89,7 @@ class CaptureService : Service() {
         reader?.setOnImageAvailableListener({ imageReader ->
             val frame = imageReader.acquireLatestImage() ?: return@setOnImageAvailableListener
             val now = SystemClock.elapsedRealtime()
+            val capturedAtMs = System.currentTimeMillis()
             val manual = manualScanRequested.get()
             if ((!manual && now - lastFrameAt < MIN_FRAME_INTERVAL_MS) || !busy.compareAndSet(false, true)) {
                 frame.close()
@@ -96,7 +97,7 @@ class CaptureService : Service() {
             }
             if (manual) manualScanRequested.set(false)
             lastFrameAt = now
-            processFrame(frame)
+            processFrame(frame, capturedAtMs)
         }, null)
         projection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { stopSelf() }
@@ -107,7 +108,7 @@ class CaptureService : Service() {
         )
     }
 
-    private fun processFrame(frame: Image) {
+    private fun processFrame(frame: Image, capturedAtMs: Long) {
         var bitmap: Bitmap? = null
         try {
             bitmap = imageToBitmap(frame)
@@ -116,7 +117,7 @@ class CaptureService : Service() {
                 .addOnSuccessListener { result ->
                     val badge = detectOrangePriceBadge(bitmap)
                     if (badge == null || badge.width() < 1 || badge.height() < 1) {
-                        publishRecognizedText(result, bitmap, null, null)
+                        publishRecognizedText(result, bitmap, null, null, capturedAtMs)
                         bitmap.recycle()
                         busy.set(false)
                     } else {
@@ -126,10 +127,10 @@ class CaptureService : Service() {
                         val enlarged = Bitmap.createScaledBitmap(crop, crop.width * 4, crop.height * 4, true)
                         recognizer.process(InputImage.fromBitmap(enlarged, 0))
                             .addOnSuccessListener { badgeText ->
-                                publishRecognizedText(result, bitmap, badge, badgeText)
+                                publishRecognizedText(result, bitmap, badge, badgeText, capturedAtMs)
                             }
                             .addOnFailureListener { error ->
-                                publishRecognizedText(result, bitmap, badge, null)
+                                publishRecognizedText(result, bitmap, badge, null, capturedAtMs)
                                 publishError("Badge OCR: " + (error.localizedMessage ?: "OCR error"))
                             }
                             .addOnCompleteListener {
@@ -291,7 +292,7 @@ class CaptureService : Service() {
         return Rect(boxLeft, boxTop, boxRight, boxBottom)
     }
 
-    private fun publishRecognizedText(result: Text, bitmap: Bitmap, detectedBadge: Rect?, badgeText: Text?) {
+    private fun publishRecognizedText(result: Text, bitmap: Bitmap, detectedBadge: Rect?, badgeText: Text?, capturedAtMs: Long) {
         val rawText = result.text
         val normalized = rawText.replace('\n', ' ')
         val pairMatcher = Pattern.compile("(?i)\\b[A-Z]{3}\\s*[/\\-]\\s*[A-Z]{3}\\b").matcher(normalized)
@@ -384,7 +385,7 @@ class CaptureService : Service() {
         }
         // Only the unique OCR value inside the dynamically detected orange badge may enter candle aggregation.
         val candleSummary = if (selectedLive != null) {
-            val event = candleBuilder.addTick(pair, market, selectedLive.value, System.currentTimeMillis())
+            val event = candleBuilder.addTick(pair, market, selectedLive.value, capturedAtMs)
             if (event.accepted) candleBuilder.summary(pair, market) else "STANDBY: ${event.reason}"
         } else {
             "STANDBY: ยังไม่มีราคาจากป้ายสีส้มที่ยืนยันได้"
