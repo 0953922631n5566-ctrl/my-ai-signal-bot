@@ -153,3 +153,46 @@ Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54
 ผู้ใช้ระบุโซนครอปจาก Xiaomi 11T: X 82%-100%, Y 15%-90%. ปรับ ROI ของ `detectOrangePriceBadge()` เป็น X 78%-100%, Y 15%-90% โดยตั้งใจเผื่อขอบซ้ายจาก 82% ลงมา 78% เพราะ Diagnostics ก่อนหน้าระบุ bbox x=868..918 ซึ่งหากเฟรมกว้างประมาณ 1080px จุดเริ่ม 82% จะตัดขอบซ้ายของป้ายราคาได้. ใช้ขอบขวาสุดของภาพและยังคง HSV + morphology + connected-components เดิม.
 - Source commit: `409329897075431079aed5e9d9d3aeb0e18c0cec`
 - ยังต้องทดสอบบนโทรศัพท์จริง; ขนาด/แนวภาพที่ MediaProjection ส่งมาอาจต่างจากตัวอย่าง 1080x2400 จึงต้องดู bbox diagnostics หลัง scan.
+
+---
+
+## Build #14 verified baseline and Build #15 handoff (31 Oct 2026)
+
+### Verified GitHub Build #14
+- Workflow: `Build Clean Android OCR APK`
+- Run ID: `41213190736`
+- Run number: `14`
+- Branch: `ocr-dual-scan-clean`
+- Source commit: `66eb3e5502245b6a1360137fd0a98b3bc229201d`
+- Workflow result: `completed / success`; both `Build clean debug APK` and `Upload clean APK` steps succeeded.
+- Artifact: `AI-Signal-Radar-OCR-Clean-debug`, ID `13047356638`, size 22,848,008 bytes, SHA-256 `6841335c22a649fd4df95363aa851a4ef8a11bccfb6e34ece7d0862815b24c71`, expires 30 Nov 2026 15:06:36 UTC.
+- Run URL: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41213190736
+- User confirmed on device that this Build #14 follows the moving orange current-price badge and reads the displayed price continuously for about 3 minutes. This is a user-reported device test, separate from GitHub's compile/package success.
+- Diagnostics example previously supplied by user: dynamic badge bbox around `1923,494,2113,544`; OCR price examples vary with the live chart. Do not hardcode these coordinates or sample prices.
+- Exact source path: `android-radar-clean/app/src/main/java/com/aisignalradar/clean/CaptureService.kt`. The implementation detects orange pixels dynamically, crops the badge, enlarges it 4x, and accepts only a unique 5–6 decimal candidate inside the badge. Keep this implementation unchanged unless a regression is demonstrated.
+- App version in Gradle currently remains `versionCode=1`, `versionName=1.0.0-clean`; Build #14 refers to the Actions run number, not Android versionCode.
+
+### Build #15 working branch
+- Created branch: `feature/build-15-ocr-candles`
+- Base commit: `66eb3e5502245b6a1360137fd0a98b3bc229201d` (exact Build #14 source)
+- Build #14 branch and artifact are preserved; do not push changes to `ocr-dual-scan-clean` or `main`.
+- Current Build #15 status: branch created from verified Build #14 commit; no Build #15 APK has been produced yet.
+- First implementation milestone: add a timestamped, validated OCR price-event stream and 1-minute *observed-price* candle builder without modifying the orange badge detection/OCR path.
+- Candle fields must be derived only from observed OCR ticks: open=first valid tick in minute, high/low=observed extrema, close=last valid tick. Label them OCR-observed candles, not broker-native OHLC. Require multiple fresh samples per minute; mark incomplete minutes and never fabricate missing prices.
+- Reject non-numeric, stale, duplicate/out-of-order, wrong-pair, or wrong-market events. Keep MAIN and OTC streams separate. If data is ambiguous or stale, output STANDBY with a reason.
+- Do not calculate EMA/RSI/MACD or issue CALL/PUT until the candle history has sufficient warm-up and continuity. No win-rate guarantees; no automatic broker orders.
+- Before release: compile, inspect workflow run and artifact, then ask user to test Build #15 on device. GitHub build success is not proof of live OCR correctness.
+
+### Current files inspected for Build #14
+- `.github/workflows/build-android-clean.yml` builds `android-radar-clean` using JDK 17 / Gradle 8.9 and uploads `app-debug.apk`.
+- `CaptureService.kt` currently has MediaProjection + ML Kit, dynamic orange badge detection, 4x crop OCR, unique badge candidate selection and diagnostics.
+- `MainActivity.kt` displays pair, market, candidate price, clock, raw OCR and diagnostics. There is currently no candle builder or indicator/signal UI in this clean Android app.
+- `android-radar-clean/app/build.gradle.kts` currently uses versionCode 1 / versionName 1.0.0-clean.
+- Plan document: `docs/DUAL_SCAN_REBUILD_PLAN.md`.
+
+### Next actions
+1. Implement the price-event/candle layer as separate Kotlin source files on `feature/build-15-ocr-candles`; do not rewrite badge detection.
+2. Connect only the confirmed orange-badge candidate to the candle layer, with pair + market + capture timestamp and validation.
+3. Add UI diagnostics for sample count, current minute, candle completeness and STANDBY reason.
+4. Add deterministic unit tests for minute boundaries, out-of-order ticks, stale data, pair/market isolation, and incomplete candles.
+5. Trigger the clean Android workflow on the Build #15 branch; record the resulting run, artifact ID, digest, and test results here.
