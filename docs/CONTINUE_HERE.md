@@ -147,3 +147,9 @@ Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54
 - ข้อจำกัด: ยังไม่ได้ทดสอบ detector ใหม่นี้บนโทรศัพท์จริง; component สีส้มอื่นที่ใหญ่กว่าใน ROI อาจถูกเลือกได้ จึงต้องตรวจ bbox และ candidate จาก Diagnostics ก่อนปรับ threshold เพิ่มเติม
 - ยังไม่มีกรอบ overlay ที่วาดทับบนแอปเทรด; bbox ใช้ใน diagnostics และกรอง OCR เท่านั้น
 - รอ GitHub Actions build จาก commit นี้ และทดสอบกับป้ายราคาที่ขยับจริงก่อนยืนยันความถูกต้อง
+
+
+## User-provided price-tag crop refinement (31 ต.ค. 2026)
+ผู้ใช้ระบุโซนครอปจาก Xiaomi 11T: X 82%-100%, Y 15%-90%. ปรับ ROI ของ `detectOrangePriceBadge()` เป็น X 78%-100%, Y 15%-90% โดยตั้งใจเผื่อขอบซ้ายจาก 82% ลงมา 78% เพราะ Diagnostics ก่อนหน้าระบุ bbox x=868..918 ซึ่งหากเฟรมกว้างประมาณ 1080px จุดเริ่ม 82% จะตัดขอบซ้ายของป้ายราคาได้. ใช้ขอบขวาสุดของภาพและยังคง HSV + morphology + connected-components เดิม.
+- Source commit: `409329897075431079aed5e9d9d3aeb0e18c0cec`
+- ยังต้องทดสอบบนโทรศัพท์จริง; ขนาด/แนวภาพที่ MediaProjection ส่งมาอาจต่างจากตัวอย่าง 1080x2400 จึงต้องดู bbox diagnostics หลัง scan.
