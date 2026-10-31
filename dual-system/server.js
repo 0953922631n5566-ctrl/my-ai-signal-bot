@@ -68,6 +68,40 @@ app.get("/api/health",(req,res)=>res.json({ok:true,service:"dual-system-mini-app
 app.get("/api/old/status",async(req,res)=>{try{const r=await fetch(OLD_API_URL+"/api/status",{signal:AbortSignal.timeout(10000),headers:{Accept:"application/json"}});res.status(r.status).set("Cache-Control","no-store").json(await r.json());}catch(e){res.status(502).json({dataFresh:false,candidate:"STANDBY",error:"เชื่อมต่อระบบเดิมไม่ได้: "+e.message});}});
 app.get("/api/old/health",async(req,res)=>{try{const r=await fetch(OLD_API_URL+"/api/health",{signal:AbortSignal.timeout(10000)});res.status(r.status).json(await r.json());}catch(e){res.status(502).json({ok:false,error:e.message});}});
 for(const action of ["start","stop","heartbeat"])app.post("/api/old/scan/"+action,async(req,res)=>{try{const r=await fetch(OLD_API_URL+"/api/scan/"+action,{method:"POST",signal:AbortSignal.timeout(25000),headers:{Accept:"application/json"}});res.status(r.status).json(await r.json());}catch(e){res.status(502).json({error:"ระบบเดิมไม่ตอบสนอง: "+e.message});}});
+// Explicitly opt in to using Android OCR as a price stream. No price is applied automatically.
+app.post("/api/ocr/android-price", (req,res) => {
+ res.set("Cache-Control","no-store");
+ const now=Date.now(), b=req.body||{};
+ const market=String(b.market||"").toUpperCase();
+ const symbol=String(b.symbol||"").trim().toUpperCase();
+ if(!["MAIN","OTC"].includes(market)||!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol))
+  return res.status(400).json({ok:false,error:"กรุณาเลือกตลาดและคู่เงินให้ถูกต้อง"});
+ if(b.screenConfirmed!==true)
+  return res.status(400).json({ok:false,error:"กรุณายืนยันว่าหน้าจอ Android เป็นกราฟคู่เงินที่เลือก"});
+ if(market==="OTC"&&b.otcConfirmed!==true)
+  return res.status(400).json({ok:false,error:"กรุณายืนยันว่ากราฟที่เลือกเป็น OTC จริง"});
+ if(!latestAndroidOcr||now-latestAndroidOcr.receivedAtMs>15000||now-latestAndroidOcr.receivedAtMs<0||!latestAndroidOcr.dataFresh)
+  return res.status(409).json({ok:false,error:"ข้อมูล Android OCR ไม่สดใหม่ กรุณารอข้อมูลใหม่"});
+ if(latestAndroidOcr.symbol!==symbol)
+  return res.status(409).json({ok:false,error:"คู่เงินจาก Android OCR ไม่ตรงกับคู่เงินที่เลือก"});
+ if(!Array.isArray(latestAndroidOcr.priceCandidates)||latestAndroidOcr.priceCandidates.length!==1)
+  return res.status(422).json({ok:false,error:"พบตัวเลขราคาหลายค่า/ไม่ชัดเจน จึงไม่เลือกใช้ราคาอัตโนมัติ"});
+ const capturedAt=Number(latestAndroidOcr.capturedAt), age=now-capturedAt;
+ if(!Number.isFinite(capturedAt)||age < -5000||age > 15000)
+  return res.status(409).json({ok:false,error:"เวลาของข้อมูล OCR ไม่สดใหม่"});
+ const s=stateFor(market,symbol);
+ if(s.lastAndroidAppliedAt===capturedAt)
+  return res.json({ok:true,duplicate:true,market,symbol,state:publicState(s),message:"ข้อมูลชุดนี้ถูกใช้แล้ว"});
+ if(Number.isFinite(s.lastAndroidAppliedAt)&&capturedAt<s.lastAndroidAppliedAt)
+  return res.status(409).json({ok:false,error:"ได้รับข้อมูลเก่ากว่าชุดที่ใช้ไปแล้ว"});
+ const price=latestAndroidOcr.priceCandidates[0];
+ if(!Number.isFinite(price)||price<=0)return res.status(422).json({ok:false,error:"ราคา OCR ไม่ถูกต้อง"});
+ addPrice(s,price,capturedAt);
+ s.lastAndroidAppliedAt=capturedAt;
+ console.log("[ANDROID OCR PRICE] applied",market,symbol,"price="+price,"frames="+s.framesReceived);
+ res.json({ok:true,market,symbol,price,state:publicState(s),message:"นำราคา OCR เข้าระบบแยกเรียบร้อย"});
+});
+
 app.get("/api/new/status",(req,res)=>{const market=String(req.query.market||"MAIN").toUpperCase(),symbol=String(req.query.symbol||"EUR/USD").toUpperCase().replace(/^([A-Z]{3})([A-Z]{3})$/,"$1/$2");if(!["MAIN","OTC"].includes(market)||!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol))return res.status(400).json({error:"market หรือ symbol ไม่ถูกต้อง"});res.set("Cache-Control","no-store").json({...publicState(stateFor(market,symbol)),androidOcr:latestAndroidOcr?{...latestAndroidOcr,receivedAtMs:undefined,connected:Date.now()-latestAndroidOcr.receivedAtMs<=15000}:null});});
 app.post("/api/ocr/frame",async(req,res)=>{if(!authorized(req))return res.status(401).json({ok:false,error:SCREEN_TOKEN?"SCREEN_INGEST_TOKEN ไม่ถูกต้อง":"ยังไม่ได้ตั้ง SCREEN_INGEST_TOKEN ใน Render"});let s=null;try{const market=String(req.body?.market||"").toUpperCase(),symbol=String(req.body?.symbol||"").toUpperCase().replace(/^([A-Z]{3})([A-Z]{3})$/,"$1/$2");if(!["MAIN","OTC"].includes(market))throw new Error("กรุณาเลือกตลาดหลักหรือ OTC ก่อนส่งภาพ");if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol))throw new Error("ชื่อคู่เงินไม่ถูกต้อง");s=stateFor(market,symbol);let price=Number(req.body?.price),ocrText="";if(!Number.isFinite(price)||price<=0){const o=await recognizeImage(req.body?.image,symbol);price=o.price;ocrText=o.text;}const hasOtc=/\bOTC\b/i.test(ocrText);if(market==="MAIN"&&hasOtc)throw new Error("ภาพมีคำว่า OTC แต่เลือกตลาดหลัก ระบบปฏิเสธเพื่อป้องกันข้อมูลปะปน");if(market==="OTC"&&!hasOtc&&!req.body?.otcConfirmed)throw new Error("ไม่พบคำว่า OTC ในภาพ กรุณาติ๊กยืนยันว่าเป็นกราฟ OTC ก่อนส่ง");addPrice(s,price,Number(req.body?.timestamp)||Date.now());s.lastOcrText=ocrText;console.log("[OCR] frame accepted",market,symbol,"price="+price,"frames="+s.framesReceived);res.json({ok:true,market,symbol,price,ocrText:ocrText.slice(0,300),state:publicState(s)});}catch(e){if(s){s.error=e.message;s.candidate="STANDBY";s.score=0;s.signal=null;}console.warn("[OCR] frame rejected",String(req.body?.market||"?"),String(req.body?.symbol||"?"),e.message);res.status(422).json({ok:false,error:e.message,state:s?publicState(s):null});}});
 app.get("/",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
