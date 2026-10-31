@@ -48,3 +48,12 @@ Branch: `ocr-dual-scan-clean`
 - Artifact `AI-Signal-Radar-OCR-Clean-debug`, artifact ID `13040107932`, ZIP 22,836,511 bytes, SHA-256 `976218326c9c206624b7c55732c83e27a05f61bebf0256032fd0597293cf9419`, expires 30 พ.ย. 2026
 - Workflow URL: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194243643
 - Build ผ่าน แต่ยังไม่ได้ทดสอบบนโทรศัพท์จริง; จึงยังไม่รับรอง OCR ราคา/ตลาดในทุก layout
+
+
+## OCR diagnostics build #4 (31 ต.ค. 2026)
+- GitHub Actions run `41194919179`: SUCCESS
+- Artifact `AI-Signal-Radar-OCR-Clean-debug`, ID `13041020090`, size 22,843,015 bytes
+- SHA-256 `9a3ef33fccac933a654e5d4ad3cfb19e131cbf8972190153e1b77b89cb3b627c`
+- Expires 30 พ.ย. 2026
+- Workflow: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194919179
+- Build ผ่าน; ยังต้องติดตั้งและทดสอบกับจอเทรดจริงเพื่อยืนยัน OCR coordinates/price parsing
