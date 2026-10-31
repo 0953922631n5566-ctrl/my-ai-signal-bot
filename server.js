@@ -378,7 +378,7 @@ app.post("/api/ocr", (req, res) => {
   latestOcr = {
     source: "Android MediaProjection + ML Kit OCR",
     symbol,
-    marketType: body.marketType === "OTC" ? "OTC" : "DIGITAL_OR_UNKNOWN",
+    marketType: body.marketType === "OTC" ? "OTC" : body.marketType === "DIGITAL" ? "DIGITAL" : "UNCONFIRMED",
     priceCandidates: [...new Set(candidates)],
     countdown,
     capturedAt,
