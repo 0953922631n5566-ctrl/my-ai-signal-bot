@@ -228,3 +228,14 @@ Build #7 (run 41197501581) succeeded; artifact 13041109349. User verified pair a
 - OCR sampling interval request: 300ms (actual throughput depends on ML Kit processing/device performance)
 - Diagnostic output now includes orange badge bbox coordinates and OCR candidates gated by that box.
 - Current limitation: this build logic reports the dynamic bounding box in diagnostics; it does not yet draw a visible rectangle overlay on top of the trading app. Device screenshot validation is still required to tune the orange color threshold and confirm that the detected box follows the badge rather than another orange UI element.
+
+
+### HSV Orange Badge detector (31 ต.ค. 2026)
+ผู้ใช้ส่งโค้ดตัวอย่าง Python/OpenCV ที่ใช้ HSV mask, morphology, contour area และ bounding box สำหรับป้ายราคาสีส้ม และยืนยันให้นำแนวทางมาใช้กับ Android APK
+- แปลงเป็น Kotlin/Android native โดยใช้ `Color.RGBToHSV`; ช่วงสีเทียบเท่า OpenCV H 10–25, S/V >= 150/255
+- สแกนเฉพาะ ROI ด้านขวาของกราฟ (X 55–85%, Y 11–90%) และ sample ทุก 2 pixels
+- ทำ 3x3 opening/closing เพื่อลด noise/ช่องว่าง และหา connected components 8-neighbor แทน `findContours`
+- กรอง component: area >100 px, width >20 px, height >10 px; เลือก component ที่ใหญ่ที่สุดใน ROI และขยายกรอบ 4 px
+- ไม่เพิ่ม OpenCV dependency; การจับภาพยังใช้ MediaProjection และ OCR ยังใช้ ML Kit บน Android
+- Source commit: `84f98206f9f5c61b8dfb549ec36e1a4f88223a8a`
+- Build/device validation: pending. Build success, หากเกิดขึ้น, จะยืนยันเฉพาะ compile/package; ต้องตรวจ bbox และราคาจากหน้าจอจริงก่อนบอกว่าใช้งานแม่นยำ
