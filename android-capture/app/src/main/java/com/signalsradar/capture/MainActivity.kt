@@ -95,7 +95,7 @@ class MainActivity : Activity() {
         root.addView(otcConfirm)
 
         val save = Button(this).apply {
-            text = "บันทึก / เซฟข้อมูล"
+            text = "บันทึก / เซฟข้อมูลไว้ในเครื่อง"
             setOnClickListener {
                 val url = baseUrl.text.toString().trim().trimEnd('/')
                 val auth = token.text.toString().trim()
