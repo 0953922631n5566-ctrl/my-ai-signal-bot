@@ -1,65 +1,53 @@
-# CONTINUE HERE — AI SIGNAL RADAR OCR
+# CONTINUE HERE — AI SIGNAL RADAR OCR CLEAN REBUILD
 
-อัปเดตบริบท: 31 ตุลาคม 2026
+อัปเดต: 31 ตุลาคม 2026
 
-## สถานะ APK ล่าสุด — ตรวจสอบ GitHub Actions แล้ว
-- Branch ที่ตรวจ: `dual-system-independent`
-- Workflow: `Build Android capture APK`
-- Run ล่าสุด: #5, run ID `41159652560`
-- Commit: `4c733a48b747ef6ce61e93f845b1d52e8e9fae40` — `Finalize saved settings label for Android capture 1.0.1`
-- GitHub Actions conclusion: `success` (เสร็จ 31 ต.ค. 2026 เวลา 02:23:18 UTC)
-- Artifact: `ai-signal-radar-capture-debug`, artifact ID `13026502179`, ZIP 819,149 bytes, ยังไม่หมดอายุ (หมดอายุ 29 ม.ค. 2027)
-- ภายใน ZIP มี `app-debug.apk` ขนาด 826,149 bytes
-- SHA-256 ของ artifact ZIP: `e73dfec194713d5ed96abf09298e5b4f2c0dd1c926b0e9c947925bfa642fd444`
-- ไฟล์นี้เป็น **Debug APK** ไม่ใช่ signed Release APK; build ผ่านแต่ยังไม่ได้ติดตั้ง/ทดสอบบน Android เครื่องจริง จึงยืนยันได้เฉพาะว่ามีไฟล์ APK ดาวน์โหลดได้ ไม่ใช่ยืนยันว่าการอ่าน OCR และการส่งข้อมูลทำงานครบ
-- Workflow run: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41159652560
-- Actions list: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions
+## Repository
+- https://github.com/0953922631n5566-ctrl/my-ai-signal-bot
+- Branch ทำงานใหม่: `ocr-dual-scan-clean`
+- ห้ามแก้ branch main หรือโค้ด Android เดิมเพื่อทำงาน Clean Rebuild นี้ เว้นแต่ผู้ใช้สั่งโดยตรง
 
-## เป้าหมายของผู้ใช้
-พัฒนา AI SIGNAL RADAR OCR ให้ใช้งานบน Android เพื่ออ่านข้อมูลจากกราฟที่เปิดอยู่บนหน้าจอ (เช่น 8xTrade / IQ Option) แล้วส่งข้อมูลราคาและคู่เงินให้ backend วิเคราะห์ ผู้ใช้เป็นผู้กดซื้อขายเอง ระบบไม่ควรล็อกอินบัญชีโบรกเกอร์หรือส่งคำสั่งซื้อขายอัตโนมัติ
+## เป้าหมายที่ยืนยันแล้ว
+- Android OCR อ่านหน้าจอเทรดจริง ไม่ใช่ข้อมูลจำลอง
+- ผู้ใช้เปลี่ยนคู่เงินหรือ MAIN/OTC บนแพลตฟอร์มเอง แอปติดตามหน้าจอปัจจุบันโดยอัตโนมัติ
+- มี Auto-follow และ Manual Scan; ไม่บังคับเลือกคู่เงินในแอป
+- OCR อ่านชื่อคู่เงิน ราคา เวลา และประเภทตลาด
+- ตลาดไม่ชัด = UNKNOWN; ราคาไม่ชัด/หลาย candidate = UNCONFIRMED; งดสัญญาณ
+- กรอบหลัก 1 นาที; MAIN และ OTC ต้องแยกจากกัน
+- ผู้ใช้กดซื้อขายเอง ไม่มี broker login หรือ auto-order
 
-## Repository และ Branch
-- Repository: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot
-- เอกสารส่งต่องานนี้อยู่บน branch `main`
-- Android build ที่ตรวจล่าสุดอยู่บน branch `dual-system-independent`
+## โครงสร้างใหม่ที่สร้างแล้ว
+- `android-radar-clean/settings.gradle.kts`
+- `android-radar-clean/build.gradle.kts`
+- `android-radar-clean/gradle.properties`
+- `android-radar-clean/app/build.gradle.kts`
+- `android-radar-clean/app/src/main/AndroidManifest.xml`
+- `android-radar-clean/app/src/main/java/com/aisignalradar/clean/MainActivity.kt`
+- `android-radar-clean/app/src/main/java/com/aisignalradar/clean/CaptureService.kt`
+- `android-radar-clean/README.md`
+- workflow: `.github/workflows/build-android-clean.yml`
 
-## ภาพอ้างอิง
-- ภาพที่พบใน repo: `Screenshot_2026-10-31-10-26-00-457_com.android.chrome.jpg`
-- ภาพอ้างอิงที่ 2 ที่ผู้ใช้กล่าวถึงยังไม่พบใน repository หรือไฟล์ที่เข้าถึงได้ จึงยังไม่ได้อัปโหลด ห้ามสร้างภาพปลอม/ใช้ภาพ mockup แทนต้นฉบับ
+## สิ่งที่เฟสแรกทำ
+- ขอสิทธิ์ MediaProjection ผ่าน Android system prompt
+- ใช้ Foreground Service จับภาพหน้าจอ
+- ใช้ ML Kit Text Recognition บนอุปกรณ์
+- แสดงข้อความ OCR และ parse คู่เงิน/ตลาด/เวลา/decimal candidates เบื้องต้น
+- ถ้าตลาดไม่ระบุชัดจะเป็น UNKNOWN
+- ถ้าพบตัวเลขทศนิยมหลายค่า จะไม่เลือกเอง แต่ขึ้น UNCONFIRMED
 
-## สถานะโค้ดและระบบ
-- Android project: `android-ocr-apk/`
-- Android OCR ใช้ MediaProjection และ on-device ML Kit text recognition
-- Workflow ล่าสุด: `.github/workflows/build-android-apk.yml`
-- Commit `c84b7576537199303346b02faff7538400e758a0` — แก้ endpoint ใน Android `CaptureService.kt` เป็น `https://ai-signal-radar-dual.onrender.com/api/ocr/text`
-- Dual backend Render service: `ai-signal-radar-dual`, branch `dual-system-independent`, start command `node dual-system/server.js`
-- Dual backend มี `POST /api/ocr/text`, `GET /api/ocr/android-status` และ `POST /api/ocr/android-price`
-- ยังไม่มีหลักฐานจากการทดสอบบนอุปกรณ์จริงว่า APK ส่ง OCR เข้า Render สำเร็จ และ OCR price candidates ยังต้องตรวจความถูกต้อง/ยืนยันก่อนใช้เป็นราคา
+## สถานะ / ข้อจำกัด
+- โค้ดถูก push ลง branch แล้ว แต่ยังไม่ยืนยันผล Gradle build
+- ยังไม่ได้ทดสอบบนโทรศัพท์ Android จริง
+- เฟสนี้ยังไม่มี ROI price locator ที่แม่นยำ, overlay ลอยเหนือแอปเทรด, backend sync, candle builder หรือ signal engine
+- อย่าส่ง APK ให้ผู้ใช้จนกว่า workflow ผ่านและตรวจ artifact ได้
+- ห้ามอ้างว่าราคา OCR ถูกต้องจนกว่าจะเทียบกับหน้าจอจริงหลาย layout
+- OCR อ่านได้เฉพาะสิ่งที่ปรากฏบนหน้าจอ; ไม่สามารถอ่านราคาคู่ที่ซ่อนอยู่
+- ห้ามใส่ token/password/API key ใน GitHub
 
-## ข้อกำหนดที่ต้องรักษา
-1. อ่านทั้งราคา คู่เงิน และเวลาจากหน้าจอ ไม่ใช่จับเวลาอย่างเดียว
-2. แยกข้อมูล OCR จริงออกจากค่าที่ระบบคำนวณ ห้ามเติมราคาหรือเดาตลาดเอง
-3. เมื่ออ่านข้อมูลไม่ครบหรือไม่มั่นใจ ให้แสดง WAIT / STANDBY พร้อมเหตุผล
-4. ห้ามส่งคำสั่งซื้อขายอัตโนมัติ ผู้ใช้เป็นผู้ตัดสินใจเอง
-5. ห้ามใส่ API key, token, รหัสผ่าน หรือ secrets ลงใน GitHub
-6. ห้ามรับประกัน win rate
-7. ทุกครั้งที่แก้ไขหรือทดสอบ ต้องอัปเดตเอกสารส่งต่องานนี้ พร้อม branch, commit, ผลทดสอบ และสิ่งที่ยังไม่ยืนยัน
-
-## ขั้นตอนต่อไป
-1. ผู้ใช้ดาวน์โหลดและติดตั้ง Debug APK จาก artifact run #5
-2. ทดสอบ Android permission / screen capture / OCR และตรวจว่าคู่เงิน ราคา countdown และ capturedAt ที่ส่งเข้า Render ตรงกับกราฟจริง
-3. ตรวจ Render logs ว่ามี `POST /api/ocr/text` และสถานะตอบกลับสำเร็จ
-4. ตรวจราคา candidate และการยืนยันราคา; ห้ามส่งสัญญาณ CALL/PUT จาก OCR ที่ยังไม่ยืนยัน
-5. หลังผ่านทดสอบเครื่องจริง ค่อยทำ signed Release APK หากต้องการแจกจ่ายใช้งานต่อเนื่อง
-
-เอกสารนี้เป็นบริบทสำหรับการทำงานต่อ ไม่ใช่หลักฐานว่าระบบผ่านการทดสอบใช้งานจริงแล้ว
-
-
-## Clean Rebuild — Dual Scan (อัปเดต 31 ต.ค. 2026)
-- ผู้ใช้ยืนยันรูปแบบ C: มีทั้ง Auto Scan และ Manual Scan รองรับตลาดหลักและ OTC โดยอ่านข้อมูลจากหน้าจอจริง
-- เริ่มงานใหม่บน branch แยก: `ocr-dual-scan-clean` (สร้างจาก `main`) เพื่อไม่ทับโค้ดเดิม
-- สเปกใหม่: [docs/DUAL_SCAN_REBUILD_PLAN.md](./DUAL_SCAN_REBUILD_PLAN.md)
-- Commit สเปกเริ่มต้น: `0777ee473526b91c777732bb7fc490311b38e623`
-- ข้อจำกัดที่ต้องสื่อสาร: OCR อ่านได้เฉพาะข้อมูลที่แสดงในภาพหน้าจอขณะนั้น การสแกนทุกคู่พร้อมกันทำได้เฉพาะเมื่อ watchlist แสดงข้อมูลเหล่านั้น; การเปลี่ยนกราฟทีละคู่ต้องพิสูจน์วิธีนำทางบนแพลตฟอร์มก่อน
-- ยังไม่มีโค้ด Android ใหม่หรือ APK ใหม่ใน branch นี้ และยังไม่มีการทดสอบจริงของ Dual Scan
-- ขั้นตอนถัดไป: สร้าง Android project ใหม่ใน branch นี้ โดยแยกจาก `android-ocr-apk/` เดิม; ทำ capture/overlay ก่อน แล้วทดสอบ OCR ชื่อคู่เงิน/ตลาด/ราคา/เวลา ด้วยภาพจริงก่อนเริ่มทำสัญญาณ
+## ขั้นตอนถัดไป
+1. ตรวจ GitHub Actions ของ workflow Build Clean Android OCR APK
+2. ถ้า build fail ให้ดึง job logs และแก้ compile/config errors
+3. เมื่อ build ผ่าน ตรวจ artifact แล้วค่อยส่ง APK ให้ผู้ใช้ติดตั้งทดสอบ
+4. ให้ผู้ใช้ทดสอบเปิดหน้าเทรดและกดเริ่มอ่านหน้าจอ ตรวจว่าคู่เงิน ราคา เวลา และตลาดตรงกับภาพจริงหรือไม่
+5. ใช้ภาพหน้าจอจริงของผู้ใช้เพื่อทำ ROI-specific price extraction และแก้กรณีอ่านแต่เวลา
+6. เพิ่ม overlay, Auto-follow, Manual Scan, validation และ analysis หลัง OCR ผ่านเกณฑ์
