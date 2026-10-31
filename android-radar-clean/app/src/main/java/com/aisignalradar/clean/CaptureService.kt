@@ -187,10 +187,15 @@ class CaptureService : Service() {
             }
         }
 
+        // Portrait Trade layouts place the right-edge quote label well before
+        // 55% of the full screen width (observed x≈529 on a 1080px capture).
+        // Use a wider chart lane but keep the vertical chart bounds; ambiguity
+        // is still rejected below rather than guessing a quote.
+        val liveLaneMinX = (screenWidth * 0.40f).toInt()
         val liveLane = candidates.filter { candidate ->
             candidate.decimals in 5..6 &&
-                candidate.x >= (screenWidth * 0.55f).toInt() &&
-                candidate.y in (screenHeight * 0.18f).toInt()..(screenHeight * 0.88f).toInt()
+                candidate.x >= liveLaneMinX &&
+                candidate.y in (screenHeight * 0.15f).toInt()..(screenHeight * 0.93f).toInt()
         }
 
         // The live quote label moves vertically with the active candle. Track its
