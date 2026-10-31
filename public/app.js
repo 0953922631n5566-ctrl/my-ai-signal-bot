@@ -205,14 +205,36 @@ function renderSignal(data) {
   drawPriceChart(data);
 }
 
+function renderOcrStatus(status) {
+  const dot = $("ocrConnectionDot");
+  const title = $("ocrConnectionText");
+  const details = $("ocrDetails");
+  if (!status || !status.connected || !status.data) {
+    dot.className = "dot offline";
+    title.textContent = "ยังไม่เชื่อมต่อ Android OCR";
+    details.textContent = "เปิดแอป OCR และหน้า 8xTrade เพื่อส่งข้อมูล";
+    return;
+  }
+  const data = status.data;
+  dot.className = "dot online";
+  title.textContent = "รับข้อมูลจาก " + data.symbol + " แล้ว";
+  const prices = Array.isArray(data.priceCandidates) && data.priceCandidates.length
+    ? data.priceCandidates.map(value => formatNumber(value, 6)).join(" · ")
+    : "ยังไม่พบตัวเลขราคา";
+  details.textContent = data.marketType + " · ราคา OCR ที่พบ: " + prices +
+    (data.countdown ? " · เวลา " + data.countdown : "") +
+    " · ล่าสุด " + Math.max(0, Math.round(status.ageMs / 1000)) + " วินาที";
+}
+
 async function refreshDashboard() {
   if (state.loading) return;
   state.loading = true;
   $("refreshBtn").disabled = true;
   $("refreshBtn").textContent = "กำลังตรวจสอบ…";
   try {
-    const results = await Promise.all([getJson("/api/health"), getJson("/api/status")]);
-    const health = results[0], data = results[1];
+    const results = await Promise.all([getJson("/api/health"), getJson("/api/status"), getJson("/api/ocr/status").catch(() => ({ connected: false, data: null }))]);
+    const health = results[0], data = results[1], ocr = results[2];
+    renderOcrStatus(ocr);
     state.latestData = data;
     const connected = health.apiKeyConfigured === true && data.dataFresh === true && !data.error && data.price !== null && data.price !== undefined;
     if (connected) { setConnection(true, "เชื่อมต่อข้อมูลตลาดแล้ว"); hideNotice(); }
