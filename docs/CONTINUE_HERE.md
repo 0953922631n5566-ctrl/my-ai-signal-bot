@@ -102,3 +102,5 @@
 
 ## Latest user test and follow-up fix (31 Oct 2026)
 Build #7 run 41197501581 succeeded (artifact 13041109349). User confirmed pair EUR/USD and market OTC are now parsed correctly. Price remained UNCONFIRMED with zero live-lane candidates; the prior x >= 55% screen-width threshold excluded the visible chart quote area. Source was adjusted in commit ae3d0273561a6e3b54e8937fd9cb9c8f54e08a3a: lane now starts at 40% screen width and vertical range is 15-93%. Ambiguous candidates remain UNCONFIRMED. Build #8 run 41198590130 is currently in progress; do not distribute Build #7 as containing this lane fix.
+
+Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54e8937fd9cb9c8f54e08a3a. Artifact ID 13041746670, ZIP 22,851,328 bytes, SHA-256 dff69cd78f98fa7ddc99721d28d91e241ff7ffa7601ce20a7e0959a9e6126785, expires 30 Nov 2026. Download from https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41198590130. Build success confirms APK packaging only; live price remains unverified pending user test.
