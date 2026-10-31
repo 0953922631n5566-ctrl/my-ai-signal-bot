@@ -179,7 +179,7 @@ class CaptureService : Service() {
         }
         val group = groups.filter { it.size >= 5 }.maxByOrNull { it.size } ?: return null
         val rightMost = group.maxOf { it.xs.maxOrNull() ?: right }
-        val badgeLeft = (rightMost - 140).coerceAtLeast(left)
+        val badgeLeft = group.minOf { row -> row.xs.minOrNull() ?: left }.coerceAtLeast(left)
         val badgeTop = (group.minOf { it.y } - 6).coerceAtLeast(top)
         val badgeBottom = (group.maxOf { it.y } + 6).coerceAtMost(bottom)
         return Rect(badgeLeft, badgeTop, (rightMost + 4).coerceAtMost(right), badgeBottom)
