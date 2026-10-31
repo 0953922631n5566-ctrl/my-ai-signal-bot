@@ -14,6 +14,35 @@ async function refresh(){try{const [o,n,h]=await Promise.allSettled([api("/api/o
 function notifySignal(s){if(navigator.vibrate)navigator.vibrate([150,70,150]);if("Notification"in window&&Notification.permission==="granted")new Notification("AI Signal Radar · "+s.direction,{body:(s.market||"")+" "+(s.symbol||"")+" · "+(s.reason||"สัญญาณใหม่")});}
 async function startOld(){await api("/api/old/scan/start",{method:"POST"});scan=true;$("startBtn").textContent="หยุดเฝ้าระวัง";await refresh();}
 async function stopOld(){await api("/api/old/scan/stop",{method:"POST"});scan=false;$("startBtn").textContent="เริ่มเฝ้าระวัง";await refresh();}
+// Dynamically isolate the moving orange live-price tag at the chart's right edge.
+async function isolatePriceTag(dataUrl){
+ return new Promise(resolve=>{
+  const img=new Image();img.onload=()=>{try{
+   const w=img.naturalWidth,h=img.naturalHeight,src=document.createElement("canvas");src.width=w;src.height=h;
+   const sx=src.getContext("2d",{willReadFrequently:true});sx.drawImage(img,0,0,w,h);
+   const x0=Math.floor(w*.75),x1=Math.min(w-1,Math.floor(w*.91));
+   const y0=Math.floor(h*.12),y1=Math.floor(h*.92);
+   const pixels=sx.getImageData(x0,y0,x1-x0+1,y1-y0+1).data;
+   const rows=new Uint16Array(y1-y0+1);
+   for(let y=0;y<rows.length;y++)for(let x=0;x<=x1-x0;x++){
+    const i=(y*(x1-x0+1)+x)*4,r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+    if(r>150&&g>65&&g<190&&b<115&&r>g*1.25&&g>b*1.35)rows[y]++;
+   }
+   let best=0,peak=-1;for(let y=0;y<rows.length;y++)if(rows[y]>peak){peak=rows[y];best=y;}
+   // The price tag is a compact orange block; ignore the thin dashed guide line.
+   if(peak<10){resolve(null);return;}
+   let top=best,bottom=best;
+   while(top>0&&rows[top-1]>=Math.max(2,Math.floor(peak*.18)))top--;
+   while(bottom<rows.length-1&&rows[bottom+1]>=Math.max(2,Math.floor(peak*.18)))bottom++;
+   const cy=y0+Math.floor((top+bottom)/2),tagH=Math.max(36,Math.min(90,bottom-top+1+28));
+   const crop=document.createElement("canvas"),cw=Math.max(180,Math.floor((x1-x0+1)*1.25)),ch=tagH*3;
+   crop.width=cw;crop.height=ch;const cx=crop.getContext("2d");
+   cx.imageSmoothingEnabled=true;cx.imageSmoothingQuality="high";
+   cx.drawImage(img,x0,Math.max(0,cy-tagH/2),x1-x0+1,tagH,0,0,cw,ch);
+   resolve(crop.toDataURL("image/png"));
+  }catch(e){resolve(null);}};img.onerror=()=>resolve(null);img.src=dataUrl;
+ });
+}
 async function sendFrame(dataUrl){
  const token=$("screenToken").value.trim()||sessionStorage.getItem("screenToken")||"";
  if(!token){$("ocrState").textContent="กรุณาใส่ SCREEN_INGEST_TOKEN ก่อนส่งภาพ";return;}
@@ -22,7 +51,7 @@ async function sendFrame(dataUrl){
  const m=market(),sym=symbol(),otcConfirmed=$("otcConfirm").checked;
  sessionStorage.setItem("screenToken",token);
  try{
-  const d=await api("/api/ocr/frame",{method:"POST",headers:{"Content-Type":"application/json","x-screen-token":token},body:JSON.stringify({image:dataUrl,market:m,symbol:sym,otcConfirmed})});
+  const priceImage=await isolatePriceTag(dataUrl);\n  const d=await api("/api/ocr/frame",{method:"POST",headers:{"Content-Type":"application/json","x-screen-token":token},body:JSON.stringify({image:priceImage||dataUrl,market:m,symbol:sym,otcConfirmed})});
   newData=d.state;$("ocrState").textContent="รับราคา "+d.price+" · "+(m==="OTC"?"OTC":"ตลาดหลัก")+" · "+sym+" · ส่งสำเร็จ";
   if(mode!=="compare")renderSingle(newData,"OCR · "+m+" · "+sym);
  }catch(e){$("ocrState").textContent="OCR ไม่ผ่าน: "+e.message;}
