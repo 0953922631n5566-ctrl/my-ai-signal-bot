@@ -409,6 +409,44 @@ app.get("/api/ocr/status", (req, res) => {
   });
 });
 
+// Independent OCR subsystem. It never reads or mutates the main-market state above.
+let latestOcrSystem = null;
+const ocrSystemRateLimits = new Map();
+
+app.post("/api/ocr-system/ingest", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const now = Date.now();
+  const client = String(req.ip || "unknown");
+  const last = ocrSystemRateLimits.get(client) || 0;
+  if (now - last < 900) return res.status(429).json({ ok: false, error: "ส่งข้อมูลถี่เกินไป" });
+  ocrSystemRateLimits.set(client, now);
+  const body = req.body || {};
+  const symbol = typeof body.symbol === "string" ? body.symbol.trim().toUpperCase() : "";
+  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) return res.status(400).json({ ok: false, error: "รูปแบบคู่เงินไม่ถูกต้อง" });
+  const candidates = Array.isArray(body.priceCandidates)
+    ? [...new Set(body.priceCandidates.map(Number).filter(v => Number.isFinite(v) && v > 0 && v < 100000))].slice(0, 8) : [];
+  const capturedAt = typeof body.capturedAt === "number" && Number.isFinite(body.capturedAt) ? body.capturedAt : now;
+  const ageAtReceive = now - capturedAt;
+  if (ageAtReceive < -5000 || ageAtReceive > 15000) return res.status(400).json({ ok: false, error: "ข้อมูล OCR เก่าหรือเวลาเครื่องไม่ตรง" });
+  const marketType = ["OTC", "DIGITAL"].includes(body.marketType) ? body.marketType : "UNCONFIRMED";
+  const countdown = typeof body.countdown === "string" && /^\d{1,2}:\d{2}$/.test(body.countdown) ? body.countdown : null;
+  latestOcrSystem = { source: "Android MediaProjection + ML Kit", symbol, marketType, priceCandidates: candidates, countdown, capturedAt, receivedAt: new Date(now).toISOString(), receivedAtMs: now, dataFresh: true };
+  res.status(202).json({ ok: true, received: true, subsystem: "OCR_TESTING" });
+});
+
+app.get("/api/ocr-system/status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (!latestOcrSystem) return res.json({ connected: false, system: "OCR_TESTING", signal: "STANDBY", reason: "รอข้อมูลจาก Android OCR", data: null });
+  const ageMs = Date.now() - latestOcrSystem.receivedAtMs;
+  const fresh = ageMs >= 0 && ageMs <= 15000 && latestOcrSystem.dataFresh;
+  const data = fresh ? latestOcrSystem : null;
+  res.json({
+    connected: fresh, system: "OCR_TESTING", signal: "STANDBY",
+    reason: fresh ? "รับข้อมูล OCR แล้ว แต่ยังไม่สร้าง CALL/PUT เพราะต้องยืนยันคู่เงิน ประเภทตลาด และประวัติราคาให้ครบก่อน" : "ข้อมูล OCR เก่ากว่า 15 วินาที กรุณารอข้อมูลใหม่",
+    ageMs, data: data ? { source: data.source, symbol: data.symbol, marketType: data.marketType, priceCandidates: data.priceCandidates, countdown: data.countdown, capturedAt: data.capturedAt, receivedAt: data.receivedAt, dataFresh: fresh } : null
+  });
+});
+
 async function handleScan(req, res) {
   res.set("Cache-Control", "no-store");
   const age = state.fetchedAtMs ? Date.now() - state.fetchedAtMs : Infinity;
