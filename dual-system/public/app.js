@@ -1,7 +1,7 @@
 "use strict";
 const $=id=>document.getElementById(id);
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
-let mode="old",oldData=null,newData=null,oldSignalId=null,newSignalId=null,stream=null,videoTimer=null,scan=false;
+let mode="old",oldData=null,newData=null,oldSignalId=null,newSignalId=null,stream=null,videoTimer=null,scan=false,sendingFrame=false;
 const api=async(url,opts={})=>{const r=await fetch(url,{cache:"no-store",...opts});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"HTTP "+r.status);return d;};
 const market=()=> $("marketSelect").value;
 const symbol=()=> $("symbolSelect").value;
@@ -14,8 +14,21 @@ async function refresh(){try{const [o,n,h]=await Promise.allSettled([api("/api/o
 function notifySignal(s){if(navigator.vibrate)navigator.vibrate([150,70,150]);if("Notification"in window&&Notification.permission==="granted")new Notification("AI Signal Radar · "+s.direction,{body:(s.market||"")+" "+(s.symbol||"")+" · "+(s.reason||"สัญญาณใหม่")});}
 async function startOld(){await api("/api/old/scan/start",{method:"POST"});scan=true;$("startBtn").textContent="หยุดเฝ้าระวัง";await refresh();}
 async function stopOld(){await api("/api/old/scan/stop",{method:"POST"});scan=false;$("startBtn").textContent="เริ่มเฝ้าระวัง";await refresh();}
-async function sendFrame(dataUrl){const token=$("screenToken").value.trim()||sessionStorage.getItem("screenToken")||"";if(!token){$("ocrState").textContent="กรุณาใส่ SCREEN_INGEST_TOKEN ก่อนส่งภาพ";return;}const m=market(),sym=symbol(),otcConfirmed=$("otcConfirm").checked;sessionStorage.setItem("screenToken",token);try{const d=await api("/api/ocr/frame",{method:"POST",headers:{"Content-Type":"application/json","x-screen-token":token},body:JSON.stringify({image:dataUrl,market:m,symbol:sym,otcConfirmed})});newData=d.state;$("ocrState").textContent="รับราคา "+d.price+" · "+(m==="OTC"?"OTC":"ตลาดหลัก")+" · "+sym+" · ส่งแล้ว";if(mode!=="compare")renderSingle(newData,"OCR · "+m+" · "+sym);}catch(e){$("ocrState").textContent=e.message;}}
-async function capture(){if(!navigator.mediaDevices?.getDisplayMedia){$("ocrState").textContent="เบราว์เซอร์ Android นี้ไม่รองรับแชร์หน้าจอ กรุณาใช้เลือกภาพหน้าจอแทน";return;}try{stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});const v=$("screenVideo");v.srcObject=stream;await v.play();$("ocrState").textContent="กำลังอ่านภาพ · "+market()+" · "+symbol();videoTimer=setInterval(()=>{if(!v.videoWidth)return;const c=document.createElement("canvas");c.width=Math.min(v.videoWidth,1280);c.height=Math.round(v.videoHeight*c.width/v.videoWidth);c.getContext("2d").drawImage(v,0,0,c.width,c.height);sendFrame(c.toDataURL("image/jpeg",.7));},5000);stream.getVideoTracks()[0].addEventListener("ended",stopCapture);$("startBtn").textContent="หยุดแชร์หน้าจอ";}catch(e){$("ocrState").textContent="เริ่มแชร์หน้าจอไม่ได้: "+e.message;}}
+async function sendFrame(dataUrl){
+ const token=$("screenToken").value.trim()||sessionStorage.getItem("screenToken")||"";
+ if(!token){$("ocrState").textContent="กรุณาใส่ SCREEN_INGEST_TOKEN ก่อนส่งภาพ";return;}
+ if(sendingFrame)return;
+ sendingFrame=true;
+ const m=market(),sym=symbol(),otcConfirmed=$("otcConfirm").checked;
+ sessionStorage.setItem("screenToken",token);
+ try{
+  const d=await api("/api/ocr/frame",{method:"POST",headers:{"Content-Type":"application/json","x-screen-token":token},body:JSON.stringify({image:dataUrl,market:m,symbol:sym,otcConfirmed})});
+  newData=d.state;$("ocrState").textContent="รับราคา "+d.price+" · "+(m==="OTC"?"OTC":"ตลาดหลัก")+" · "+sym+" · ส่งสำเร็จ";
+  if(mode!=="compare")renderSingle(newData,"OCR · "+m+" · "+sym);
+ }catch(e){$("ocrState").textContent="OCR ไม่ผ่าน: "+e.message;}
+ finally{sendingFrame=false;}
+}
+async function capture(){if(!navigator.mediaDevices?.getDisplayMedia){$("ocrState").textContent="เบราว์เซอร์ Android นี้ไม่รองรับแชร์หน้าจอ กรุณาใช้เลือกภาพหน้าจอแทน";return;}try{stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});const v=$("screenVideo");v.srcObject=stream;await v.play();$("ocrState").textContent="กำลังอ่านภาพ · "+market()+" · "+symbol();videoTimer=setInterval(()=>{if(!v.videoWidth)return;const c=document.createElement("canvas");c.width=Math.min(v.videoWidth,1600);c.height=Math.round(v.videoHeight*c.width/v.videoWidth);c.getContext("2d").drawImage(v,0,0,c.width,c.height);sendFrame(c.toDataURL("image/jpeg",.86));},5000);stream.getVideoTracks()[0].addEventListener("ended",stopCapture);$("startBtn").textContent="หยุดแชร์หน้าจอ";}catch(e){$("ocrState").textContent="เริ่มแชร์หน้าจอไม่ได้: "+e.message;}}
 function stopCapture(){if(videoTimer)clearInterval(videoTimer);videoTimer=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$("startBtn").textContent="เริ่มแชร์หน้าจอ";$("ocrState").textContent="หยุดแชร์หน้าจอแล้ว";}
 function marketChanged(){$("otcConfirmRow").classList.toggle("hidden",market()!=="OTC");$("otcConfirm").checked=false;newSignalId=null;refresh();}
 document.querySelectorAll(".switch button").forEach(b=>b.addEventListener("click",()=>selectMode(b.dataset.mode)));
