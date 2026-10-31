@@ -356,37 +356,50 @@ app.get("/api/radar", (req, res) => {
 app.post("/api/ocr", (req, res) => {
   res.set("Cache-Control", "no-store");
   const now = Date.now();
-  const client = String(req.ip || "unknown");
-  const last = ocrRateLimits.get(client) || 0;
-  if (now - last < 900) return res.status(429).json({ ok: false, error: "ส่งข้อมูลถี่เกินไป" });
-  ocrRateLimits.set(client, now);
-
   const body = req.body || {};
   const symbol = typeof body.symbol === "string" ? body.symbol.trim().toUpperCase() : "";
   if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) {
     return res.status(400).json({ ok: false, error: "รูปแบบคู่เงินไม่ถูกต้อง" });
   }
 
+  const capturedAt = typeof body.capturedAt === "number" && Number.isFinite(body.capturedAt)
+    ? body.capturedAt : NaN;
+  if (!Number.isFinite(capturedAt) || capturedAt > now + 5000 || now - capturedAt > 15000) {
+    return res.status(422).json({ ok: false, error: "ภาพ OCR เก่าเกินไปหรือเวลาไม่ถูกต้อง กรุณาส่งภาพใหม่" });
+  }
+
+  const client = String(req.ip || "unknown");
+  const last = ocrRateLimits.get(client) || 0;
+  if (now - last < 900) return res.status(429).json({ ok: false, error: "ส่งข้อมูลถี่เกินไป" });
+  ocrRateLimits.set(client, now);
+
   const candidates = Array.isArray(body.priceCandidates)
     ? body.priceCandidates.map(Number).filter(v => Number.isFinite(v) && v > 0 && v < 100000).slice(0, 8)
     : [];
-  const countdown = typeof body.countdown === "string" && /^\d{1,2}:\d{2}$/.test(body.countdown)
-    ? body.countdown : null;
-  const capturedAt = typeof body.capturedAt === "number" && Number.isFinite(body.capturedAt)
-    ? body.capturedAt : now;
+  const countdownMatch = typeof body.countdown === "string"
+    ? /^(\d{1,2}):(\d{2})$/.exec(body.countdown) : null;
+  const countdown = countdownMatch && Number(countdownMatch[2]) < 60 ? body.countdown : null;
+  const marketType = ["OTC", "DIGITAL"].includes(body.marketType) ? body.marketType : "UNCONFIRMED";
 
   latestOcr = {
     source: "Android MediaProjection + ML Kit OCR",
     symbol,
-    marketType: body.marketType === "OTC" ? "OTC" : body.marketType === "DIGITAL" ? "DIGITAL" : "UNCONFIRMED",
+    marketType,
     priceCandidates: [...new Set(candidates)],
+    priceConfirmed: false,
+    analysisLinked: false,
     countdown,
     capturedAt,
     receivedAt: new Date(now).toISOString(),
     receivedAtMs: now,
-    dataFresh: now - capturedAt >= -5000 && now - capturedAt <= 15000
+    dataFresh: true,
+    note: "OCR price candidates are not used for CALL/PUT. Price selection and chart alignment are not yet verified."
   };
-  res.status(202).json({ ok: true, received: true, dataFresh: latestOcr.dataFresh });
+  res.status(202).json({
+    ok: true, received: true, dataFresh: true,
+    priceCandidateCount: latestOcr.priceCandidates.length,
+    analysisLinked: false
+  });
 });
 
 app.get("/api/ocr/status", (req, res) => {
@@ -401,6 +414,9 @@ app.get("/api/ocr/status", (req, res) => {
       symbol: latestOcr.symbol,
       marketType: latestOcr.marketType,
       priceCandidates: latestOcr.priceCandidates,
+      priceConfirmed: false,
+      analysisLinked: false,
+      note: latestOcr.note,
       countdown: latestOcr.countdown,
       capturedAt: latestOcr.capturedAt,
       receivedAt: latestOcr.receivedAt,
