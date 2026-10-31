@@ -181,3 +181,14 @@ Working branch: `ocr-dual-scan-clean`
 - MainActivity commit: `abaf8e53e5891961672ce427fb7c83da83883e40`
 - เอกสารส่งต่องานอัปเดต commit: `de98d849e5e12613c728d073950f2a7430a15892`
 - สถานะ: source push แล้ว; ต้องตรวจ GitHub Actions build และทดสอบ APK ใหม่บนโทรศัพท์จริงก่อนยืนยันว่าราคาอ่านตรงตลอดการเคลื่อนไหว
+
+
+
+ผลการ Build สำหรับการปรับราคาที่เคลื่อนตามแท่งเทียน:
+- GitHub Actions Build #6, run ID `41196754318`
+- Commit source: `abaf8e53e5891961672ce427fb7c83da83883e40`
+- ผล: `SUCCESS` (Build clean debug APK และ Upload artifact ผ่าน)
+- Artifact ID: `13040563824`, ชื่อ `AI-Signal-Radar-OCR-Clean-debug`
+- ZIP size: 22,848,298 bytes; หมดอายุ 30 พ.ย. 2026 เวลา 11:25:48 UTC
+- Workflow: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41196754318
+- ข้อควรทราบ: ผ่านการ compile/package เท่านั้น ยังต้องติดตั้งและทดสอบเทียบป้ายราคาที่ขยับจริงบนโทรศัพท์ก่อนยืนยันความแม่นยำ
