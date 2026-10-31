@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -111,7 +112,7 @@ class CaptureService : Service() {
             bitmap = imageToBitmap(frame)
             frame.close()
             recognizer.process(InputImage.fromBitmap(bitmap, 0))
-                .addOnSuccessListener { result -> publishRecognizedText(result) }
+                .addOnSuccessListener { result -> publishRecognizedText(result, bitmap) }
                 .addOnFailureListener { error -> publishError(error.localizedMessage ?: "OCR error") }
                 .addOnCompleteListener {
                     bitmap?.recycle()
@@ -143,7 +144,48 @@ class CaptureService : Service() {
         val decimals: Int
     )
 
-    private fun publishRecognizedText(result: Text) {
+    private fun detectOrangePriceBadge(bitmap: Bitmap): Rect? {
+        // Dynamic orange badge scan in the chart's right-side quote zone.
+        val left = (bitmap.width * 0.55f).toInt().coerceAtLeast(0)
+        val right = (bitmap.width * 0.85f).toInt().coerceAtMost(bitmap.width - 1)
+        val top = (bitmap.height * 0.11f).toInt().coerceAtLeast(0)
+        val bottom = (bitmap.height * 0.90f).toInt().coerceAtMost(bitmap.height - 1)
+        data class OrangeRow(val y: Int, val xs: List<Int>)
+        val rows = mutableListOf<OrangeRow>()
+        // Sample every 2 px; require saturated orange rather than OCR text alone.
+        for (y in top..bottom step 2) {
+            val xs = mutableListOf<Int>()
+            var x = left
+            while (x <= right) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = android.graphics.Color.red(pixel)
+                val green = android.graphics.Color.green(pixel)
+                val blue = android.graphics.Color.blue(pixel)
+                if (red >= 175 && green in 65..195 && blue <= 105 && red - green >= 48 && green - blue >= 22) xs.add(x)
+                x += 2
+            }
+            if (xs.isNotEmpty()) rows.add(OrangeRow(y, xs))
+        }
+        // A thin horizontal orange line alone is not a badge: require a thick body.
+        val denseRows = rows.filter { row ->
+            val maxX = row.xs.maxOrNull() ?: return@filter false
+            row.xs.count { it >= maxX - 140 } >= 5
+        }
+        if (denseRows.size < 5) return null
+        val groups = mutableListOf<MutableList<OrangeRow>>()
+        for (row in denseRows) {
+            val last = groups.lastOrNull()
+            if (last == null || row.y - last.last().y > 10) groups.add(mutableListOf(row)) else last.add(row)
+        }
+        val group = groups.filter { it.size >= 5 }.maxByOrNull { it.size } ?: return null
+        val rightMost = group.maxOf { it.xs.maxOrNull() ?: right }
+        val badgeLeft = (rightMost - 140).coerceAtLeast(left)
+        val badgeTop = (group.minOf { it.y } - 6).coerceAtLeast(top)
+        val badgeBottom = (group.maxOf { it.y } + 6).coerceAtMost(bottom)
+        return Rect(badgeLeft, badgeTop, (rightMost + 4).coerceAtMost(right), badgeBottom)
+    }
+
+    private fun publishRecognizedText(result: Text, bitmap: Bitmap) {
         val rawText = result.text
         val normalized = rawText.replace('\n', ' ')
         val pairMatcher = Pattern.compile("(?i)\\b[A-Z]{3}\\s*[/\\-]\\s*[A-Z]{3}\\b").matcher(normalized)
@@ -181,66 +223,46 @@ class CaptureService : Service() {
                     val value = matcher.group()
                     val decimals = value.substringAfter('.', "").length
                     candidates.add(
-                        NumericCandidate(value, box?.centerX() ?: -1, box?.centerY() ?: -1, line.text, decimals)
+                        NumericCandidate(value, if (box != null && line.text.isNotEmpty()) box.left + (((matcher.start() + matcher.end()) / 2f / line.text.length) * box.width()).toInt() else -1, box?.centerY() ?: -1, line.text, decimals)
                     )
                 }
             }
         }
 
-        // User-defined red rectangle for the live quote on the Trade screen.
-        // Approximate normalized ROI: rightmost 30% of the chart region, from
-        // x=55% to x=85% of the full capture; y=11% to 90% of screen height.
-        // The right edge is kept before the trade-control panel; the ROI follows
-        // the blank future-chart area where the live price marker is displayed.
-        // These are calibration bounds from the user's layout description,
-        // not pixel-perfect coordinates; keep ambiguous readings unconfirmed.
-        val liveRoiLeft = (screenWidth * 0.55f).toInt()
-        val liveRoiRight = (screenWidth * 0.85f).toInt()
-        val liveRoiTop = (screenHeight * 0.11f).toInt()
-        val liveRoiBottom = (screenHeight * 0.90f).toInt()
-        val liveLane = candidates.filter { candidate ->
-            candidate.decimals in 5..6 &&
-                candidate.x in liveRoiLeft..liveRoiRight &&
-                candidate.y in liveRoiTop..liveRoiBottom
-        }
-
-        // The live quote label moves vertically with the active candle. Track its
-        // chart-edge position between frames instead of relying on a fixed Y value.
+        // Detect the moving orange current-price badge from screen pixels on every OCR frame.
+        val badge = detectOrangePriceBadge(bitmap)
+        val badgeCandidates = if (badge != null) candidates.filter { candidate ->
+            candidate.decimals in 5..6 && candidate.x in (badge.left - 12)..(badge.right + 12) &&
+                candidate.y in (badge.top - 12)..(badge.bottom + 12)
+        } else emptyList()
         val selectedLive = when {
-            liveLane.size == 1 -> liveLane.first()
-            liveLane.size > 1 && lastLivePriceX >= 0 -> {
-                val ranked = liveLane.sortedBy { candidate ->
-                    kotlin.math.abs(candidate.x - lastLivePriceX) * 2 +
-                        kotlin.math.abs(candidate.y - lastLivePriceY)
+            badgeCandidates.size == 1 -> badgeCandidates.first()
+            badgeCandidates.size > 1 && lastLivePriceX >= 0 -> {
+                val ranked = badgeCandidates.sortedBy { candidate ->
+                    kotlin.math.abs(candidate.x - lastLivePriceX) * 2 + kotlin.math.abs(candidate.y - lastLivePriceY)
                 }
                 val best = ranked.first()
-                val bestDistance = kotlin.math.abs(best.x - lastLivePriceX) * 2 +
-                    kotlin.math.abs(best.y - lastLivePriceY)
+                val bestDistance = kotlin.math.abs(best.x - lastLivePriceX) * 2 + kotlin.math.abs(best.y - lastLivePriceY)
                 val secondDistance = ranked.getOrNull(1)?.let {
-                    kotlin.math.abs(it.x - lastLivePriceX) * 2 +
-                        kotlin.math.abs(it.y - lastLivePriceY)
+                    kotlin.math.abs(it.x - lastLivePriceX) * 2 + kotlin.math.abs(it.y - lastLivePriceY)
                 } ?: Int.MAX_VALUE
-                if (kotlin.math.abs(best.x - lastLivePriceX) <= 100 &&
-                    kotlin.math.abs(best.y - lastLivePriceY) <= 240 &&
-                    secondDistance - bestDistance >= 25
-                ) best else null
+                if (kotlin.math.abs(best.y - lastLivePriceY) <= 100 && secondDistance - bestDistance >= 20) best else null
             }
             else -> null
         }
-
         val price = if (selectedLive != null) {
             lastLivePriceX = selectedLive.x
             lastLivePriceY = selectedLive.y
-            "LIVE CANDIDATE: " + selectedLive.value
+            "ORANGE BADGE CANDIDATE: " + selectedLive.value
         } else {
-            "UNCONFIRMED (" + liveLane.size + " live-lane candidates)"
+            "UNCONFIRMED (orange badge: " + (if (badge == null) "not detected)" else "${badgeCandidates.size} price candidates)")
         }
-
         val diagnostics = buildString {
-            append("LIVE LANE (5-6 decimals, right chart area):\n")
-            append(liveLane.joinToString("\n") {
+            append("ORANGE PRICE BADGE (dynamic pixel detection):\n")
+            append(if (badge != null) "bbox=${badge.left},${badge.top},${badge.right},${badge.bottom}\n" else "ไม่พบป้ายสีส้ม\n")
+            append(badgeCandidates.joinToString("\n") {
                 it.value + " @ " + it.x + "," + it.y + " | " + it.text
-            }.ifBlank { "ไม่พบราคา 5-6 ตำแหน่งในบริเวณราคาปัจจุบัน" })
+            }.ifBlank { "ไม่พบตัวเลขราคา 5-6 หลักภายในกรอบป้ายส้ม" })
             append("\n\nALL DECIMAL CANDIDATES:\n")
             append(candidates.joinToString("\n") {
                 it.value + " (" + it.decimals + "dp) @ " + it.x + "," + it.y + " | " + it.text
@@ -254,6 +276,7 @@ class CaptureService : Service() {
             putExtra("clock", clock)
             putExtra("raw", rawText.take(2600))
             putExtra("candidates", diagnostics.take(2400))
+            putExtra("badge_bounds", badge?.let { "${it.left},${it.top},${it.right},${it.bottom}" } ?: "NOT_FOUND")
             putExtra("screen_width", screenWidth)
             putExtra("screen_height", screenHeight)
         }
@@ -279,6 +302,6 @@ class CaptureService : Service() {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         private const val NOTIFICATION_ID = 501
-        private const val MIN_FRAME_INTERVAL_MS = 900L
+        private const val MIN_FRAME_INTERVAL_MS = 300L
     }
 }
