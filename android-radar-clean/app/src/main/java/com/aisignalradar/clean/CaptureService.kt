@@ -145,44 +145,120 @@ class CaptureService : Service() {
     )
 
     private fun detectOrangePriceBadge(bitmap: Bitmap): Rect? {
-        // Dynamic orange badge scan in the chart's right-side quote zone.
+        // HSV-based orange tag detection adapted from the supplied OpenCV algorithm.
+        // Keep the scan inside the chart's right-side quote zone.
         val left = (bitmap.width * 0.55f).toInt().coerceAtLeast(0)
         val right = (bitmap.width * 0.85f).toInt().coerceAtMost(bitmap.width - 1)
         val top = (bitmap.height * 0.11f).toInt().coerceAtLeast(0)
         val bottom = (bitmap.height * 0.90f).toInt().coerceAtMost(bitmap.height - 1)
-        data class OrangeRow(val y: Int, val xs: List<Int>)
-        val rows = mutableListOf<OrangeRow>()
-        // Sample every 2 px; require saturated orange rather than OCR text alone.
-        for (y in top..bottom step 2) {
-            val xs = mutableListOf<Int>()
-            var x = left
-            while (x <= right) {
+        val step = 2
+        val gridWidth = ((right - left) / step) + 1
+        val gridHeight = ((bottom - top) / step) + 1
+        if (gridWidth < 2 || gridHeight < 2) return null
+
+        // OpenCV HSV ranges [10,150,150]-[25,255,255].
+        // Android RGBToHSV uses hue degrees and saturation/value in 0..1.
+        val mask = BooleanArray(gridWidth * gridHeight)
+        val hsv = FloatArray(3)
+        for (gy in 0 until gridHeight) {
+            val y = top + gy * step
+            for (gx in 0 until gridWidth) {
+                val x = left + gx * step
                 val pixel = bitmap.getPixel(x, y)
-                val red = android.graphics.Color.red(pixel)
-                val green = android.graphics.Color.green(pixel)
-                val blue = android.graphics.Color.blue(pixel)
-                if (red >= 175 && green in 65..195 && blue <= 105 && red - green >= 48 && green - blue >= 22) xs.add(x)
-                x += 2
+                android.graphics.Color.RGBToHSV(
+                    android.graphics.Color.red(pixel),
+                    android.graphics.Color.green(pixel),
+                    android.graphics.Color.blue(pixel),
+                    hsv
+                )
+                mask[gy * gridWidth + gx] =
+                    hsv[0] in 10f..25f && hsv[1] >= (150f / 255f) && hsv[2] >= (150f / 255f)
             }
-            if (xs.isNotEmpty()) rows.add(OrangeRow(y, xs))
         }
-        // A thin horizontal orange line alone is not a badge: require a thick body.
-        val denseRows = rows.filter { row ->
-            val maxX = row.xs.maxOrNull() ?: return@filter false
-            row.xs.count { it >= maxX - 140 } >= 5
+
+        // 3x3 morphological opening (remove isolated noise), then closing
+        // (fill tiny gaps) to approximate the supplied OpenCV pipeline.
+        fun morphology(source: BooleanArray, dilate: Boolean): BooleanArray {
+            val target = BooleanArray(source.size)
+            for (y in 1 until gridHeight - 1) {
+                for (x in 1 until gridWidth - 1) {
+                    var value = !dilate
+                    loop@ for (dy in -1..1) {
+                        for (dx in -1..1) {
+                            val bit = source[(y + dy) * gridWidth + (x + dx)]
+                            if (dilate && bit) { value = true; break@loop }
+                            if (!dilate && !bit) { value = false; break@loop }
+                        }
+                    }
+                    target[y * gridWidth + x] = value
+                }
+            }
+            return target
         }
-        if (denseRows.size < 5) return null
-        val groups = mutableListOf<MutableList<OrangeRow>>()
-        for (row in denseRows) {
-            val last = groups.lastOrNull()
-            if (last == null || row.y - last.last().y > 10) groups.add(mutableListOf(row)) else last.add(row)
+        val cleaned = morphology(morphology(morphology(morphology(mask, false), true), true), false)
+
+        // Connected-component scan is the Android-native equivalent of contours.
+        // Keep only badge-sized components and choose the largest qualifying one.
+        val visited = BooleanArray(cleaned.size)
+        val queue = IntArray(cleaned.size)
+        var bestCount = 0
+        var bestMinX = 0
+        var bestMaxX = 0
+        var bestMinY = 0
+        var bestMaxY = 0
+        for (index in cleaned.indices) {
+            if (!cleaned[index] || visited[index]) continue
+            var head = 0
+            var tail = 0
+            queue[tail++] = index
+            visited[index] = true
+            var count = 0
+            var minX = gridWidth
+            var maxX = 0
+            var minY = gridHeight
+            var maxY = 0
+            while (head < tail) {
+                val current = queue[head++]
+                val x = current % gridWidth
+                val y = current / gridWidth
+                count++
+                if (x < minX) minX = x
+                if (x > maxX) maxX = x
+                if (y < minY) minY = y
+                if (y > maxY) maxY = y
+                for (dy in -1..1) {
+                    for (dx in -1..1) {
+                        if (dx == 0 && dy == 0) continue
+                        val nx = x + dx
+                        val ny = y + dy
+                        if (nx !in 0 until gridWidth || ny !in 0 until gridHeight) continue
+                        val next = ny * gridWidth + nx
+                        if (cleaned[next] && !visited[next]) {
+                            visited[next] = true
+                            queue[tail++] = next
+                        }
+                    }
+                }
+            }
+            val componentWidth = (maxX - minX + 1) * step
+            val componentHeight = (maxY - minY + 1) * step
+            val componentArea = count * step * step
+            if (componentArea > 100 && componentWidth > 20 && componentHeight > 10 && count > bestCount) {
+                bestCount = count
+                bestMinX = minX
+                bestMaxX = maxX
+                bestMinY = minY
+                bestMaxY = maxY
+            }
         }
-        val group = groups.filter { it.size >= 5 }.maxByOrNull { it.size } ?: return null
-        val rightMost = group.maxOf { it.xs.maxOrNull() ?: right }
-        val badgeLeft = group.minOf { row -> row.xs.minOrNull() ?: left }.coerceAtLeast(left)
-        val badgeTop = (group.minOf { it.y } - 6).coerceAtLeast(top)
-        val badgeBottom = (group.maxOf { it.y } + 6).coerceAtMost(bottom)
-        return Rect(badgeLeft, badgeTop, (rightMost + 4).coerceAtMost(right), badgeBottom)
+        if (bestCount == 0) return null
+
+        val padding = 4
+        val boxLeft = (left + bestMinX * step - padding).coerceAtLeast(left)
+        val boxTop = (top + bestMinY * step - padding).coerceAtLeast(top)
+        val boxRight = (left + (bestMaxX + 1) * step + padding).coerceAtMost(right)
+        val boxBottom = (top + (bestMaxY + 1) * step + padding).coerceAtMost(bottom)
+        return Rect(boxLeft, boxTop, boxRight, boxBottom)
     }
 
     private fun publishRecognizedText(result: Text, bitmap: Bitmap) {
