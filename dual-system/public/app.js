@@ -51,13 +51,15 @@ async function sendFrame(dataUrl){
  const m=market(),sym=symbol(),otcConfirmed=$("otcConfirm").checked;
  sessionStorage.setItem("screenToken",token);
  try{
-  const priceImage=await isolatePriceTag(dataUrl);\n  const d=await api("/api/ocr/frame",{method:"POST",headers:{"Content-Type":"application/json","x-screen-token":token},body:JSON.stringify({image:priceImage||dataUrl,market:m,symbol:sym,otcConfirmed})});
+  const priceImage=await isolatePriceTag(dataUrl);
+  const d=await api("/api/ocr/frame",{method:"POST",headers:{"Content-Type":"application/json","x-screen-token":token},body:JSON.stringify({image:priceImage||dataUrl,market:m,symbol:sym,otcConfirmed})});
   newData=d.state;$("ocrState").textContent="รับราคา "+d.price+" · "+(m==="OTC"?"OTC":"ตลาดหลัก")+" · "+sym+" · ส่งสำเร็จ";
   if(mode!=="compare")renderSingle(newData,"OCR · "+m+" · "+sym);
  }catch(e){$("ocrState").textContent="OCR ไม่ผ่าน: "+e.message;}
  finally{sendingFrame=false;}
 }
-function chooseScreenshot(message="กรุณาเลือกรูปภาพหน้าจอกราฟจากโทรศัพท์"){$("ocrState").textContent=message;$("imageFile").click();}\nasync function capture(){if(!navigator.mediaDevices?.getDisplayMedia){chooseScreenshot("เบราว์เซอร์นี้ไม่รองรับแชร์หน้าจอ · กรุณาเลือกรูปภาพกราฟแทน");return;}try{stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});const v=$("screenVideo");v.srcObject=stream;await v.play();$("ocrState").textContent="กำลังอ่านภาพ · "+market()+" · "+symbol();videoTimer=setInterval(()=>{if(!v.videoWidth)return;const c=document.createElement("canvas");c.width=Math.min(v.videoWidth,1600);c.height=Math.round(v.videoHeight*c.width/v.videoWidth);c.getContext("2d").drawImage(v,0,0,c.width,c.height);sendFrame(c.toDataURL("image/jpeg",.9));},5000);stream.getVideoTracks()[0].addEventListener("ended",stopCapture);$("startBtn").textContent="หยุดแชร์หน้าจอ";}catch(e){chooseScreenshot("แชร์หน้าจอไม่ได้ ("+e.message+") · ใช้เลือกรูปภาพกราฟแทน");}}
+function chooseScreenshot(message="กรุณาเลือกรูปภาพหน้าจอกราฟจากโทรศัพท์"){$("ocrState").textContent=message;$("imageFile").click();}
+async function capture(){if(!navigator.mediaDevices?.getDisplayMedia){chooseScreenshot("เบราว์เซอร์นี้ไม่รองรับแชร์หน้าจอ · กรุณาเลือกรูปภาพกราฟแทน");return;}try{stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});const v=$("screenVideo");v.srcObject=stream;await v.play();$("ocrState").textContent="กำลังอ่านภาพ · "+market()+" · "+symbol();videoTimer=setInterval(()=>{if(!v.videoWidth)return;const c=document.createElement("canvas");c.width=Math.min(v.videoWidth,1600);c.height=Math.round(v.videoHeight*c.width/v.videoWidth);c.getContext("2d").drawImage(v,0,0,c.width,c.height);sendFrame(c.toDataURL("image/jpeg",.9));},5000);stream.getVideoTracks()[0].addEventListener("ended",stopCapture);$("startBtn").textContent="หยุดแชร์หน้าจอ";}catch(e){chooseScreenshot("แชร์หน้าจอไม่ได้ ("+e.message+") · ใช้เลือกรูปภาพกราฟแทน");}}
 function stopCapture(){if(videoTimer)clearInterval(videoTimer);videoTimer=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$("startBtn").textContent="เริ่มแชร์หน้าจอ";$("ocrState").textContent="หยุดแชร์หน้าจอแล้ว";}
 function marketChanged(){$("otcConfirmRow").classList.toggle("hidden",market()!=="OTC");$("otcConfirm").checked=false;newSignalId=null;refresh();}
 document.querySelectorAll(".switch button").forEach(b=>b.addEventListener("click",()=>selectMode(b.dataset.mode)));
