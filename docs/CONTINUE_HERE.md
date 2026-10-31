@@ -36,8 +36,10 @@
 - ถ้าพบตัวเลขทศนิยมหลายค่า จะไม่เลือกเอง แต่ขึ้น UNCONFIRMED
 
 ## สถานะ / ข้อจำกัด
-- โค้ดถูก push ลง branch แล้ว แต่ยังไม่ยืนยันผล Gradle build
-- ยังไม่ได้ทดสอบบนโทรศัพท์ Android จริง
+- GitHub Actions run #1 `41194243643` จบด้วย `success` และอัปโหลด artifact แล้ว
+- Artifact: `AI-Signal-Radar-OCR-Clean-debug`, ID `13040107932`, ZIP 22,836,511 bytes, SHA-256 `976218326c9c206624b7c55732c83e27a05f61bebf0256032fd0597293cf9419`, หมดอายุ 30 พ.ย. 2026
+- ดาวน์โหลดได้จากหน้า run: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194243643 (ส่วน Artifacts ด้านล่าง)
+- Build ผ่านแล้ว แต่ยังไม่ได้ทดสอบบนโทรศัพท์ Android จริง
 - เฟสนี้ยังไม่มี ROI price locator ที่แม่นยำ, overlay ลอยเหนือแอปเทรด, backend sync, candle builder หรือ signal engine
 - อย่าส่ง APK ให้ผู้ใช้จนกว่า workflow ผ่านและตรวจ artifact ได้
 - ห้ามอ้างว่าราคา OCR ถูกต้องจนกว่าจะเทียบกับหน้าจอจริงหลาย layout
