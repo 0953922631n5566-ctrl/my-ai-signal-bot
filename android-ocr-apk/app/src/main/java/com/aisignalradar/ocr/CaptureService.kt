@@ -193,17 +193,17 @@ class CaptureService : Service() {
         val now = System.currentTimeMillis()
         if (now - lastOcrUploadAt < 3000) return
 
-        val pairMatch = Regex("""(?i)\\b([A-Z]{3})\\s*/\\s*([A-Z]{3})\\b""").find(ocrText)
+        val pairMatch = Regex("""(?i)\b([A-Z]{3})\s*/\s*([A-Z]{3})\b""").find(ocrText)
             ?: return
         val symbol = pairMatch.groupValues[1].uppercase() + "/" + pairMatch.groupValues[2].uppercase()
-        val marketType = if (Regex("""(?i)\\bOTC\\b""").containsMatchIn(ocrText)) "OTC" else "DIGITAL_OR_UNKNOWN"
-        val prices = Regex("""(?<![\\d.])\\d{1,3}\\.\\d{3,6}(?!\\d)""")
+        val marketType = if (Regex("""(?i)\bOTC\b""").containsMatchIn(ocrText)) "OTC" else "DIGITAL_OR_UNKNOWN"
+        val prices = Regex("""(?<![\d.])\d{1,3}\.\d{3,6}(?!\d)""")
             .findAll(ocrText)
             .mapNotNull { it.value.toDoubleOrNull() }
             .distinct()
             .take(8)
             .toList()
-        val countdown = Regex("""\\b\\d{1,2}:\\d{2}\\b""").find(ocrText)?.value
+        val countdown = Regex("""\b\d{1,2}:\d{2}\b""").find(ocrText)?.value
 
         val payload = JSONObject().apply {
             put("symbol", symbol)
@@ -230,7 +230,7 @@ class CaptureService : Service() {
                 if (code in 200..299) {
                     output?.post {
                         val old = output?.text?.toString().orEmpty()
-                        output?.text = old + "\\nส่งข้อมูลคู่เงิน " + symbol + " เข้า AI Radar แล้ว ✓"
+                        output?.text = old + "\nส่งข้อมูลคู่เงิน " + symbol + " เข้า AI Radar แล้ว ✓"
                     }
                 } else {
                     output?.post { output?.text = "ส่งข้อมูลเข้า AI Radar ไม่สำเร็จ (HTTP " + code + ")" }
