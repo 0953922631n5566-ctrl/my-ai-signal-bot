@@ -112,10 +112,36 @@ class CaptureService : Service() {
             bitmap = imageToBitmap(frame)
             frame.close()
             recognizer.process(InputImage.fromBitmap(bitmap, 0))
-                .addOnSuccessListener { result -> publishRecognizedText(result, bitmap) }
-                .addOnFailureListener { error -> publishError(error.localizedMessage ?: "OCR error") }
-                .addOnCompleteListener {
-                    bitmap?.recycle()
+                .addOnSuccessListener { result ->
+                    val badge = detectOrangePriceBadge(bitmap)
+                    if (badge == null || badge.width() < 1 || badge.height() < 1) {
+                        publishRecognizedText(result, bitmap, null, null)
+                        bitmap.recycle()
+                        busy.set(false)
+                    } else {
+                        // The live-price badge is small. Crop it, enlarge 4x, and OCR it alone.
+                        val cropRect = Rect(badge).apply { intersect(0, 0, bitmap.width, bitmap.height) }
+                        val crop = Bitmap.createBitmap(bitmap, cropRect.left, cropRect.top, cropRect.width(), cropRect.height())
+                        val enlarged = Bitmap.createScaledBitmap(crop, crop.width * 4, crop.height * 4, true)
+                        recognizer.process(InputImage.fromBitmap(enlarged, 0))
+                            .addOnSuccessListener { badgeText ->
+                                publishRecognizedText(result, bitmap, badge, badgeText)
+                            }
+                            .addOnFailureListener { error ->
+                                publishRecognizedText(result, bitmap, badge, null)
+                                publishError("Badge OCR: " + (error.localizedMessage ?: "OCR error"))
+                            }
+                            .addOnCompleteListener {
+                                if (enlarged !== crop) enlarged.recycle()
+                                crop.recycle()
+                                bitmap.recycle()
+                                busy.set(false)
+                            }
+                    }
+                }
+                .addOnFailureListener { error ->
+                    publishError(error.localizedMessage ?: "OCR error")
+                    bitmap.recycle()
                     busy.set(false)
                 }
         } catch (error: Exception) {
@@ -264,7 +290,7 @@ class CaptureService : Service() {
         return Rect(boxLeft, boxTop, boxRight, boxBottom)
     }
 
-    private fun publishRecognizedText(result: Text, bitmap: Bitmap) {
+    private fun publishRecognizedText(result: Text, bitmap: Bitmap, detectedBadge: Rect?, badgeText: Text?) {
         val rawText = result.text
         val normalized = rawText.replace('\n', ' ')
         val pairMatcher = Pattern.compile("(?i)\\b[A-Z]{3}\\s*[/\\-]\\s*[A-Z]{3}\\b").matcher(normalized)
@@ -309,10 +335,29 @@ class CaptureService : Service() {
         }
 
         // Detect the moving orange current-price badge from screen pixels on every OCR frame.
-        val badge = detectOrangePriceBadge(bitmap)
-        val badgeCandidates = if (badge != null) candidates.filter { candidate ->
-            candidate.decimals in 5..6 && candidate.x in (badge.left - 12)..(badge.right + 12) &&
-                candidate.y in (badge.top - 12)..(badge.bottom + 12)
+        val badge = detectedBadge
+        // Badge-crop OCR is 4x enlarged; map candidate centers back to screen pixels.
+        val badgeCandidates = if (badge != null && badgeText != null) {
+            badgeText.textBlocks.flatMap { block ->
+                block.lines.flatMap { line ->
+                    val box = line.boundingBox
+                    val matcher = pricePattern.matcher(line.text)
+                    buildList {
+                        while (matcher.find()) {
+                            val value = matcher.group()
+                            val decimals = value.substringAfter('.', "").length
+                            val x = if (box != null && line.text.isNotEmpty())
+                                badge.left + (box.left + (((matcher.start() + matcher.end()) / 2f / line.text.length) * box.width()).toInt()) / 4
+                            else -1
+                            val y = if (box != null) badge.top + box.centerY() / 4 else -1
+                            if (decimals in 5..6) add(NumericCandidate(value, x, y, line.text, decimals))
+                        }
+                    }
+                }
+            }.filter { candidate ->
+                candidate.x in (badge.left - 4)..(badge.right + 4) &&
+                    candidate.y in (badge.top - 4)..(badge.bottom + 4)
+            }
         } else emptyList()
         val selectedLive = when {
             badgeCandidates.size == 1 -> badgeCandidates.first()
