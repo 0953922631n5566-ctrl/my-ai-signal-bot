@@ -218,3 +218,13 @@ Build #7 (run 41197501581) succeeded; artifact 13041109349. User verified pair a
 - หมดอายุ: 30 พ.ย. 2026 เวลา 12:21:29 UTC
 - Workflow: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41200690320
 - ผลนี้ยืนยัน compile/package สำเร็จเท่านั้น ยังต้องทดสอบ OCR จากกรอบที่กำหนดบนโทรศัพท์จริงก่อนยืนยันราคา
+
+
+### Orange Price Badge detection update (31 Oct 2026)
+เปลี่ยนวิธีหา live quote จากการไล่หาเลขทศนิยมในกรอบ ROI กว้าง เป็นการตรวจจับสีส้มจากภาพจริงในโซนด้านขวาของกราฟ จากนั้นสร้าง bounding box แบบ dynamic จากกลุ่มพิกเซลสีส้มในแนวตั้งและเส้นราคาที่เชื่อมอยู่ ตัวเลข OCR จะผ่านได้เฉพาะเมื่ออยู่ภายในกรอบป้ายและมีทศนิยม 5–6 ตำแหน่ง หากไม่พบป้ายหรือเลขไม่ตรงกรอบจะเป็น UNCONFIRMED โดยไม่ fallback ไปเลือกเลขอื่น
+
+- Detector source commit: f97e28c46ebad586fd30dab1bd1f43f4c43df32c
+- Tight bounding-box refinement commit: dae7682a9b1c5b191ff3ec4761adccc7a353d8cc
+- OCR sampling interval request: 300ms (actual throughput depends on ML Kit processing/device performance)
+- Diagnostic output now includes orange badge bbox coordinates and OCR candidates gated by that box.
+- Current limitation: this build logic reports the dynamic bounding box in diagnostics; it does not yet draw a visible rectangle overlay on top of the trading app. Device screenshot validation is still required to tune the orange color threshold and confirm that the detected box follows the badge rather than another orange UI element.
