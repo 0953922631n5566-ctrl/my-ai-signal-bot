@@ -25,7 +25,7 @@
 - Workflow: `.github/workflows/build-android-ocr.yml`
 - Render config: `render.yaml`
 - Commit `18f397570e8ef4e7697c659b9e9200d6b408d717` — ตั้ง market type เป็น `UNCONFIRMED` หาก OCR ยังไม่ยืนยัน
-- Commit `badb9344d034fc4efc23e4fa31de9dadfa180984` — แก้ Android OCR ให้ POST ไป `https://my-ai-signal-bot-v2.onrender.com/api/ocr` ซึ่งตรงกับ route ใน backend repository นี้ (เดิมส่งไปคนละ Render service และ path `/api/ocr/text`)
+- Commit `badb9344d034fc4efc23e4fa31de9dadfa180984` — เปลี่ยน Android OCR ไปยัง endpoint `/api/ocr` ของ backend `main` เดิม; ภายหลังตรวจพบว่า APK ต้องส่งเข้า dual backend แทน จึงแก้ endpoint อีกครั้งใน commit `c84b757`
 - Commit `d28bbdea70df89f1bbbe86446568593467b0ddd3` — backend เก็บ `UNCONFIRMED` ไว้ตามจริง แทนการแปลงเป็น `DIGITAL_OR_UNKNOWN`
 - การแก้ endpoint เป็นการแก้ความผิดพลาดที่ตรวจพบจาก source code; ยังต้องรอ GitHub Actions build APK และทดสอบรับข้อมูลบน Render/Android จริงก่อนยืนยันว่าทำงานครบ
 
@@ -37,6 +37,12 @@
 5. ห้ามใส่ API key, token, รหัสผ่าน, ข้อมูลบัญชี หรือ secrets ลงใน GitHub
 6. ต้องทดสอบกับภาพหน้าจอจริงหลายกรณี รวมถึงภาพที่อ่านไม่ชัด ก่อนเรียกว่าใช้งานจริง
 7. ไม่มีการรับประกัน win rate หรือจำนวนไม้ชนะ
+
+- Commit `c84b7576537199303346b02faff7538400e758a0` — แก้ endpoint ใน Android `CaptureService.kt` จาก URL ของ v2 ที่ไม่มี route OCR ไปเป็น `https://ai-signal-radar-dual.onrender.com/api/ocr/text` ซึ่งตรงกับ route ใน `dual-system/server.js` ที่ Render service ใช้งานจริง
+- ตรวจ Render account แล้ว: `ai-signal-radar-dual` (service `srv-dbijj65g1s2s73ded790`) deploy จาก branch `dual-system-independent`, start command `node dual-system/server.js`, สถานะ service ไม่ถูก suspend และ deploy ล่าสุดเป็น `live`
+- `my-ai-signal-bot-v2` (service `srv-dbi13j0m7kps73bin0h0`) deploy จาก `feature/dual-mode-mini-app`; หน้า Mini App ของ branch นี้ฝัง iframe OCR จาก `https://ai-signal-radar-dual.onrender.com`. ตัว v2 ไม่ใช่ OCR ingestion backend โดยตรง
+- Dual backend มี `POST /api/ocr/text`, `GET /api/ocr/android-status` และ `POST /api/ocr/android-price`; การนำราคาเข้าเครื่องคำนวณต้องผู้ใช้ยืนยันตลาด/คู่เงิน/หน้าจอ และระบบปฏิเสธเมื่อมี candidate มากกว่าหนึ่งค่า
+- การแก้ endpoint ใน APK อยู่บน `main` และ workflow build ตั้ง trigger เมื่อมี push ใน `android-ocr-apk/**`; ต้องตรวจ GitHub Actions ว่า build ผ่านหลัง commit นี้ก่อนให้ติดตั้ง
 
 ## บันทึกการทำงานรอบล่าสุด
 - Commit `1eef60f0ff72fee7a2d0af425c976991afc81545` — harden `POST /api/ocr`: บังคับ capturedAt ต้องเป็นเวลาปัจจุบัน (ไม่เกิน 5 วินาทีในอนาคต/ไม่เก่ากว่า 15 วินาที), ตรวจรูปแบบ countdown, ย้าย rate limit หลังตรวจ symbol/time และส่งสถานะ `priceConfirmed:false`, `analysisLinked:false` ชัดเจน
