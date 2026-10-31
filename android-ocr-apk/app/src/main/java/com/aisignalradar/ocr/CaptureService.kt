@@ -25,6 +25,10 @@ import android.widget.TextView
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 class CaptureService : Service() {
     companion object {
@@ -42,6 +46,7 @@ class CaptureService : Service() {
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     private var busy = false
     private var firstFrameReceived = false
+    @Volatile private var lastOcrUploadAt = 0L
     private lateinit var workerThread: HandlerThread
     private lateinit var worker: Handler
 
@@ -166,6 +171,7 @@ class CaptureService : Service() {
                             "อ่านข้อความได้แล้ว ✓\n$text"
                         }
                     }
+                    if (text.isNotBlank()) parseAndUpload(text)
                 }
                 .addOnFailureListener { error ->
                     output?.post { output?.text = "ML Kit อ่านภาพไม่สำเร็จ: ${error.javaClass.simpleName} ${error.message ?: ""}" }
@@ -180,6 +186,61 @@ class CaptureService : Service() {
             output?.post { output?.text = "ประมวลผลภาพผิดพลาด: ${error.javaClass.simpleName} ${error.message ?: ""}" }
             busy = false
         }
+    }
+
+    // Extract only structured market fields. The screenshot and full OCR text stay on-device.
+    private fun parseAndUpload(ocrText: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastOcrUploadAt < 3000) return
+
+        val pairMatch = Regex("""(?i)\\b([A-Z]{3})\\s*/\\s*([A-Z]{3})\\b""").find(ocrText)
+            ?: return
+        val symbol = pairMatch.groupValues[1].uppercase() + "/" + pairMatch.groupValues[2].uppercase()
+        val marketType = if (Regex("""(?i)\\bOTC\\b""").containsMatchIn(ocrText)) "OTC" else "DIGITAL_OR_UNKNOWN"
+        val prices = Regex("""(?<![\\d.])\\d{1,3}\\.\\d{3,6}(?!\\d)""")
+            .findAll(ocrText)
+            .mapNotNull { it.value.toDoubleOrNull() }
+            .distinct()
+            .take(8)
+            .toList()
+        val countdown = Regex("""\\b\\d{1,2}:\\d{2}\\b""").find(ocrText)?.value
+
+        val payload = JSONObject().apply {
+            put("symbol", symbol)
+            put("marketType", marketType)
+            put("priceCandidates", JSONArray(prices))
+            put("countdown", countdown ?: JSONObject.NULL)
+            put("capturedAt", now)
+        }
+        lastOcrUploadAt = now
+
+        Thread({
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL("https://my-ai-signal-bot-v2.onrender.com/api/ocr").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("Accept", "application/json")
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                if (code in 200..299) {
+                    output?.post {
+                        val old = output?.text?.toString().orEmpty()
+                        output?.text = old + "\\nส่งข้อมูลคู่เงิน " + symbol + " เข้า AI Radar แล้ว ✓"
+                    }
+                } else {
+                    output?.post { output?.text = "ส่งข้อมูลเข้า AI Radar ไม่สำเร็จ (HTTP " + code + ")" }
+                }
+            } catch (e: Exception) {
+                output?.post { output?.text = "เชื่อมต่อ AI Radar ไม่ได้: " + (e.message ?: e.javaClass.simpleName) }
+            } finally {
+                connection?.disconnect()
+            }
+        }, "ocr-upload").start()
     }
 
     private fun showOverlay() {
