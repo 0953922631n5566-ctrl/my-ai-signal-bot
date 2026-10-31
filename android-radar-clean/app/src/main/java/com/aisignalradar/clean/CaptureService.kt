@@ -148,9 +148,21 @@ class CaptureService : Service() {
         val normalized = rawText.replace('\n', ' ')
         val pairMatcher = Pattern.compile("(?i)\\b[A-Z]{3}\\s*[/\\-]\\s*[A-Z]{3}\\b").matcher(normalized)
         val pair = if (pairMatcher.find()) pairMatcher.group().replace(" ", "").uppercase(Locale.US) else "NOT_FOUND"
+        // ML Kit may merge adjacent letters (e.g. "OTCE Blitz") or split
+        // the market badge into separate blocks. Normalize OCR lines and accept
+        // the OTC token even when punctuation/neighboring glyphs are attached.
+        val normalizedLines = result.textBlocks.flatMap { block ->
+            block.lines.map { it.text.uppercase(Locale.US) }
+        }
+        val otcVisible = normalizedLines.any { line ->
+            line.replace(Regex("[^A-Z]"), "").contains("OTC")
+        } || normalized.uppercase(Locale.US).replace(Regex("[^A-Z]"), "").contains("OTC")
+        val mainVisible = normalizedLines.any { line ->
+            Regex("(?i)\\b(MAIN|SPOT|FOREX)\\b").containsMatchIn(line)
+        }
         val market = when {
-            Regex("(?i)\\bOTC\\b").containsMatchIn(normalized) -> "OTC"
-            Regex("(?i)\\bMAIN\\b|\\bSPOT\\b|\\bFOREX\\b").containsMatchIn(normalized) -> "MAIN"
+            otcVisible -> "OTC"
+            mainVisible -> "MAIN"
             else -> "UNKNOWN"
         }
         val timeMatcher = Pattern.compile("\\b(?:[01]?\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?\\b").matcher(normalized)
