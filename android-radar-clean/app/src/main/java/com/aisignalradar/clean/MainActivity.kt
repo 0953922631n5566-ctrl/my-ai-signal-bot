@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var market: TextView
     private lateinit var price: TextView
     private lateinit var clock: TextView
+    private lateinit var candle: TextView
     private lateinit var candidates: TextView
     private lateinit var raw: TextView
     private val projectionRequest = 701
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
             market.text = "ตลาด: " + (intent.getStringExtra("market") ?: "UNKNOWN")
             price.text = "ราคา OCR: " + (intent.getStringExtra("price") ?: "ยังยืนยันไม่ได้")
             clock.text = "เวลาที่อ่านได้: " + (intent.getStringExtra("clock") ?: "ไม่พบ")
+            candle.text = "แท่งราคา 1 นาที (OCR-observed): " + (intent.getStringExtra("candle_summary") ?: "STANDBY")
             candidates.text = "ตัวเลขที่พบและตำแหน่งบนจอ:\\n" +
                 (intent.getStringExtra("candidates") ?: "—") +
                 "\\nขนาดจอ: ${intent.getIntExtra("screen_width", 0)} × ${intent.getIntExtra("screen_height", 0)}"
@@ -69,6 +71,7 @@ class MainActivity : ComponentActivity() {
         market = makeText("ตลาด: UNKNOWN")
         price = makeText("ราคา OCR: ยังไม่ยืนยัน")
         clock = makeText("เวลาที่อ่านได้: —")
+        candle = makeText("แท่งราคา 1 นาที (OCR-observed): STANDBY — รอราคา OCR ที่ยืนยันได้")
         candidates = makeText("ตัวเลขที่พบและตำแหน่งบนจอ: —")
         raw = makeText("ข้อความ OCR ดิบจะปรากฏที่นี่")
         val start = Button(this).apply {
@@ -93,7 +96,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         root.addView(heading); root.addView(status); root.addView(start); root.addView(stop); root.addView(manual)
-        root.addView(pair); root.addView(market); root.addView(price); root.addView(clock)
+        root.addView(pair); root.addView(market); root.addView(price); root.addView(clock); root.addView(candle)
         root.addView(candidates); root.addView(raw)
         setContentView(ScrollView(this).apply { addView(root) })
     }
