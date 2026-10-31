@@ -245,3 +245,9 @@ Build #7 (run 41197501581) succeeded; artifact 13041109349. User verified pair a
 ผู้ใช้ระบุโซนครอปจาก Xiaomi 11T: X 82%-100%, Y 15%-90%. ปรับ ROI ของ `detectOrangePriceBadge()` เป็น X 78%-100%, Y 15%-90% โดยตั้งใจเผื่อขอบซ้ายจาก 82% ลงมา 78% เพราะ Diagnostics ก่อนหน้าระบุ bbox x=868..918 ซึ่งหากเฟรมกว้างประมาณ 1080px จุดเริ่ม 82% จะตัดขอบซ้ายของป้ายราคาได้. ใช้ขอบขวาสุดของภาพและยังคง HSV + morphology + connected-components เดิม.
 - Source commit: `409329897075431079aed5e9d9d3aeb0e18c0cec`
 - ยังต้องทดสอบบนโทรศัพท์จริง; ขนาด/แนวภาพที่ MediaProjection ส่งมาอาจต่างจากตัวอย่าง 1080x2400 จึงต้องดู bbox diagnostics หลัง scan.
+
+
+### Badge crop OCR refinement — 31 Oct 2026
+ผลจากผู้ใช้ทดสอบ Build #13 แสดงว่า orange detector พบ bbox `864,1254,926,1280` แต่ full-screen ML Kit OCR คืน 0 price candidates ภายในป้าย; ตัวเลขทศนิยมที่พบอยู่นอกกรอบจึงไม่ปลอดภัยที่จะนำมาใช้เป็น live quote. แก้โดย crop bbox ป้ายส้มจาก bitmap เต็ม, upscale 4x, OCR crop แยกด้วย ML Kit, map candidate coordinates กลับสู่ภาพเต็ม และคงการยืนยันเฉพาะทศนิยม 5–6 หลักภายใน bbox เท่านั้น. หากไม่พบ candidate ที่ผ่านเงื่อนไขยังคง UNCONFIRMED.
+- Source commit: `66eb3e5502245b6a1360137fd0a98b3bc229201d`
+- Device verification: pending; crop-upscale approach must be validated against the actual orange badge on the user's phone.
