@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var market: TextView
     private lateinit var price: TextView
     private lateinit var clock: TextView
+    private lateinit var candidates: TextView
     private lateinit var raw: TextView
     private val projectionRequest = 701
 
@@ -30,10 +31,13 @@ class MainActivity : ComponentActivity() {
             if (intent?.action != CaptureService.ACTION_OCR_RESULT) return
             pair.text = "คู่เงิน: " + (intent.getStringExtra("pair") ?: "ไม่พบ")
             market.text = "ตลาด: " + (intent.getStringExtra("market") ?: "UNKNOWN")
-            price.text = "ราคา: " + (intent.getStringExtra("price") ?: "ยังยืนยันไม่ได้")
+            price.text = "ราคา OCR: " + (intent.getStringExtra("price") ?: "ยังยืนยันไม่ได้")
             clock.text = "เวลาที่อ่านได้: " + (intent.getStringExtra("clock") ?: "ไม่พบ")
-            raw.text = "ข้อความ OCR:\n" + (intent.getStringExtra("raw") ?: "")
-            status.text = "กำลังอ่านหน้าจอ • ตรวจข้อมูลก่อนวิเคราะห์"
+            candidates.text = "ตัวเลขที่พบและตำแหน่งบนจอ:\\n" +
+                (intent.getStringExtra("candidates") ?: "—") +
+                "\\nขนาดจอ: ${intent.getIntExtra("screen_width", 0)} × ${intent.getIntExtra("screen_height", 0)}"
+            raw.text = "ข้อความ OCR ดิบ:\\n" + (intent.getStringExtra("raw") ?: "")
+            status.text = "กำลังอ่านหน้าจอ • ราคาเป็นเพียง candidate จนกว่าจะตรวจสอบกับกราฟ"
         }
     }
 
@@ -55,17 +59,18 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(0xFF10151F.toInt())
         }
         val heading = TextView(this).apply {
-            text = "AI SIGNAL RADAR OCR"
-            textSize = 22f
+            text = "AI SIGNAL RADAR OCR • CLEAN"
+            textSize = 21f
             setTextColor(0xFF62E6C5.toInt())
             gravity = Gravity.CENTER
         }
         status = makeText("สถานะ: STANDBY")
         pair = makeText("คู่เงิน: —")
         market = makeText("ตลาด: UNKNOWN")
-        price = makeText("ราคา: —")
+        price = makeText("ราคา OCR: ยังไม่ยืนยัน")
         clock = makeText("เวลาที่อ่านได้: —")
-        raw = makeText("ข้อความ OCR จะปรากฏที่นี่")
+        candidates = makeText("ตัวเลขที่พบและตำแหน่งบนจอ: —")
+        raw = makeText("ข้อความ OCR ดิบจะปรากฏที่นี่")
         val start = Button(this).apply {
             text = "เริ่มอ่านหน้าจอ"
             setOnClickListener { requestCapture() }
@@ -77,16 +82,21 @@ class MainActivity : ComponentActivity() {
                 status.text = "สถานะ: หยุดอ่านแล้ว"
             }
         }
-        root.addView(heading); root.addView(status); root.addView(start); root.addView(stop)
-        root.addView(pair); root.addView(market); root.addView(price); root.addView(clock); root.addView(raw)
+        val manual = Button(this).apply {
+            text = "อ่านซ้ำ (Manual Scan)"
+            setOnClickListener { status.text = "อ่านหน้าจออัตโนมัติทุกประมาณ 0.9 วินาทีอยู่แล้ว" }
+        }
+        root.addView(heading); root.addView(status); root.addView(start); root.addView(stop); root.addView(manual)
+        root.addView(pair); root.addView(market); root.addView(price); root.addView(clock)
+        root.addView(candidates); root.addView(raw)
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
     private fun makeText(value: String) = TextView(this).apply {
         text = value
-        textSize = 16f
+        textSize = 15f
         setTextColor(0xFFE8EDF5.toInt())
-        setPadding(0, 14, 0, 14)
+        setPadding(0, 12, 0, 12)
     }
 
     private fun requestCapture() {
