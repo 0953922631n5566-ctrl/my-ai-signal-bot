@@ -2,6 +2,11 @@
 
 อัปเดต: 31 ตุลาคม 2026
 
+## เอกสารหลักของโปรเจกต์
+- **ประวัติตั้งแต่เริ่มโครงการ:** [docs/PROJECT_HISTORY.md](PROJECT_HISTORY.md)
+- **ข้อกำหนดและแผนพัฒนา:** [docs/DUAL_SCAN_REBUILD_PLAN.md](DUAL_SCAN_REBUILD_PLAN.md)
+- เอกสารหน้านี้ใช้ส่งต่องานและระบุสถานะล่าสุด
+
 ## Repository
 - https://github.com/0953922631n5566-ctrl/my-ai-signal-bot
 - Branch ทำงานใหม่: `ocr-dual-scan-clean`
@@ -47,17 +52,22 @@
 - GitHub Actions run #1 `41194243643` จบด้วย `success` และอัปโหลด artifact แล้ว
 - Artifact: `AI-Signal-Radar-OCR-Clean-debug`, ID `13040107932`, ZIP 22,836,511 bytes, SHA-256 `976218326c9c206624b7c55732c83e27a05f61bebf0256032fd0597293cf9419`, หมดอายุ 30 พ.ย. 2026
 - ดาวน์โหลดได้จากหน้า run: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194243643 (ส่วน Artifacts ด้านล่าง)
-- Build ผ่านแล้ว แต่ยังไม่ได้ทดสอบบนโทรศัพท์ Android จริง
+- Build ผ่านแล้ว แต่ยังไม่ได้ยืนยันความถูกต้องของ OCR ราคาบนโทรศัพท์จริง
 - เฟสนี้ยังไม่มี ROI price locator ที่แม่นยำ, overlay ลอยเหนือแอปเทรด, backend sync, candle builder หรือ signal engine
-- อย่าส่ง APK ให้ผู้ใช้จนกว่า workflow ผ่านและตรวจ artifact ได้
+- ปุ่ม Manual Scan ใน Build #4 ยังเป็น placeholder; ต้องเชื่อม action เพื่อสั่ง OCR ใหม่จริง
 - ห้ามอ้างว่าราคา OCR ถูกต้องจนกว่าจะเทียบกับหน้าจอจริงหลาย layout
 - OCR อ่านได้เฉพาะสิ่งที่ปรากฏบนหน้าจอ; ไม่สามารถอ่านราคาคู่ที่ซ่อนอยู่
 - ห้ามใส่ token/password/API key ใน GitHub
 
 ## ขั้นตอนถัดไป
-1. ตรวจ GitHub Actions ของ workflow Build Clean Android OCR APK
-2. ถ้า build fail ให้ดึง job logs และแก้ compile/config errors
-3. เมื่อ build ผ่าน ตรวจ artifact แล้วค่อยส่ง APK ให้ผู้ใช้ติดตั้งทดสอบ
-4. ให้ผู้ใช้ทดสอบเปิดหน้าเทรดและกดเริ่มอ่านหน้าจอ ตรวจว่าคู่เงิน ราคา เวลา และตลาดตรงกับภาพจริงหรือไม่
-5. ใช้ภาพหน้าจอจริงของผู้ใช้เพื่อทำ ROI-specific price extraction และแก้กรณีอ่านแต่เวลา
-6. เพิ่ม overlay, Auto-follow, Manual Scan, validation และ analysis หลัง OCR ผ่านเกณฑ์
+1. ตรวจสอบ/ใช้ artifact จาก GitHub Actions run #4
+2. ให้ผู้ใช้เปิดหน้าเทรดจริง เริ่ม OCR และส่งภาพหน้า diagnostic ที่เห็นผลอ่าน เพื่อเทียบคู่เงิน ตลาด ราคา เวลา และพิกัด candidate
+3. ใช้ภาพจริงกำหนด ROI สำหรับอ่านราคา และแยกยอดเงินบัญชี/payout/แกนราคาออกจากราคา
+4. เพิ่ม validation ราคาและความสดของข้อมูล ก่อนอนุญาตให้ระบบใช้ราคา
+5. แก้ Manual Scan ให้สั่ง OCR รอบใหม่ทันที ไม่ใช่เพียงเปลี่ยนข้อความสถานะ
+6. ทดสอบการเปลี่ยนคู่เงินและเปลี่ยน MAIN/OTC ว่าตามหน้าจอได้และไม่ปะปนข้อมูล
+7. หลัง OCR ผ่านเกณฑ์ ค่อยเพิ่ม overlay, candle builder, indicators และ signal engine
+8. อัปเดตเอกสารนี้ทุกครั้งที่มี commit/build/test ใหม่ พร้อมระบุผลจริง
+
+## หลักการส่งต่องาน
+เริ่มอ่าน `docs/PROJECT_HISTORY.md` เพื่อเข้าใจที่มาและการตัดสินใจทั้งหมด จากนั้นอ่านเอกสารนี้เพื่อดูสถานะปัจจุบันและงานถัดไป ห้ามเริ่มใหม่หรือเปลี่ยนขอบเขตโดยไม่ตรวจเอกสารทั้งสองก่อน
