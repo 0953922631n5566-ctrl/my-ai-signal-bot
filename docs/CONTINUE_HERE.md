@@ -133,3 +133,17 @@ Build #8 update: run 41198590130 completed SUCCESS for commit ae3d0273561a6e3b54
 - Diagnostics แสดง bbox เป็นพิกัดพิกเซลและรายการตัวเลขที่อยู่ภายในกรอบ; ต้องทดสอบบนหน้าจอจริงเพื่อยืนยันค่าสี/ขนาดป้ายและความถูกต้องของกรอบ
 - ข้อจำกัดปัจจุบัน: กรอบเป็นผลตรวจจับ/พิกัดใน diagnostics ยังไม่ได้วาดเป็นกรอบทับบนหน้าจอแอปเทรด และ 300ms เป็นรอบพยายามประมวลผล ไม่ใช่การรับประกันว่า OCR จะเสร็จทุก 300ms
 - รอ GitHub Actions build ใหม่และทดสอบ APK บนโทรศัพท์ก่อนประกาศว่าอ่านราคาได้ถูกต้อง
+
+
+## HSV Orange Badge detector update (31 ต.ค. 2026)
+ผู้ใช้ส่งตัวอย่างอัลกอริทึม Python/OpenCV สำหรับตรวจจับป้ายราคาสีส้ม และอนุมัติให้นำแนวทางมาใช้ใน Android OCR
+- ปรับ `detectOrangePriceBadge()` จาก RGB threshold/การรวมแถว เป็นการแปลงสี RGB เป็น HSV ด้วย Android `Color.RGBToHSV` และใช้ช่วงเทียบเท่า OpenCV: H 10–25, S >= 150/255, V >= 150/255
+- จำกัดการสแกนในโซนกราฟขวา X 55–85%, Y 11–90%; ลดตัวอย่างทุก 2 px เพื่อลดภาระประมวลผล
+- เพิ่ม 3x3 morphological opening/closing แบบ Kotlin เพื่อลด noise และอุดช่องว่างเล็ก ๆ
+- ใช้ connected-component scan แบบ 8 ทิศทางแทน OpenCV contours; คัดเฉพาะ component area >100 px, width >20 px, height >10 px และเลือก component ที่ใหญ่ที่สุดใน ROI
+- เพิ่ม padding 4 px ให้กรอบ; กรอบนี้ยังใช้ gate ให้ OCR เลือกเฉพาะราคา 5–6 หลักตาม logic เดิม
+- ไม่เพิ่ม dependency OpenCV ใน APK; ไม่ใช้ Python/mss เพราะจับภาพผ่าน Android MediaProjection อยู่แล้ว
+- Source commit: `84f98206f9f5c61b8dfb549ec36e1a4f88223a8a`
+- ข้อจำกัด: ยังไม่ได้ทดสอบ detector ใหม่นี้บนโทรศัพท์จริง; component สีส้มอื่นที่ใหญ่กว่าใน ROI อาจถูกเลือกได้ จึงต้องตรวจ bbox และ candidate จาก Diagnostics ก่อนปรับ threshold เพิ่มเติม
+- ยังไม่มีกรอบ overlay ที่วาดทับบนแอปเทรด; bbox ใช้ใน diagnostics และกรอง OCR เท่านั้น
+- รอ GitHub Actions build จาก commit นี้ และทดสอบกับป้ายราคาที่ขยับจริงก่อนยืนยันความถูกต้อง
