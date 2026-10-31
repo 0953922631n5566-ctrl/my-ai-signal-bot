@@ -2,7 +2,7 @@
   "name": "ai-signal-radar",
   "version": "1.0.0",
   "private": true,
-  "description": "EUR/USD one-minute signal dashboard and Telegram Mini App",
+  "description": "AI Signal Radar dual backend Mini App",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,6 +11,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "tesseract.js": "^6.0.1"
   }
 }
