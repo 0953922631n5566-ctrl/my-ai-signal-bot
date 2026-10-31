@@ -187,15 +187,21 @@ class CaptureService : Service() {
             }
         }
 
-        // Portrait Trade layouts place the right-edge quote label well before
-        // 55% of the full screen width (observed x≈529 on a 1080px capture).
-        // Use a wider chart lane but keep the vertical chart bounds; ambiguity
-        // is still rejected below rather than guessing a quote.
-        val liveLaneMinX = (screenWidth * 0.40f).toInt()
+        // User-defined red rectangle for the live quote on the Trade screen.
+        // Approximate normalized ROI: rightmost 30% of the chart region, from
+        // x=55% to x=85% of the full capture; y=11% to 90% of screen height.
+        // The right edge is kept before the trade-control panel; the ROI follows
+        // the blank future-chart area where the live price marker is displayed.
+        // These are calibration bounds from the user's layout description,
+        // not pixel-perfect coordinates; keep ambiguous readings unconfirmed.
+        val liveRoiLeft = (screenWidth * 0.55f).toInt()
+        val liveRoiRight = (screenWidth * 0.85f).toInt()
+        val liveRoiTop = (screenHeight * 0.11f).toInt()
+        val liveRoiBottom = (screenHeight * 0.90f).toInt()
         val liveLane = candidates.filter { candidate ->
             candidate.decimals in 5..6 &&
-                candidate.x >= liveLaneMinX &&
-                candidate.y in (screenHeight * 0.15f).toInt()..(screenHeight * 0.93f).toInt()
+                candidate.x in liveRoiLeft..liveRoiRight &&
+                candidate.y in liveRoiTop..liveRoiBottom
         }
 
         // The live quote label moves vertically with the active candle. Track its
