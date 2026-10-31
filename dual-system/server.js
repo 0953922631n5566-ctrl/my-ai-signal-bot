@@ -41,7 +41,7 @@ async function recognizeImage(dataUrl,symbol){
  if(!likely.length)throw new Error("OCR อ่านราคาไม่ชัดหรือไม่ตรงรูปแบบคู่เงิน กรุณาขยายกราฟให้เห็นตัวเลขราคาชัด แล้วลองส่งใหม่");
  return{price:likely[likely.length-1],text:text.slice(0,1000),candidateCount:likely.length};
 }
-app.get("/api/health",(req,res)=>res.json({ok:true,service:"dual-system-mini-app",ocrConfigured:Boolean(SCREEN_TOKEN),markets:["MAIN","OTC"],serverTime:Date.now()}));
+app.get("/api/health",(req,res)=>res.json({ok:true,service:"dual-system-mini-app",ocrConfigured:Boolean(SCREEN_TOKEN),workerReady:Boolean(workerPromise),framesReceived:[...states.values()].reduce((n,s)=>n+s.framesReceived,0),lastFrameAt:[...states.values()].map(s=>s.updatedAt).filter(Boolean).sort().pop()||null,markets:["MAIN","OTC"],serverTime:Date.now()}));
 app.get("/api/old/status",async(req,res)=>{try{const r=await fetch(OLD_API_URL+"/api/status",{signal:AbortSignal.timeout(10000),headers:{Accept:"application/json"}});res.status(r.status).set("Cache-Control","no-store").json(await r.json());}catch(e){res.status(502).json({dataFresh:false,candidate:"STANDBY",error:"เชื่อมต่อระบบเดิมไม่ได้: "+e.message});}});
 app.get("/api/old/health",async(req,res)=>{try{const r=await fetch(OLD_API_URL+"/api/health",{signal:AbortSignal.timeout(10000)});res.status(r.status).json(await r.json());}catch(e){res.status(502).json({ok:false,error:e.message});}});
 for(const action of ["start","stop","heartbeat"])app.post("/api/old/scan/"+action,async(req,res)=>{try{const r=await fetch(OLD_API_URL+"/api/scan/"+action,{method:"POST",signal:AbortSignal.timeout(25000),headers:{Accept:"application/json"}});res.status(r.status).json(await r.json());}catch(e){res.status(502).json({error:"ระบบเดิมไม่ตอบสนอง: "+e.message});}});
