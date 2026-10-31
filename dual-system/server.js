@@ -49,7 +49,7 @@ app.post("/api/ocr/text",(req,res)=>{
  if(now-last<2000)return res.status(429).json({ok:false,error:"ส่งข้อมูลถี่เกินไป"});
  ocrRateLimits.set(client,now);
  const b=req.body||{},symbol=String(b.symbol||"").trim().toUpperCase();
- if(!/^[A-Z]{3}\\/[A-Z]{3}$/.test(symbol))return res.status(400).json({ok:false,error:"รูปแบบคู่เงินไม่ถูกต้อง"});
+ if(!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol))return res.status(400).json({ok:false,error:"รูปแบบคู่เงินไม่ถูกต้อง"});
  const candidates=Array.isArray(b.priceCandidates)?b.priceCandidates.map(Number).filter(v=>Number.isFinite(v)&&v>0&&v<100000).slice(0,8):[];
  if(!candidates.length)return res.status(422).json({ok:false,error:"ยังไม่พบตัวเลขราคาที่เข้าเกณฑ์"});
  const capturedAt=Number(b.capturedAt)||now;
