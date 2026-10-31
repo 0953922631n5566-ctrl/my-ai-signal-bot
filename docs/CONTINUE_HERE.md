@@ -35,6 +35,14 @@
 - ถ้าตลาดไม่ระบุชัดจะเป็น UNKNOWN
 - ถ้าพบตัวเลขทศนิยมหลายค่า จะไม่เลือกเอง แต่ขึ้น UNCONFIRMED
 
+## อัปเดต OCR diagnostics (31 ต.ค. 2026)
+- ปรับ `CaptureService.kt` ให้ส่ง bounding-box coordinates ของเลขทศนิยมที่ OCR พบ พร้อมข้อความบรรทัดต้นทาง
+- กรองเลขแบบ comma thousands เช่น `10,000.00` ออกจาก price candidate เพื่อลดการสับสนกับยอดเงินบัญชี
+- จำกัดการอ่าน OCR ประมาณทุก 0.9 วินาที เพื่อลดการใช้ CPU
+- หน้าจอแสดงรายการ candidate + ตำแหน่ง + ข้อความ OCR ดิบเพื่อ calibrate กับภาพจริง
+- ค่าเดียวก็ยังติดป้าย CANDIDATE ไม่ถือเป็นราคา verified; หลายค่าขึ้น UNCONFIRMED
+- GitHub Actions run #4: `41194919179` กำลัง build ณ เวลาบันทึก
+
 ## สถานะ / ข้อจำกัด
 - GitHub Actions run #1 `41194243643` จบด้วย `success` และอัปโหลด artifact แล้ว
 - Artifact: `AI-Signal-Radar-OCR-Clean-debug`, ID `13040107932`, ZIP 22,836,511 bytes, SHA-256 `976218326c9c206624b7c55732c83e27a05f61bebf0256032fd0597293cf9419`, หมดอายุ 30 พ.ย. 2026
