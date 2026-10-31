@@ -217,13 +217,14 @@ function renderOcrStatus(status) {
   }
   const data = status.data;
   dot.className = "dot online";
-  title.textContent = "รับข้อมูลจาก " + data.symbol + " แล้ว";
+  title.textContent = "รับ OCR จาก " + data.symbol + " แล้ว";
   const prices = Array.isArray(data.priceCandidates) && data.priceCandidates.length
     ? data.priceCandidates.map(value => formatNumber(value, 6)).join(" · ")
     : "ยังไม่พบตัวเลขราคา";
-  details.textContent = data.marketType + " · ราคา OCR ที่พบ: " + prices +
+  details.textContent = data.marketType + " · ตัวเลขที่อ่านได้: " + prices +
     (data.countdown ? " · เวลา " + data.countdown : "") +
-    " · ล่าสุด " + Math.max(0, Math.round(status.ageMs / 1000)) + " วินาที";
+    " · ล่าสุด " + Math.max(0, Math.round(status.ageMs / 1000)) + " วินาที" +
+    " · OCR ยังไม่เชื่อมกับการคำนวณ CALL/PUT";
 }
 
 async function refreshDashboard() {
