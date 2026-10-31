@@ -217,7 +217,7 @@ class CaptureService : Service() {
         Thread({
             var connection: HttpURLConnection? = null
             try {
-                connection = (URL("https://my-ai-signal-bot-v2.onrender.com/api/ocr").openConnection() as HttpURLConnection).apply {
+                connection = (URL("https://ai-signal-radar-dual.onrender.com/api/ocr/text").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 5000
                     readTimeout = 5000
