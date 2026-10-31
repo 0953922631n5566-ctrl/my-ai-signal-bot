@@ -1,6 +1,6 @@
 # CONTINUE HERE — AI SIGNAL RADAR OCR CLEAN REBUILD
 
-อัปเดต: 31 ตุลาคม 2026
+อัปเดต: 31 ตุลาคม 2026 — ปรับตัวอ่านป้ายราคาที่เคลื่อนตามแท่งเทียน
 
 ## เอกสารหลักของโปรเจกต์
 - **ประวัติตั้งแต่เริ่มโครงการ:** [docs/PROJECT_HISTORY.md](PROJECT_HISTORY.md)
@@ -48,26 +48,37 @@
 - ค่าเดียวก็ยังติดป้าย CANDIDATE ไม่ถือเป็นราคา verified; หลายค่าขึ้น UNCONFIRMED
 - GitHub Actions run #4: `41194919179` SUCCESS; artifact ID `13041020090`, size 22,843,015 bytes, SHA-256 `9a3ef33fccac933a654e5d4ad3cfb19e131cbf8972190153e1b77b89cb3b627c`, expires 30 พ.ย. 2026. ดาวน์โหลดจาก https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194919179
 
+## ปรับระบบตามผลทดสอบหน้าจอ Trade ของผู้ใช้ (31 ต.ค. 2026)
+- ผู้ใช้ยืนยันว่าราคาปัจจุบันที่ถูกต้องในตัวอย่าง EUR/USD (OTC) คือ `1.121115` (ทศนิยม 6 ตำแหน่ง)
+- ป้ายราคานี้เป็นตัวเลขขนาดเล็กบริเวณขอบขวาของกราฟ และเลื่อนขึ้น/ลงตามแท่งเทียน จึงห้ามกำหนดพิกัด Y แบบตายตัว
+- `CaptureService.kt` ปรับให้แยก candidate ทศนิยม 5–6 ตำแหน่งใน lane ด้านขวาของพื้นที่กราฟ (x >= 55% ของจอ, y 18–88%) เป็น live-price candidates; ยังคงแสดง candidates ทั้งหมดเพื่อ diagnostics
+- เพิ่มการติดตามพิกัด X/Y ของ candidate ระหว่างเฟรม เพื่อเลือกตัวที่ต่อเนื่องเมื่อมีหลาย candidate ใน live lane
+- แสดงผลเป็น `LIVE CANDIDATE: <price>` เท่านั้น ไม่ใช่ราคา verified; หากกำกวมแสดง `UNCONFIRMED` และยังห้ามใช้สร้างสัญญาณ
+- แก้ปุ่ม Manual Scan ให้ส่ง `ACTION_MANUAL_SCAN` ไป CaptureService เพื่อข้าม frame throttle และสั่งอ่านเฟรมถัดไปจริง
+- Source commits: CaptureService `0fb73e7937f94b9e3ec4bcd80da7fe215bb5a27c`; MainActivity `abaf8e53e5891961672ce427fb7c83da83883e40`
+- Build ใหม่: รอผล GitHub Actions หลัง source push; ยังไม่ส่ง APK ให้ติดตั้งจนกว่าจะยืนยัน build สำเร็จ
+
 ## สถานะ / ข้อจำกัด
 - GitHub Actions run #1 `41194243643` จบด้วย `success` และอัปโหลด artifact แล้ว
 - Artifact: `AI-Signal-Radar-OCR-Clean-debug`, ID `13040107932`, ZIP 22,836,511 bytes, SHA-256 `976218326c9c206624b7c55732c83e27a05f61bebf0256032fd0597293cf9419`, หมดอายุ 30 พ.ย. 2026
 - ดาวน์โหลดได้จากหน้า run: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194243643 (ส่วน Artifacts ด้านล่าง)
 - Build ผ่านแล้ว แต่ยังไม่ได้ยืนยันความถูกต้องของ OCR ราคาบนโทรศัพท์จริง
-- เฟสนี้ยังไม่มี ROI price locator ที่แม่นยำ, overlay ลอยเหนือแอปเทรด, backend sync, candle builder หรือ signal engine
-- ปุ่ม Manual Scan ใน Build #4 ยังเป็น placeholder; ต้องเชื่อม action เพื่อสั่ง OCR ใหม่จริง
+- ตัวกรอง live-price lane เป็น heuristic จากรูปแบบทศนิยม/บริเวณขอบขวา ยังต้องทดสอบกับภาพจริงและหลายคู่เงินก่อนถือว่าแม่นยำ; ยังไม่มี ROI แบบภาพ/สีเฉพาะแพลตฟอร์ม, overlay ลอยเหนือแอปเทรด, backend sync, candle builder หรือ signal engine
+- Manual Scan ใน source ล่าสุดเชื่อม action แล้ว แต่ต้องรอ APK build ใหม่และทดสอบบนเครื่องจริง
 - ห้ามอ้างว่าราคา OCR ถูกต้องจนกว่าจะเทียบกับหน้าจอจริงหลาย layout
 - OCR อ่านได้เฉพาะสิ่งที่ปรากฏบนหน้าจอ; ไม่สามารถอ่านราคาคู่ที่ซ่อนอยู่
 - ห้ามใส่ token/password/API key ใน GitHub
 
 ## ขั้นตอนถัดไป
-1. ตรวจสอบ/ใช้ artifact จาก GitHub Actions run #4
-2. ให้ผู้ใช้เปิดหน้าเทรดจริง เริ่ม OCR และส่งภาพหน้า diagnostic ที่เห็นผลอ่าน เพื่อเทียบคู่เงิน ตลาด ราคา เวลา และพิกัด candidate
-3. ใช้ภาพจริงกำหนด ROI สำหรับอ่านราคา และแยกยอดเงินบัญชี/payout/แกนราคาออกจากราคา
-4. เพิ่ม validation ราคาและความสดของข้อมูล ก่อนอนุญาตให้ระบบใช้ราคา
-5. แก้ Manual Scan ให้สั่ง OCR รอบใหม่ทันที ไม่ใช่เพียงเปลี่ยนข้อความสถานะ
-6. ทดสอบการเปลี่ยนคู่เงินและเปลี่ยน MAIN/OTC ว่าตามหน้าจอได้และไม่ปะปนข้อมูล
-7. หลัง OCR ผ่านเกณฑ์ ค่อยเพิ่ม overlay, candle builder, indicators และ signal engine
-8. อัปเดตเอกสารนี้ทุกครั้งที่มี commit/build/test ใหม่ พร้อมระบุผลจริง
+1. ตรวจ GitHub Actions build ที่เกิดจาก source commits ล่าสุด และยืนยัน artifact ใหม่
+2. ให้ผู้ใช้ติดตั้ง APK build ใหม่ เปิด EUR/USD (OTC) และเทียบว่าราคาแสดง LIVE CANDIDATE ตรงกับป้ายที่เลื่อนตามแท่งเทียนหรือไม่
+3. ทดสอบขณะราคาขยับขึ้น/ลงหลายรอบ เพื่อยืนยันว่าพิกัด Y เปลี่ยนตามป้ายราคา ไม่ยึดตำแหน่งเดิม
+4. ตรวจ false positives จากตัวเลข 5–6 ตำแหน่งอื่นในกราฟ; ปรับ lane/temporal tracking จากผลภาพจริง
+5. ทดสอบ Manual Scan ว่าสั่งอ่านรอบใหม่ได้ทันที
+6. ขยายกฎ precision ให้เหมาะกับคู่เงินอื่น โดยไม่ทำให้ราคาแกนกราฟถูกเลือก
+7. ทดสอบเปลี่ยนคู่เงินและ MAIN/OTC ว่าตามหน้าจอได้และไม่ปะปนข้อมูล
+8. หลัง OCR ผ่านเกณฑ์ ค่อยเพิ่ม overlay, candle builder, indicators และ signal engine
+9. อัปเดตเอกสารนี้ทุกครั้งที่มี commit/build/test ใหม่ พร้อมระบุผลจริง
 
 ## หลักการส่งต่องาน
 เริ่มอ่าน `docs/PROJECT_HISTORY.md` เพื่อเข้าใจที่มาและการตัดสินใจทั้งหมด จากนั้นอ่านเอกสารนี้เพื่อดูสถานะปัจจุบันและงานถัดไป ห้ามเริ่มใหม่หรือเปลี่ยนขอบเขตโดยไม่ตรวจเอกสารทั้งสองก่อน
