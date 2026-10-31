@@ -40,6 +40,7 @@ class CaptureService : Service() {
     private var screenWidth = 0
     private var screenHeight = 0
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val candleBuilder = PriceCandleBuilder()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -381,6 +382,14 @@ class CaptureService : Service() {
         } else {
             "UNCONFIRMED (orange badge: " + (if (badge == null) "not detected)" else "${badgeCandidates.size} price candidates)")
         }
+        // Only the unique OCR value inside the dynamically detected orange badge may enter candle aggregation.
+        val candleSummary = if (selectedLive != null) {
+            val event = candleBuilder.addTick(pair, market, selectedLive.value, System.currentTimeMillis())
+            if (event.accepted) candleBuilder.summary(pair, market) else "STANDBY: ${event.reason}"
+        } else {
+            "STANDBY: ยังไม่มีราคาจากป้ายสีส้มที่ยืนยันได้"
+        }
+
         val diagnostics = buildString {
             append("ORANGE PRICE BADGE (dynamic pixel detection):\n")
             append(if (badge != null) "bbox=${badge.left},${badge.top},${badge.right},${badge.bottom}\n" else "ไม่พบป้ายสีส้ม\n")
@@ -397,6 +406,7 @@ class CaptureService : Service() {
             putExtra("pair", pair)
             putExtra("market", market)
             putExtra("price", price)
+            putExtra("candle_summary", candleSummary)
             putExtra("clock", clock)
             putExtra("raw", rawText.take(2600))
             putExtra("candidates", diagnostics.take(2400))
