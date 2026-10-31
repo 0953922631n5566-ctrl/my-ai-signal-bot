@@ -28,6 +28,8 @@ const state = {
 
 let pollInProgress = false;
 let pollTimer = null;
+let latestOcr = null;
+const ocrRateLimits = new Map();
 
 function ema(values, period) {
   if (!Array.isArray(values) || values.length < period) return null;
@@ -276,33 +278,6 @@ async function fetchMarketData() {
     " trend=" + marketTrend + " atr14=" + state.atr14 +
     " volumeRatio=" + state.volumeRatio + " primary=" + state.candidate);
 
-  const now = Date.now();
-  const emaValues = {};
-  for (const period of EMA_PERIODS) emaValues[period] = round(latestEma[period]);
-
-  const firstChartIndex = Math.max(0, parsedCandles.length - 80);
-  const chartCandles = parsedCandles.slice(firstChartIndex).map((c, offset) => {
-    const index = firstChartIndex + offset;
-    const emaAtCandle = {};
-    for (const period of EMA_PERIODS) emaAtCandle[period] = round(series[period][index]);
-    return { ...c, emas: emaAtCandle };
-  });
-
-  Object.assign(state, {
-    price: round(price), candleTime: lastCandle.datetime,
-    fetchedAt: new Date(now).toISOString(), fetchedAtMs: now,
-    emaValues, emaSignals: signals, marketTrend,
-    rsi14: round(rsi, 2), macd: round(macd, 8),
-    bullVotes, bearVotes, score: primary ? primary.score : 0,
-    candidate: primary ? primary.direction : "STANDBY",
-    reason: primary ? primary.reason : "ไม่มีแท่งปิดตัด EMA ที่ตรงกับแนวโน้มหลัก (" + marketTrend + ")",
-    candles: chartCandles, error: null,
-    lastPollAt: new Date(now).toISOString(),
-    nextPollAt: new Date(now + POLL_MS).toISOString()
-  });
-
-  console.log("[MARKET] " + SYMBOL + " price=" + state.price +
-    " trend=" + marketTrend + " emaSignals=" + signals.length + " primary=" + state.candidate);
 }
 
 async function pollMarket() {
@@ -373,6 +348,64 @@ app.get("/api/radar", (req, res) => {
       score: data.score, rsi14: data.rsi14, reason: data.reason,
       emaSignals: data.emaSignals
     }]
+  });
+});
+
+
+// OCR companion feed: receives extracted fields only, never screenshots or raw screen text.
+app.post("/api/ocr", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const now = Date.now();
+  const client = String(req.ip || "unknown");
+  const last = ocrRateLimits.get(client) || 0;
+  if (now - last < 900) return res.status(429).json({ ok: false, error: "ส่งข้อมูลถี่เกินไป" });
+  ocrRateLimits.set(client, now);
+
+  const body = req.body || {};
+  const symbol = typeof body.symbol === "string" ? body.symbol.trim().toUpperCase() : "";
+  if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(symbol)) {
+    return res.status(400).json({ ok: false, error: "รูปแบบคู่เงินไม่ถูกต้อง" });
+  }
+
+  const candidates = Array.isArray(body.priceCandidates)
+    ? body.priceCandidates.map(Number).filter(v => Number.isFinite(v) && v > 0 && v < 100000).slice(0, 8)
+    : [];
+  const countdown = typeof body.countdown === "string" && /^\d{1,2}:\d{2}$/.test(body.countdown)
+    ? body.countdown : null;
+  const capturedAt = typeof body.capturedAt === "number" && Number.isFinite(body.capturedAt)
+    ? body.capturedAt : now;
+
+  latestOcr = {
+    source: "Android MediaProjection + ML Kit OCR",
+    symbol,
+    marketType: body.marketType === "OTC" ? "OTC" : "DIGITAL_OR_UNKNOWN",
+    priceCandidates: [...new Set(candidates)],
+    countdown,
+    capturedAt,
+    receivedAt: new Date(now).toISOString(),
+    receivedAtMs: now,
+    dataFresh: now - capturedAt >= -5000 && now - capturedAt <= 15000
+  };
+  res.status(202).json({ ok: true, received: true, dataFresh: latestOcr.dataFresh });
+});
+
+app.get("/api/ocr/status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (!latestOcr) return res.json({ connected: false, data: null });
+  const ageMs = Date.now() - latestOcr.receivedAtMs;
+  res.json({
+    connected: ageMs <= 15000,
+    ageMs,
+    data: {
+      source: latestOcr.source,
+      symbol: latestOcr.symbol,
+      marketType: latestOcr.marketType,
+      priceCandidates: latestOcr.priceCandidates,
+      countdown: latestOcr.countdown,
+      capturedAt: latestOcr.capturedAt,
+      receivedAt: latestOcr.receivedAt,
+      dataFresh: ageMs <= 15000 && latestOcr.dataFresh
+    }
   });
 });
 
