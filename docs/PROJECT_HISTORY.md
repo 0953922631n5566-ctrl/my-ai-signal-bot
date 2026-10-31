@@ -208,3 +208,13 @@ Build #7 (run 41197501581) succeeded; artifact 13041109349. User verified pair a
 - Source commit: 9b84f406c2adf5b75d38c75e20d4b1e319091212
 - เอกสารส่งต่องาน CONTINUE_HERE อัปเดต commit: d5bf23e1006b0f80e3aa57eefa0f7f74ab03bf1f
 - ต้องรอ GitHub Actions build และทดสอบ APK บนหน้าจอจริง; การกำหนด ROI จากสัดส่วนอย่างเดียวไม่ยืนยันว่าราคา OCR ถูกต้อง
+
+
+ผล Build สำหรับ user-defined red rectangle ROI:
+- GitHub Actions Build #9, run ID 41200690320, status completed / conclusion SUCCESS
+- Source commit: 9b84f406c2adf5b75d38c75e20d4b1e319091212
+- Artifact ID: 13042815806; ชื่อ AI-Signal-Radar-OCR-Clean-debug; ZIP 22,851,460 bytes
+- SHA-256: 02351f80d7b08de727176775f996ae50a12ca60386db6561472090069a696090
+- หมดอายุ: 30 พ.ย. 2026 เวลา 12:21:29 UTC
+- Workflow: https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41200690320
+- ผลนี้ยืนยัน compile/package สำเร็จเท่านั้น ยังต้องทดสอบ OCR จากกรอบที่กำหนดบนโทรศัพท์จริงก่อนยืนยันราคา
