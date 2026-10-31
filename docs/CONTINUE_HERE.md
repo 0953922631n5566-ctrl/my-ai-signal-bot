@@ -43,6 +43,7 @@
 - `my-ai-signal-bot-v2` (service `srv-dbi13j0m7kps73bin0h0`) deploy จาก `feature/dual-mode-mini-app`; หน้า Mini App ของ branch นี้ฝัง iframe OCR จาก `https://ai-signal-radar-dual.onrender.com`. ตัว v2 ไม่ใช่ OCR ingestion backend โดยตรง
 - Dual backend มี `POST /api/ocr/text`, `GET /api/ocr/android-status` และ `POST /api/ocr/android-price`; การนำราคาเข้าเครื่องคำนวณต้องผู้ใช้ยืนยันตลาด/คู่เงิน/หน้าจอ และระบบปฏิเสธเมื่อมี candidate มากกว่าหนึ่งค่า
 - การแก้ endpoint ใน APK อยู่บน `main` และ workflow build ตั้ง trigger เมื่อมี push ใน `android-ocr-apk/**`; ต้องตรวจ GitHub Actions ว่า build ผ่านหลัง commit นี้ก่อนให้ติดตั้ง
+- ตรวจ Render request logs ของ `ai-signal-radar-dual` สำหรับ `/api/ocr/text` และ `/api/ocr/android-status` แล้ว ยังไม่พบ request ในช่วงที่ตรวจ จึงยังไม่มีหลักฐานว่า APK ตัวใหม่ส่งข้อมูลถึง backend ได้จริง
 
 ## บันทึกการทำงานรอบล่าสุด
 - Commit `1eef60f0ff72fee7a2d0af425c976991afc81545` — harden `POST /api/ocr`: บังคับ capturedAt ต้องเป็นเวลาปัจจุบัน (ไม่เกิน 5 วินาทีในอนาคต/ไม่เก่ากว่า 15 วินาที), ตรวจรูปแบบ countdown, ย้าย rate limit หลังตรวจ symbol/time และส่งสถานะ `priceConfirmed:false`, `analysisLinked:false` ชัดเจน
