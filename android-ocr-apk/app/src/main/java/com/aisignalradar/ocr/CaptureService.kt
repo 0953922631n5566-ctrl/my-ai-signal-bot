@@ -196,8 +196,15 @@ class CaptureService : Service() {
         val pairMatch = Regex("""(?i)\b([A-Z]{3})\s*/\s*([A-Z]{3})\b""").find(ocrText)
             ?: return
         val symbol = pairMatch.groupValues[1].uppercase() + "/" + pairMatch.groupValues[2].uppercase()
-        // Market is deliberately unconfirmed: other OTC tabs may be visible elsewhere on screen.
-        val marketType = "UNCONFIRMED"
+        // Confirm OTC only when the selected pair is visibly labelled OTC.
+        // Mixed tabs or unclear market labels remain unconfirmed.
+        val pairPattern = Regex("(?i)" + Regex.escape(symbol).replace("/", "\\\\s*/\\\\s*") + "\\\\s*\\\\(OTC\\\\)")
+        val marketType = when {
+            pairPattern.containsMatchIn(ocrText) -> "OTC"
+            Regex("""(?i)\\bDIGITAL\\b""").containsMatchIn(ocrText) &&
+                !Regex("""(?i)\\bOTC\\b""").containsMatchIn(ocrText) -> "DIGITAL"
+            else -> "UNCONFIRMED"
+        }
         val prices = Regex("""(?<![\d.])\d{1,3}\.\d{3,6}(?!\d)""")
             .findAll(ocrText)
             .mapNotNull { it.value.toDoubleOrNull() }
@@ -218,7 +225,7 @@ class CaptureService : Service() {
         Thread({
             var connection: HttpURLConnection? = null
             try {
-                connection = (URL("https://ai-signal-radar-dual.onrender.com/api/ocr/text").openConnection() as HttpURLConnection).apply {
+                connection = (URL("https://my-ai-signal-bot-v2.onrender.com/api/ocr-system/ingest").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 5000
                     readTimeout = 5000
