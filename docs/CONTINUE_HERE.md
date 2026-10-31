@@ -41,7 +41,7 @@
 - จำกัดการอ่าน OCR ประมาณทุก 0.9 วินาที เพื่อลดการใช้ CPU
 - หน้าจอแสดงรายการ candidate + ตำแหน่ง + ข้อความ OCR ดิบเพื่อ calibrate กับภาพจริง
 - ค่าเดียวก็ยังติดป้าย CANDIDATE ไม่ถือเป็นราคา verified; หลายค่าขึ้น UNCONFIRMED
-- GitHub Actions run #4: `41194919179` กำลัง build ณ เวลาบันทึก
+- GitHub Actions run #4: `41194919179` SUCCESS; artifact ID `13041020090`, size 22,843,015 bytes, SHA-256 `9a3ef33fccac933a654e5d4ad3cfb19e131cbf8972190153e1b77b89cb3b627c`, expires 30 พ.ย. 2026. ดาวน์โหลดจาก https://github.com/0953922631n5566-ctrl/my-ai-signal-bot/actions/runs/41194919179
 
 ## สถานะ / ข้อจำกัด
 - GitHub Actions run #1 `41194243643` จบด้วย `success` และอัปโหลด artifact แล้ว
